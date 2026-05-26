@@ -44,6 +44,7 @@ const COL = {
   modelo: 2,
   chassi_completo: 3,
   linha: 4,
+  marca_completa: 445,
   preco_venda: 6,
   cor_externa: 7,
   ano_m: 9,
@@ -182,11 +183,17 @@ export async function parseNbsXlsx(
 
     const { fab, mod } = parseAnoM(row[COL.ano_m]);
 
+    // Marca: prefere a coluna 445 (nome completo: 'Chevrolet', 'Ford Autos'…),
+    // fallback para col 4 'Linha' (abreviada a 6 chars: 'CHEVRO', 'FORD'…).
+    const marcaCompleta = asStr(row[COL.marca_completa]);
+    const marcaLinha = asStr(row[COL.linha]);
+    const marca = marcaCompleta ?? marcaLinha;
+
     veiculos.push({
       cod_empresa,
       chassi,
       placa,
-      marca: asStr(row[COL.linha]),
+      marca,
       modelo,
       ano_fabricacao: fab,
       ano_modelo: mod,

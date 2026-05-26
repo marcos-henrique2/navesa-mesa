@@ -1,17 +1,48 @@
 import type { FipeMarca, FipeModelo, FipeAno } from "./types";
 
+// Aliases para mapear o nome da marca do NBS para o nome usado na FIPE.
+// Cobre tanto a coluna 445 'Marca' (nomes completos: 'Ford Autos', 'VolksWagen', 'LandRover')
+// quanto a col 4 'Linha' (abreviações de 6 chars: 'CHEVRO', 'RAMPAG', 'RENEG').
+// Aliases NBS → nome EXATO da FIPE. Chave em UPPERCASE.
+// Os nomes FIPE foram conferidos via API: https://parallelum.com.br/fipe/api/v1/carros/marcas
 const MARCA_ALIASES: Record<string, string> = {
-  RENEG: "Jeep",
-  COMPASS: "Jeep",
-  RAMPAG: "RAM",
-  RAMPAGE: "RAM",
-  TROLLE: "Troller",
-  COROLLA: "Toyota",
-  HILUX: "Toyota",
-  COMMANDER: "Jeep",
+  // === Col 445 'Marca' — nomes completos do NBS ===
+  CHEVROLET: "GM - Chevrolet",
+  VOLKSWAGEN: "VW - VolksWagen",
+  "FORD AUTOS": "Ford",
+  LANDROVER: "Land Rover",
+  CHERY: "Caoa Chery",
+  // (Toyota, Jeep, Fiat, Renault, Mitsubishi, Honda, Hyundai, RAM,
+  //  Audi, Nissan, BMW, BYD, Peugeot, Volvo, Suzuki, GWM, GEELY,
+  //  Jaecoo, Mercedes-Benz, Citroen, Kia Motors, Troller já casam direto.)
+
+  // === Col 4 'Linha' — abreviações de 6 chars (fallback) ===
+  CHEVRO: "GM - Chevrolet",
+  VOLKSW: "VW - VolksWagen",
+  VW: "VW - VolksWagen",
+  RENAUL: "Renault",
+  MITSUB: "Mitsubishi",
+  HYUNDA: "Hyundai",
+  CITROE: "Citroën",
+  MERCED: "Mercedes-Benz",
+  PEUGEO: "Peugeot",
+  "LAND R": "Land Rover",
+
+  // === Modelos que aparecem no campo 'Linha' (são modelos, não marcas) ===
+  TERRIT: "Ford",
   RANGER: "Ford",
   BRONCO: "Ford",
-  TRACKER: "Chevrolet",
+  "F-150": "Ford",
+  RAMPAG: "RAM",
+  RAMPAGE: "RAM",
+  RENEG: "Jeep",
+  COMPASS: "Jeep",
+  COMMANDER: "Jeep",
+  TRACKER: "GM - Chevrolet",
+  CRETA: "Hyundai",
+  COROLLA: "Toyota",
+  HILUX: "Toyota",
+  TROLLE: "Troller",
 };
 
 const STOPWORDS = new Set([
