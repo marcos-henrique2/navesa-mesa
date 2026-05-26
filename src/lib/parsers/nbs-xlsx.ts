@@ -10,6 +10,7 @@ export type VeiculoParsed = {
   ano_modelo: number | null;
   cor_externa: string | null;
   combustivel: string | null;
+  km: number | null;
   patio: string;
   descricao_situacao: string | null;
   preco_venda: number | null;
@@ -58,6 +59,7 @@ const COL = {
   custo_total: 46,
   entrada: 50,
   empresa_nome: 401,
+  km: 441,
 } as const;
 
 function parseEmpresaCell(value: unknown): { cod: number; nome: string } | null {
@@ -199,6 +201,7 @@ export async function parseNbsXlsx(
       ano_modelo: mod,
       cor_externa: normalizeCor(asStr(row[COL.cor_externa])),
       combustivel: asStr(row[COL.comb]),
+      km: asInt(row[COL.km]),
       patio,
       descricao_situacao: asStr(row[COL.descricao_situacao]),
       preco_venda: asNum(row[COL.preco_venda]),

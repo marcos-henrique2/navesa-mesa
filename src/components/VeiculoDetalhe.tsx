@@ -56,6 +56,7 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
           <Row label="Ano fab./mod." value={`${veiculo.ano_fabricacao ?? "—"} / ${veiculo.ano_modelo ?? "—"}`} />
           <Row label="Cor" value={veiculo.cor_externa ?? "—"} />
           <Row label="Combustível" value={veiculo.combustivel ?? "—"} />
+          <Row label="Quilometragem" value={veiculo.km !== null ? `${formatInt(veiculo.km)} km` : "—"} bold tone={kmTone(veiculo.km)} />
           <Row label="Pátio" value={veiculo.patio.trim()} />
           <Row label="Situação" value={veiculo.descricao_situacao ?? "—"} />
           <Row label="Loja" value={nomeOuCodigo(lojas, veiculo.cod_empresa)} />
@@ -77,6 +78,14 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
       <SugestaoBox sugestao={sugestao} precoAtual={veiculo.preco_venda} />
     </div>
   );
+}
+
+function kmTone(km: number | null): "good" | "warn" | "bad" | undefined {
+  if (km === null) return undefined;
+  if (km < 30000) return "good";
+  if (km < 80000) return undefined;
+  if (km < 150000) return "warn";
+  return "bad";
 }
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {

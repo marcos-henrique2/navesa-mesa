@@ -94,6 +94,15 @@ export function VeiculosTable() {
     { accessorKey: "marca", header: "Marca" },
     { accessorKey: "modelo", header: "Modelo", cell: (info) => <span className="text-xs">{info.getValue<string>()}</span> },
     { accessorKey: "ano_modelo", header: "Ano", cell: (info) => info.getValue<number | null>() ?? "—" },
+    { accessorKey: "km", header: "KM", cell: (info) => {
+      const km = info.getValue<number | null>();
+      if (km === null) return <span className="text-zinc-400">—</span>;
+      const tone = km < 30000 ? "text-green-700 dark:text-green-400"
+        : km < 80000 ? ""
+        : km < 150000 ? "text-amber-700 dark:text-amber-400"
+        : "text-red-700 dark:text-red-400";
+      return <span className={cn("tabular-nums", tone)}>{formatInt(km)}</span>;
+    } },
     { accessorKey: "cor_externa", header: "Cor" },
     { accessorKey: "combustivel", header: "Comb" },
     { accessorKey: "patio", header: "Pátio", cell: (info) => <span className="text-xs">{info.getValue<string>().trim()}</span> },
