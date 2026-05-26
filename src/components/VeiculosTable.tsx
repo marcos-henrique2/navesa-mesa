@@ -12,20 +12,16 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, Search } from "lucide-react";
-import { useInventory } from "@/lib/store/inventory";
+import { useInventory, nomeOuCodigo } from "@/lib/store/inventory";
 import { cn, formatBRL, formatInt } from "@/lib/utils";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
-
-const KNOWN_LOJAS: Record<number, string> = {
-  2: "NAVESA FORD AEROPORTO",
-};
 
 function ehPreparacao(v: VeiculoParsed): boolean {
   return v.patio.trim().toUpperCase() === "PREPARAÇÃO";
 }
 
 export function VeiculosTable() {
-  const { veiculos, meta, isHydrated } = useInventory();
+  const { veiculos, meta, lojas, isHydrated } = useInventory();
   const [includePrep, setIncludePrep] = useState(true);
   const [search, setSearch] = useState("");
   const [filtroLoja, setFiltroLoja] = useState<string>("all");
@@ -34,7 +30,7 @@ export function VeiculosTable() {
   const [filtroSituacao, setFiltroSituacao] = useState<string>("all");
   const [sorting, setSorting] = useState<SortingState>([]);
 
-  const lojas = useMemo(() => [...new Set(veiculos.map((v) => v.cod_empresa))].sort((a, b) => a - b), [veiculos]);
+  const lojasCods = useMemo(() => [...new Set(veiculos.map((v) => v.cod_empresa))].sort((a, b) => a - b), [veiculos]);
   const marcas = useMemo(() => [...new Set(veiculos.map((v) => v.marca).filter((m): m is string => !!m))].sort(), [veiculos]);
   const patios = useMemo(() => [...new Set(veiculos.map((v) => v.patio.trim()))].sort(), [veiculos]);
   const situacoes = useMemo(() => [...new Set(veiculos.map((v) => v.descricao_situacao).filter((s): s is string => !!s))].sort(), [veiculos]);
@@ -81,7 +77,16 @@ export function VeiculosTable() {
     },
     { accessorKey: "cod_empresa", header: "Loja", cell: (info) => {
       const cod = info.getValue<number>();
-      return <span className="text-xs"><span className="font-mono">{cod}</span> {KNOWN_LOJAS[cod] ? <span className="text-zinc-500">· {KNOWN_LOJAS[cod].split(" ").slice(-1)[0]}</span> : null}</span>;
+      const nome = lojas[cod]?.nome?.trim();
+      return (
+        <span className="text-xs">
+          {nome ? (
+            <span title={`Cód: ${cod}`}>{nome}</span>
+          ) : (
+            <span className="text-zinc-500 italic">Loja {cod}</span>
+          )}
+        </span>
+      );
     } },
     { accessorKey: "placa", header: "Placa", cell: (info) => <span className="font-mono text-xs">{info.getValue<string>()}</span> },
     { accessorKey: "marca", header: "Marca" },
@@ -155,7 +160,7 @@ export function VeiculosTable() {
           Incluir PREPARAÇÃO
         </label>
 
-        <Select label="Loja" value={filtroLoja} onChange={setFiltroLoja} options={[["all", "Todas"], ...lojas.map((l) => [String(l), `${l}${KNOWN_LOJAS[l] ? ` · ${KNOWN_LOJAS[l]}` : ""}`])]} />
+        <Select label="Loja" value={filtroLoja} onChange={setFiltroLoja} options={[["all", "Todas"], ...lojasCods.map((l) => [String(l), nomeOuCodigo(lojas, l)])]} />
         <Select label="Marca" value={filtroMarca} onChange={setFiltroMarca} options={[["all", "Todas"], ...marcas.map((m) => [m, m])]} />
         <Select label="Pátio" value={filtroPatio} onChange={setFiltroPatio} options={[["all", "Todos"], ...patios.map((p) => [p, p])]} />
         <Select label="Situação" value={filtroSituacao} onChange={setFiltroSituacao} options={[["all", "Todas"], ...situacoes.map((s) => [s, s])]} />
