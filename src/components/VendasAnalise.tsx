@@ -5,11 +5,12 @@ import {
   useReactTable, getCoreRowModel, getFilteredRowModel, getSortedRowModel, getPaginationRowModel,
   flexRender, type ColumnDef, type SortingState,
 } from "@tanstack/react-table";
-import { ArrowUpDown, ArrowUp, ArrowDown, Search, Trophy, TrendingDown, TrendingUp } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, Search, Trophy, TrendingDown, TrendingUp, AlertCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useInventory } from "@/lib/store/inventory";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
 import { ComposicaoCustos } from "./ComposicaoCustos";
+import { indexarClientes, chaveCliente, tierRecorrencia } from "@/lib/analytics/clientes";
 import type { VendaParsed } from "@/lib/parsers/nbs-vendas-xlsx";
 
 export function VendasAnalise() {
@@ -22,7 +23,11 @@ export function VendasAnalise() {
   const [filtroMarca, setFiltroMarca] = useState("all");
   const [filtroUf, setFiltroUf] = useState("all");
   const [filtroTipoCli, setFiltroTipoCli] = useState<"all" | "PF" | "PJ" | "troca">("all");
+  const [filtroRecorrencia, setFiltroRecorrencia] = useState<"all" | "unica" | "2-3" | "4mais">("all");
   const [sorting, setSorting] = useState<SortingState>([]);
+
+  // Index de clientes sobre TODAS as vendas (independente do filtro), para detectar recorrência total
+  const clientesIndex = useMemo(() => indexarClientes(vendas), [vendas]);
 
   const lojas = useMemo(() => [...new Set(vendas.map((v) => v.empresa_nome).filter((x): x is string => !!x))].sort(), [vendas]);
   const vendedores = useMemo(() => [...new Set(vendas.map((v) => v.vendedor_nome).filter((x): x is string => !!x))].sort(), [vendas]);
@@ -38,6 +43,13 @@ export function VendasAnalise() {
       if (filtroTipoCli === "PF" && v.cliente_tipo !== "PF") return false;
       if (filtroTipoCli === "PJ" && v.cliente_tipo !== "PJ") return false;
       if (filtroTipoCli === "troca" && !v.placa_troca) return false;
+      if (filtroRecorrencia !== "all") {
+        const cli = clientesIndex.get(chaveCliente(v));
+        const n = cli?.totalCompras ?? 1;
+        if (filtroRecorrencia === "unica" && n !== 1) return false;
+        if (filtroRecorrencia === "2-3" && (n < 2 || n > 3)) return false;
+        if (filtroRecorrencia === "4mais" && n < 4) return false;
+      }
       if (search) {
         const q = search.toLowerCase();
         const hay = `${v.placa} ${v.chassi} ${v.modelo} ${v.cliente_nome} ${v.vendedor_nome ?? ""}`.toLowerCase();
@@ -45,7 +57,7 @@ export function VendasAnalise() {
       }
       return true;
     });
-  }, [vendas, filtroLoja, filtroVendedor, filtroMarca, filtroUf, filtroTipoCli, search]);
+  }, [vendas, filtroLoja, filtroVendedor, filtroMarca, filtroUf, filtroTipoCli, filtroRecorrencia, clientesIndex, search]);
 
   const kpis = useMemo(() => {
     let valor = 0, custo = 0, comissao = 0, dias = 0, comDias = 0;
@@ -127,11 +139,27 @@ export function VendasAnalise() {
     { accessorKey: "vendedor_nome", header: "Vendedor", cell: (info) => <span className="text-xs">{info.getValue<string | null>() ?? "—"}</span> },
     { accessorKey: "cliente_nome", header: "Cliente", cell: (info) => {
       const row = info.row.original;
+      const cli = clientesIndex.get(chaveCliente(row));
+      const n = cli?.totalCompras ?? 1;
+      const tier = tierRecorrencia(n);
       return (
         <div className="text-xs">
           <p className="truncate" style={{ maxWidth: 200 }}>{info.getValue<string>()}</p>
-          {row.cliente_tipo && <span className={cn("inline-block rounded px-1 text-[10px] font-medium", row.cliente_tipo === "PF" ? "bg-blue-100 text-blue-800" : "bg-purple-100 text-purple-800")}>{row.cliente_tipo}</span>}
-          {row.cliente_uf && row.cliente_uf !== "GO" && <span className="ml-1 text-[10px] text-amber-600">↗ {row.cliente_uf}</span>}
+          <div className="mt-0.5 flex flex-wrap items-center gap-1">
+            {row.cliente_tipo && <span className={cn("inline-block rounded px-1 text-[10px] font-medium", row.cliente_tipo === "PF" ? "bg-blue-100 text-blue-800" : "bg-purple-100 text-purple-800")}>{row.cliente_tipo}</span>}
+            {row.cliente_uf && row.cliente_uf !== "GO" && <span className="text-[10px] text-amber-600">↗ {row.cliente_uf}</span>}
+            {n > 1 && (
+              <span className={cn(
+                "inline-flex items-center gap-0.5 rounded px-1 text-[10px] font-bold",
+                tier === "lojista-suspeito" ? "bg-red-600 text-white" :
+                tier === "recorrente" ? "bg-amber-200 text-amber-900" :
+                "bg-blue-100 text-blue-800",
+              )} title={`Este cliente fez ${n} compras no total`}>
+                {tier !== "ocasional" && <AlertCircle className="h-2.5 w-2.5" />}
+                {n}×
+              </span>
+            )}
+          </div>
         </div>
       );
     } },
@@ -149,7 +177,7 @@ export function VendasAnalise() {
     } },
     { accessorKey: "comissao_vendedor", header: "Comissão", cell: (info) => <span className="tabular-nums text-xs text-zinc-600">{formatBRL(info.getValue<number | null>())}</span> },
     { id: "troca", header: "Troca", cell: ({ row }) => row.original.placa_troca ? <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">{row.original.placa_troca}</span> : null },
-  ], []);
+  ], [clientesIndex]);
 
   const table = useReactTable({
     data: filtered, columns, state: { sorting }, onSortingChange: setSorting,
@@ -198,6 +226,7 @@ export function VendasAnalise() {
         <Select label="Marca" value={filtroMarca} onChange={setFiltroMarca} options={[["all", "Todas"], ...marcas.map((m) => [m, m] as [string, string])]} />
         <Select label="UF" value={filtroUf} onChange={setFiltroUf} options={[["all", "Todos"], ...ufs.map((u) => [u, u] as [string, string])]} />
         <Select label="Tipo" value={filtroTipoCli} onChange={(v) => setFiltroTipoCli(v as typeof filtroTipoCli)} options={[["all", "Todos"], ["PF", "Só PF"], ["PJ", "Só PJ"], ["troca", "Com troca"]]} />
+        <Select label="Recorrência" value={filtroRecorrencia} onChange={(v) => setFiltroRecorrencia(v as typeof filtroRecorrencia)} options={[["all", "Todas"], ["unica", "1 compra"], ["2-3", "2 a 3"], ["4mais", "4+ (suspeito)"]]} />
 
         <div className="relative ml-auto">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-zinc-400" />

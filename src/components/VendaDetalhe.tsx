@@ -2,14 +2,20 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { ArrowLeft, ShoppingCart, Banknote, Wrench, UserSquare2, TrendingUp, TrendingDown, MapPin, Calendar, CheckCircle2, Repeat } from "lucide-react";
+import { ArrowLeft, ShoppingCart, Banknote, Wrench, UserSquare2, TrendingUp, TrendingDown, CheckCircle2, Repeat, AlertCircle } from "lucide-react";
 import { useInventory, nomeOuCodigo, nomeVendedor } from "@/lib/store/inventory";
+import { indexarClientes, getCliente, tierRecorrencia, TIER_LABEL, type RecorrenciaTier } from "@/lib/analytics/clientes";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
 
 export function VendaDetalhe({ chassi }: { chassi: string }) {
   const { vendas, lojas, vendedores, isHydrated } = useInventory();
 
   const venda = useMemo(() => vendas.find((v) => v.chassi === chassi), [vendas, chassi]);
+  const clienteAgg = useMemo(() => {
+    if (!venda) return null;
+    const idx = indexarClientes(vendas);
+    return getCliente(idx, venda);
+  }, [vendas, venda]);
 
   if (!isHydrated) return <p className="text-sm text-zinc-500">Carregando…</p>;
 
@@ -77,18 +83,9 @@ export function VendaDetalhe({ chassi }: { chassi: string }) {
         </Card>
       </div>
 
-      <Card title="👤 Cliente">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div>
-            <Row label="Nome" value={venda.cliente_nome} bold />
-            {venda.cliente_codigo && <Row label="CPF/CNPJ" value={venda.cliente_codigo} muted />}
-          </div>
-          <div>
-            <Row label="Tipo" value={venda.cliente_tipo ?? "—"} />
-            <Row label="Cidade / UF" value={`${venda.cliente_cidade ?? "—"} / ${venda.cliente_uf ?? "—"}`} />
-          </div>
-        </div>
-      </Card>
+      <ClienteCard venda={venda} cliente={clienteAgg} />
+
+
 
       {/* Composição de custos da venda */}
       <section className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
@@ -188,6 +185,103 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
     </div>
   );
 }
+
+type ClienteAggView = NonNullable<ReturnType<typeof getCliente>>;
+
+function ClienteCard({ venda, cliente }: { venda: NonNullable<ReturnType<typeof Object>>; cliente: ClienteAggView | null }) {
+  // Não usei tipo direto da venda pra evitar ciclo de import — venda é VendaParsed
+  const v = venda as { cliente_nome: string; cliente_codigo: string | null; cliente_tipo: "PF" | "PJ" | null; cliente_cidade: string | null; cliente_uf: string | null; chassi: string };
+  const tier = cliente ? tierRecorrencia(cliente.totalCompras) : "unica";
+  const styles = TIER_STYLES[tier];
+
+  return (
+    <section className={cn("rounded-lg border bg-white shadow-[var(--shadow-sm)]", styles.cardBorder)}>
+      <header className={cn("flex items-center gap-2 border-b px-5 py-3", styles.headerBg, styles.cardBorder)}>
+        <h3 className="font-semibold">👤 Cliente</h3>
+        {cliente && cliente.totalCompras > 1 && (
+          <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold", styles.badge)}>
+            {styles.icon} {cliente.totalCompras} compras
+          </span>
+        )}
+      </header>
+
+      <div className="p-5">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5 text-sm">
+            <Row label="Nome" value={v.cliente_nome} bold />
+            {v.cliente_codigo && <Row label="CPF/CNPJ" value={v.cliente_codigo} muted />}
+          </div>
+          <div className="space-y-1.5 text-sm">
+            <Row label="Tipo" value={v.cliente_tipo ?? "—"} />
+            <Row label="Cidade / UF" value={`${v.cliente_cidade ?? "—"} / ${v.cliente_uf ?? "—"}`} />
+          </div>
+        </div>
+
+        {cliente && cliente.totalCompras > 1 && (
+          <div className={cn("mt-5 rounded-lg p-4", styles.alertBg)}>
+            <p className={cn("flex items-center gap-2 text-sm font-semibold", styles.alertText)}>
+              {styles.icon} {TIER_LABEL[tier]}
+            </p>
+            <p className="mt-1 text-xs text-slate-600">
+              <strong>{cliente.totalCompras}</strong> compras no total
+              {cliente.diasEntrePrimeiraUltima !== null && cliente.diasEntrePrimeiraUltima > 0 && (
+                <> em <strong>{cliente.diasEntrePrimeiraUltima}</strong> dias</>
+              )}
+              {" · "}faturamento <strong>{formatBRL(cliente.totalValor)}</strong>
+            </p>
+
+            <p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Histórico de compras</p>
+            <ul className="mt-1.5 divide-y divide-slate-200">
+              {cliente.vendas.map((vv, i) => {
+                const isAtual = vv.chassi === v.chassi;
+                return (
+                  <li key={vv.chassi} className={cn("flex items-center justify-between py-1.5 text-xs", isAtual && "font-semibold text-slate-900")}>
+                    <span className="flex items-center gap-2">
+                      <span className="tabular-nums text-slate-400" style={{ width: 18 }}>{i + 1}.</span>
+                      {isAtual && <span className="rounded bg-slate-900 px-1 py-0.5 text-[9px] font-bold text-white">ATUAL</span>}
+                      <span className="font-mono">{vv.placa}</span>
+                      <span className="text-slate-500">{vv.marca} {vv.modelo.slice(0, 40)}</span>
+                    </span>
+                    <span className="flex items-center gap-3">
+                      <span className="text-slate-500">{vv.data_venda ? new Date(vv.data_venda).toLocaleDateString("pt-BR") : "—"}</span>
+                      <span className="tabular-nums">{formatBRL(vv.valor_venda)}</span>
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+const TIER_STYLES: Record<RecorrenciaTier, {
+  cardBorder: string; headerBg: string; badge: string; icon: React.ReactNode;
+  alertBg: string; alertText: string;
+}> = {
+  "unica": {
+    cardBorder: "border-[var(--border-soft)]", headerBg: "bg-slate-50",
+    badge: "bg-slate-100 text-slate-700", icon: null,
+    alertBg: "bg-slate-50", alertText: "text-slate-700",
+  },
+  "ocasional": {
+    cardBorder: "border-[var(--border-soft)]", headerBg: "bg-blue-50",
+    badge: "bg-blue-100 text-blue-800", icon: <Repeat className="h-3 w-3" />,
+    alertBg: "bg-blue-50", alertText: "text-blue-900",
+  },
+  "recorrente": {
+    cardBorder: "border-amber-200", headerBg: "bg-amber-50",
+    badge: "bg-amber-200 text-amber-900", icon: <AlertCircle className="h-3 w-3" />,
+    alertBg: "bg-amber-50", alertText: "text-amber-900",
+  },
+  "lojista-suspeito": {
+    cardBorder: "border-red-300", headerBg: "bg-red-50",
+    badge: "bg-red-600 text-white", icon: <AlertCircle className="h-3 w-3" />,
+    alertBg: "bg-red-50", alertText: "text-red-900",
+  },
+};
 
 function Row({ label, value, bold, muted, tone }: { label: string; value: string; bold?: boolean; muted?: boolean; tone?: "good" | "warn" | "bad" }) {
   const toneClass = tone === "good" ? "text-green-700 dark:text-green-400"
