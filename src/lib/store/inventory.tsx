@@ -10,11 +10,18 @@ export type LojaInfo = {
   cidade: string;
 };
 
+export type VendedorInfo = {
+  codigo: string;
+  nome: string;
+  cpf?: string | null;
+};
+
 type InventoryState = {
   meta: SnapshotMeta | null;
   veiculos: VeiculoParsed[];
   warnings: string[];
   lojas: Record<number, LojaInfo>;
+  vendedores: Record<string, VendedorInfo>;
   vendasMeta: VendasSnapshotMeta | null;
   vendas: VendaParsed[];
   vendasWarnings: string[];
@@ -30,6 +37,7 @@ type InventoryState = {
 const INV_KEY = "navesa-mesa:inventory-v1";
 const LOJAS_KEY = "navesa-mesa:lojas-v1";
 const VENDAS_KEY = "navesa-mesa:vendas-v1";
+const VENDEDORES_KEY = "navesa-mesa:vendedores-v1";
 
 const SEED_LOJAS: Record<number, LojaInfo> = {
   2: { cod_empresa: 2, nome: "NAVESA FORD AEROPORTO", cidade: "Goiânia" },
@@ -45,6 +53,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   const [vendasMeta, setVendasMeta] = useState<VendasSnapshotMeta | null>(null);
   const [vendas, setVendas] = useState<VendaParsed[]>([]);
   const [vendasWarnings, setVendasWarnings] = useState<string[]>([]);
+  const [vendedores, setVendedores] = useState<Record<string, VendedorInfo>>({});
   const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
@@ -74,6 +83,13 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.warn("Falha ao restaurar lojas:", err);
       setLojas(SEED_LOJAS);
+    }
+
+    try {
+      const rawVendedores = localStorage.getItem(VENDEDORES_KEY);
+      if (rawVendedores) setVendedores(JSON.parse(rawVendedores));
+    } catch (err) {
+      console.warn("Falha ao restaurar vendedores:", err);
     }
 
     try {
@@ -184,6 +200,27 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.warn("Falha ao persistir vendas:", err);
     }
+
+    // Popular mapping de vendedores (código → nome completo) a partir das vendas
+    setVendedores((current) => {
+      const merged = { ...current };
+      for (const v of result.vendas) {
+        if (v.vendedor_codigo && v.vendedor_nome) {
+          merged[v.vendedor_codigo] = {
+            codigo: v.vendedor_codigo,
+            nome: v.vendedor_nome,
+            cpf: v.vendedor_cpf,
+          };
+        }
+        // "Quem recebeu" às vezes traz um código diferente — se já tivermos o nome dele em
+        // outra venda, fica resolvido pelo mapping existente.
+      }
+      try {
+        localStorage.setItem(VENDEDORES_KEY, JSON.stringify(merged));
+      } catch {}
+      return merged;
+    });
+
     // Merge lojas se vierem novas nas vendas
     setLojas((current) => {
       const merged = { ...current };
@@ -210,7 +247,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
 
   return (
     <Ctx.Provider value={{
-      meta, veiculos, warnings, lojas,
+      meta, veiculos, warnings, lojas, vendedores,
       vendasMeta, vendas, vendasWarnings,
       setFromParse, setVendasFromParse,
       updateLoja, removeLoja,
@@ -220,6 +257,13 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       {children}
     </Ctx.Provider>
   );
+}
+
+/** Resolve um código de vendedor (ex: "MPRUDENTE") para o nome completo, se conhecido. */
+export function nomeVendedor(codigo: string | null | undefined, vendedores: Record<string, VendedorInfo>): string {
+  if (!codigo) return "—";
+  const v = vendedores[codigo];
+  return v?.nome?.trim() || codigo;
 }
 
 export function useInventory() {

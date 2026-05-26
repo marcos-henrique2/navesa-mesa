@@ -3,11 +3,11 @@
 import { useMemo } from "react";
 import Link from "next/link";
 import { ArrowLeft, ShoppingCart, Banknote, Wrench, UserSquare2, TrendingUp, TrendingDown, MapPin, Calendar, CheckCircle2, Repeat } from "lucide-react";
-import { useInventory, nomeOuCodigo } from "@/lib/store/inventory";
+import { useInventory, nomeOuCodigo, nomeVendedor } from "@/lib/store/inventory";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
 
 export function VendaDetalhe({ chassi }: { chassi: string }) {
-  const { vendas, lojas, isHydrated } = useInventory();
+  const { vendas, lojas, vendedores, isHydrated } = useInventory();
 
   const venda = useMemo(() => vendas.find((v) => v.chassi === chassi), [vendas, chassi]);
 
@@ -73,7 +73,7 @@ export function VendaDetalhe({ chassi }: { chassi: string }) {
           <Row label="Dias até venda" value={venda.dias_estoque !== null ? `${formatInt(venda.dias_estoque)} dias` : "—"} tone={diasTone(venda.dias_estoque)} bold />
           <Row label="Vendedor" value={venda.vendedor_nome || venda.vendedor_codigo || "—"} />
           {venda.vendedor_cpf && <Row label="CPF vendedor" value={venda.vendedor_cpf} muted />}
-          {venda.vendedor_recebeu && <Row label="Quem recebeu" value={venda.vendedor_recebeu} muted />}
+          {venda.vendedor_recebeu && <Row label="Quem recebeu" value={nomeVendedor(venda.vendedor_recebeu, vendedores)} muted />}
         </Card>
       </div>
 
