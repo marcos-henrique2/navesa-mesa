@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Diamond, Loader2, AlertCircle, RefreshCw, CheckCircle2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Diamond, Loader2, AlertCircle, RefreshCw, CheckCircle2, Sparkles } from "lucide-react";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import type { FipeMarca, FipeModelo, FipeAno, FipeValor, FipeMatch } from "@/lib/fipe/types";
 import { getMarcas, getModelos, getAnos, getValor, parseFipeValor } from "@/lib/fipe/service";
 import { findMarca, findModelos, findAno } from "@/lib/fipe/matcher";
-import { getMatch, saveMatch } from "@/lib/store/fipeMatches";
+import { resolveMatch, saveMatch, forgetMatch, forgetModelMatch, countSimilarVeiculos, type MatchOrigem } from "@/lib/store/fipeMatches";
+import { useInventory } from "@/lib/store/inventory";
 import { formatBRL, cn } from "@/lib/utils";
 
 type Props = {
@@ -20,10 +21,12 @@ type State =
   | { kind: "needs-choice"; marca: FipeMarca; modelos: FipeModelo[]; sugeridos: FipeModelo[]; ano: number | null }
   | { kind: "needs-marca-choice"; marcas: FipeMarca[] }
   | { kind: "needs-ano-choice"; marca: FipeMarca; modelo: FipeModelo; anos: FipeAno[] }
-  | { kind: "ok"; match: FipeMatch; valor: FipeValor }
+  | { kind: "ok"; match: FipeMatch; valor: FipeValor; origem: Exclude<MatchOrigem, null> }
   | { kind: "error"; message: string };
 
 export function FipeBox({ veiculo, onValorChange }: Props) {
+  const { veiculos } = useInventory();
+  const similares = useMemo(() => countSimilarVeiculos(veiculo, veiculos), [veiculo, veiculos]);
   const [state, setState] = useState<State>({ kind: "idle" });
 
   useEffect(() => {
@@ -34,11 +37,11 @@ export function FipeBox({ veiculo, onValorChange }: Props) {
     setState({ kind: "loading" });
 
     if (useCachedMatch) {
-      const saved = getMatch(veiculo.chassi);
-      if (saved) {
+      const resolved = resolveMatch(veiculo);
+      if (resolved) {
         try {
-          const valor = await getValor(saved.marcaCod, saved.modeloCod, saved.anoCod);
-          setState({ kind: "ok", match: saved, valor });
+          const valor = await getValor(resolved.match.marcaCod, resolved.match.modeloCod, resolved.match.anoCod);
+          setState({ kind: "ok", match: resolved.match, valor, origem: resolved.origem });
           onValorChange?.(parseFipeValor(valor.Valor));
           return;
         } catch (err) {
@@ -49,7 +52,7 @@ export function FipeBox({ veiculo, onValorChange }: Props) {
 
     try {
       const marcas = await getMarcas();
-      let marca = veiculo.marca ? findMarca(veiculo.marca, marcas) : null;
+      const marca = veiculo.marca ? findMarca(veiculo.marca, marcas) : null;
 
       if (!marca) {
         setState({ kind: "needs-marca-choice", marcas });
@@ -111,12 +114,18 @@ export function FipeBox({ veiculo, onValorChange }: Props) {
         anoCod: ano.codigo,
         anoNome: ano.nome,
       };
-      saveMatch(veiculo.chassi, match);
-      setState({ kind: "ok", match, valor });
+      saveMatch(veiculo, match);
+      setState({ kind: "ok", match, valor, origem: "manual-chassi" });
       onValorChange?.(parseFipeValor(valor.Valor));
     } catch (err) {
       setState({ kind: "error", message: err instanceof Error ? err.message : "Erro desconhecido" });
     }
+  }
+
+  function refazer(mode: "este" | "todos-similares") {
+    if (mode === "todos-similares") forgetModelMatch(veiculo);
+    forgetMatch(veiculo);
+    start(false);
   }
 
   return (
@@ -127,13 +136,24 @@ export function FipeBox({ veiculo, onValorChange }: Props) {
           FIPE em tempo real
         </h3>
         {state.kind === "ok" && (
-          <button
-            onClick={() => start(false)}
-            className="inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
-            title="Refazer match"
-          >
-            <RefreshCw className="h-3 w-3" /> Refazer
-          </button>
+          <div className="flex gap-2 text-xs">
+            <button
+              onClick={() => refazer("este")}
+              className="inline-flex items-center gap-1 text-zinc-500 hover:text-zinc-900"
+              title="Refazer match só deste carro"
+            >
+              <RefreshCw className="h-3 w-3" /> Refazer
+            </button>
+            {state.origem === "aprendido-modelo" && similares > 0 && (
+              <button
+                onClick={() => refazer("todos-similares")}
+                className="inline-flex items-center gap-1 text-amber-600 hover:text-amber-800"
+                title={`Esquece a escolha de modelo e refaz para ${similares + 1} carros`}
+              >
+                Refazer p/ todos ({similares + 1})
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -202,12 +222,18 @@ export function FipeBox({ veiculo, onValorChange }: Props) {
       {state.kind === "ok" && (
         <div className="mt-4 space-y-3">
           <div className="flex items-baseline justify-between gap-3">
-            <p className="text-3xl font-bold tabular-nums">{state.valor.Valor.replace("R$", "R$ ")}</p>
-            <p className="text-xs text-zinc-500">Tabela: {state.valor.MesReferencia}</p>
+            <p className="text-3xl font-bold tabular-nums text-slate-900">{state.valor.Valor.replace("R$", "R$ ")}</p>
+            <p className="text-xs text-slate-500">Tabela: {state.valor.MesReferencia}</p>
           </div>
-          <div className="rounded-md bg-zinc-50 p-3 text-xs dark:bg-zinc-950">
-            <p className="flex items-center gap-1.5"><CheckCircle2 className="h-3 w-3 text-green-600" /> {state.match.marcaNome} · {state.match.modeloNome}</p>
-            <p className="mt-1 ml-5 text-zinc-500">{state.match.anoNome} · FIPE {state.valor.CodigoFipe}</p>
+          <div className="rounded-md bg-slate-50 p-3 text-xs">
+            <p className="flex items-center gap-1.5 font-medium text-slate-900"><CheckCircle2 className="h-3 w-3 text-emerald-600" /> {state.match.marcaNome} · {state.match.modeloNome}</p>
+            <p className="mt-1 ml-5 text-slate-500">{state.match.anoNome} · FIPE {state.valor.CodigoFipe}</p>
+            {state.origem === "aprendido-modelo" && (
+              <p className="mt-2 ml-5 inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                <Sparkles className="h-3 w-3" /> Match aprendido de outro carro deste modelo
+                {similares > 0 && <span className="text-amber-700">· aplicado a {similares + 1} carros</span>}
+              </p>
+            )}
           </div>
 
           <ComparacaoPreco precoFipe={parseFipeValor(state.valor.Valor)} precoVenda={veiculo.preco_venda} />
