@@ -91,7 +91,15 @@ export function DashboardHome() {
                     accent={vendasMargem >= 0 ? "emerald" : "red"}
                     label={vendasTemOficial ? "Margem (oficial NBS)" : "Margem (estimada)"}
                     value={formatBRL(vendasMargem)}
-                    sublabel={`${vendasValor > 0 ? ((vendasMargem / vendasValor) * 100).toFixed(2) : "—"}% sobre faturamento`}
+                    sublabel={(() => {
+                      const pct = vendasValor > 0 ? ((vendasMargem / vendasValor) * 100).toFixed(2) : "—";
+                      const cobertura = aggVendas.cobertura;
+                      // Só mostra cobertura quando há custos oficiais
+                      if (!vendasTemOficial) return `${pct}% sobre faturamento`;
+                      // Cobertura completa: omite (visualmente limpo)
+                      if (cobertura >= 0.999) return `${pct}% sobre faturamento · cobertura 100%`;
+                      return `${pct}% sobre faturamento · cobertura ${(cobertura * 100).toFixed(1)}%`;
+                    })()}
                   />
                 </div>
                 {vendasMeta?.periodo_inicio && vendasMeta?.periodo_fim && (
