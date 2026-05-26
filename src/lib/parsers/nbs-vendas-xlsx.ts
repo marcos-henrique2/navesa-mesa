@@ -65,42 +65,89 @@ export type VendasParseResult = {
   warnings: string[];
 };
 
-const COL = {
-  veiculo: 0,
-  cor_externa: 2,
-  modelo: 3,
-  chassi_resumido: 6,
-  cod_cliente: 9,
-  vendedor_codigo: 12,
-  chassi_completo: 15,
-  total_nota_fabrica: 19,
-  data_faturamento: 24,
-  data_entrada: 25,
-  placa_usado: 30,
-  valor_venda: 32,
-  custo_floor_plan: 34,
-  ano_modelo: 40,
-  preco_venda: 41,
-  tipo: 50,
-  data_venda: 52,
-  margem_pct: 56,
-  comissao_final_vendedor: 84,
-  custo_total_final: 90,
-  cod_empresa_vendedora: 116,
-  nome_cliente: 121,
-  empresa_vendedora: 130,
-  descricao_marca: 132,
-  vendedor_recebeu: 138,
-  patio: 156,
-  despesas_gerais: 165,
-  cpf_vendedor: 277,
-  nome_vendedor: 278,
-  cidade_cliente: 317,
-  uf_cliente: 318,
-  placa_troca: 341,
-  renavam: 47,
-  media_dias: 281,
-} as const;
+/**
+ * Mapeamento de campo canônico -> lista de headers possíveis no XLSX do NBS.
+ * Quando houver múltiplas colunas com o mesmo nome (ex: "Cor Externa" 3x),
+ * usamos a que tiver MAIS células preenchidas na amostra inicial.
+ */
+const FIELD_HEADERS: Record<string, string[]> = {
+  modelo: ["Modelo", "Decrição Modelo", "Descrição Modelo"],
+  chassi: ["Chassi Completo"],
+  placa: ["Placa Usado", "Placa"],
+  valor_venda: ["Valor Venda"],
+  preco_venda: ["Preço venda", "Preço Venda"],
+  total_nota_fabrica: ["Total Nota Fabrica"],
+  custo_floor_plan: ["Custo Floor-Plan Final"],
+  custo_total_final: ["Custo Total Final"],
+  data_venda: ["Data venda", "Dt.Venda", "Data Venda"],
+  data_faturamento: ["Data Faturamento"],
+  data_entrada: ["Data Entrada"],
+  cod_empresa_vendedora: ["Cód. Empresa Vendedora"],
+  empresa_vendedora: ["Empresa Vendedora", "Empresa"],
+  patio: ["Pátio", "Patio"],
+  vendedor_codigo: ["Vendedor"],
+  vendedor_nome: ["Nome Vendedor Completo"],
+  vendedor_cpf: ["CPF do Vendedor"],
+  vendedor_recebeu: ["Vendedor que Recebeu", "Vendedor quem Recebeu"],
+  cliente_codigo: ["Cód. Cliente"],
+  cliente_nome: ["Nome Cliente"],
+  cliente_cidade: ["Cidade Cliente"],
+  cliente_uf: ["UF", "Cliente UF"],
+  cor_externa: ["Cor Externa"],
+  ano_modelo: ["Ano/Modelo", "Ano/m"],
+  renavam: ["Renavam"],
+  comb: ["Comb"],
+  tipo: ["Tipo"],
+  marca: ["Descrição Marca", "Marca", "Linha1"],
+  media_dias: ["MEDIA_DIAS", "Media dia", "Media Dias"],
+  comissao_vendedor: ["Comissão Final Vendedor"],
+  despesas_gerais: ["Desp. Gerais", "Desp.Gerais"],
+  placa_troca: ["Placa veic. troca", "Placa Veic. Troca"],
+  margem_pct: ["Margem%", "Margem Final"],
+};
+
+/**
+ * Para cada campo, retorna o índice de coluna escolhido (ou -1 se não encontrado).
+ * Quando o mesmo header aparece em múltiplas colunas, escolhe a que tem MAIS dados
+ * preenchidos numa amostra das primeiras linhas.
+ */
+function lookupColumns(
+  headerRow: unknown[],
+  sampleRows: unknown[][],
+): Record<string, number> {
+  const norm = (s: unknown) => String(s ?? "").trim().toLowerCase();
+  const out: Record<string, number> = {};
+
+  for (const [field, headers] of Object.entries(FIELD_HEADERS)) {
+    const targets = headers.map(norm);
+    const candidates: number[] = [];
+    for (let i = 0; i < headerRow.length; i++) {
+      if (targets.includes(norm(headerRow[i]))) candidates.push(i);
+    }
+    if (candidates.length === 0) {
+      out[field] = -1;
+      continue;
+    }
+    if (candidates.length === 1) {
+      out[field] = candidates[0];
+      continue;
+    }
+    // Múltiplas: escolher a com mais valores preenchidos não-zero na amostra
+    let best = candidates[0];
+    let bestFill = -1;
+    for (const c of candidates) {
+      let fill = 0;
+      for (const row of sampleRows) {
+        const v = row[c];
+        if (v !== null && v !== undefined && v !== "" && v !== 0) fill++;
+      }
+      if (fill > bestFill) { bestFill = fill; best = c; }
+    }
+    out[field] = best;
+  }
+
+  return out;
+}
 
 function asStr(v: unknown): string | null {
   if (v === null || v === undefined) return null;
@@ -136,13 +183,13 @@ function parseAnoM(value: unknown): { fab: number | null; mod: number | null } {
 function asDate(v: unknown): Date | null {
   if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v;
   if (typeof v === "number") {
-    // Excel serial date
+    // Serial date Excel
+    if (v < 1 || v > 100000) return null;
     const date = new Date(Math.round((v - 25569) * 86400 * 1000));
     return Number.isNaN(date.getTime()) ? null : date;
   }
   const s = asStr(v);
   if (!s) return null;
-  // ISO 2026-04-29 or 2026-04-29T11:07:55 or 2026-04-29 11:07:55
   const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2}):(\d{2}))?/);
   if (iso) {
     return new Date(
@@ -150,7 +197,6 @@ function asDate(v: unknown): Date | null {
       iso[4] ? parseInt(iso[4], 10) : 0, iso[5] ? parseInt(iso[5], 10) : 0, iso[6] ? parseInt(iso[6], 10) : 0,
     );
   }
-  // dd/mm/yyyy
   const br = s.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}):(\d{2}))?/);
   if (br) {
     return new Date(
@@ -180,6 +226,12 @@ function detectTipoCliente(codigo: string | null): "PF" | "PJ" | null {
   return null;
 }
 
+function get(row: unknown[], cols: Record<string, number>, field: string): unknown {
+  const idx = cols[field];
+  if (idx === undefined || idx < 0 || idx >= row.length) return null;
+  return row[idx];
+}
+
 export async function parseNbsVendasXlsx(
   fileBuffer: ArrayBuffer | Buffer,
   fileName: string,
@@ -200,7 +252,6 @@ export async function parseNbsVendasXlsx(
     throw new Error("Estrutura inesperada: faltam linhas. Esperado título (0), data (1), header (2), dados (3+).");
   }
 
-  // Validar que é "Veículos vendidos" — não estoque
   const titulo = asStr(rows[0]?.[0])?.toLowerCase() ?? "";
   if (!titulo.includes("vendid")) {
     warnings.push(`Título inesperado: "${titulo}". Pode não ser relatório de vendas.`);
@@ -208,7 +259,21 @@ export async function parseNbsVendasXlsx(
 
   const dataGeracao = asDate(asStr(rows[1]?.[0])?.match(/(\d{2}\/\d{2}\/\d{4}\s+\d{2}:\d{2}:\d{2})/)?.[1]);
 
+  const headerRow = rows[2];
   const dataRows = rows.slice(3);
+
+  // Mapear colunas usando header + amostra das primeiras 30 linhas pra resolver duplicatas
+  const sample = dataRows.slice(0, 30);
+  const cols = lookupColumns(headerRow, sample);
+
+  // Validar colunas essenciais
+  const essenciais = ["chassi", "placa", "modelo"];
+  for (const e of essenciais) {
+    if (cols[e] < 0) {
+      throw new Error(`Coluna essencial não encontrada no XLSX: "${e}". Headers procurados: ${FIELD_HEADERS[e].join(" | ")}`);
+    }
+  }
+
   const vendas: VendaParsed[] = [];
   const lojasSet = new Set<number>();
   const vendedoresSet = new Set<string>();
@@ -218,75 +283,75 @@ export async function parseNbsVendasXlsx(
     const row = dataRows[i];
     if (!row) continue;
 
-    const tipo = asStr(row[COL.tipo]);
+    const tipo = asStr(get(row, cols, "tipo"));
     if (tipo && !tipo.toUpperCase().startsWith("USADO")) {
       warnings.push(`Linha ${i + 4}: Tipo="${tipo}" (não é Usado). Pulada.`);
       continue;
     }
 
-    const chassi = asStr(row[COL.chassi_completo]);
-    const placa = asStr(row[COL.placa_usado]);
-    const modelo = asStr(row[COL.modelo]);
-    const empresa = parseEmpresaCell(row[COL.empresa_vendedora]);
-    const codEmpresa = empresa?.cod ?? asInt(row[COL.cod_empresa_vendedora]);
+    const chassi = asStr(get(row, cols, "chassi"));
+    const placa = asStr(get(row, cols, "placa"));
+    const modelo = asStr(get(row, cols, "modelo"));
+    const empresa = parseEmpresaCell(get(row, cols, "empresa_vendedora"));
+    const codEmpresa = empresa?.cod ?? asInt(get(row, cols, "cod_empresa_vendedora"));
 
     if (!chassi || !placa || !modelo || codEmpresa === null) {
-      warnings.push(`Linha ${i + 4} ignorada: faltam campos essenciais (chassi/placa/modelo/loja).`);
+      warnings.push(`Linha ${i + 4} ignorada: faltam campos essenciais.`);
       continue;
     }
 
-    const { fab, mod } = parseAnoM(row[COL.ano_modelo]);
-    const cliente_codigo = asStr(row[COL.cod_cliente]);
-    const data_venda = asDate(row[COL.data_venda]);
+    const { fab, mod } = parseAnoM(get(row, cols, "ano_modelo"));
+    const cliente_codigo = asStr(get(row, cols, "cliente_codigo"));
+    const data_venda = asDate(get(row, cols, "data_venda"));
 
     if (data_venda) {
       if (!minData || data_venda < minData) minData = data_venda;
       if (!maxData || data_venda > maxData) maxData = data_venda;
     }
 
-    const vendedor_codigo = asStr(row[COL.vendedor_codigo]);
+    const vendedor_codigo = asStr(get(row, cols, "vendedor_codigo"));
     if (vendedor_codigo) vendedoresSet.add(vendedor_codigo);
 
     vendas.push({
       chassi,
       placa,
       modelo,
-      marca: asStr(row[COL.descricao_marca]),
+      marca: asStr(get(row, cols, "marca")),
       ano_fabricacao: fab,
       ano_modelo: mod,
-      cor_externa: asStr(row[COL.cor_externa])?.toUpperCase() ?? null,
-      renavam: asStr(row[COL.renavam]),
+      cor_externa: asStr(get(row, cols, "cor_externa"))?.toUpperCase() ?? null,
+      renavam: asStr(get(row, cols, "renavam")),
 
       cod_empresa: codEmpresa,
       empresa_nome: empresa?.nome ?? null,
-      patio: asStr(row[COL.patio]),
+      patio: asStr(get(row, cols, "patio")),
 
       vendedor_codigo,
-      vendedor_nome: asStr(row[COL.nome_vendedor]),
-      vendedor_cpf: asStr(row[COL.cpf_vendedor]),
-      vendedor_recebeu: asStr(row[COL.vendedor_recebeu]),
+      vendedor_nome: asStr(get(row, cols, "vendedor_nome")),
+      vendedor_cpf: asStr(get(row, cols, "vendedor_cpf")),
+      vendedor_recebeu: asStr(get(row, cols, "vendedor_recebeu")),
 
       cliente_codigo,
-      cliente_nome: asStr(row[COL.nome_cliente]) ?? "(sem nome)",
+      cliente_nome: asStr(get(row, cols, "cliente_nome")) ?? "(sem nome)",
       cliente_tipo: detectTipoCliente(cliente_codigo),
-      cliente_cidade: asStr(row[COL.cidade_cliente]),
-      cliente_uf: asStr(row[COL.uf_cliente]),
+      cliente_cidade: asStr(get(row, cols, "cliente_cidade")),
+      cliente_uf: asStr(get(row, cols, "cliente_uf")),
 
       data_venda,
-      data_faturamento: asDate(row[COL.data_faturamento]),
-      data_entrada: asDate(row[COL.data_entrada]),
+      data_faturamento: asDate(get(row, cols, "data_faturamento")),
+      data_entrada: asDate(get(row, cols, "data_entrada")),
 
-      valor_venda: asNum(row[COL.valor_venda]),
-      preco_venda_tabela: asNum(row[COL.preco_venda]),
-      total_nota_fabrica: asNum(row[COL.total_nota_fabrica]),
-      custo_floor_plan: asNum(row[COL.custo_floor_plan]),
-      custo_total_final: asNum(row[COL.custo_total_final]),
-      despesas_gerais: asNum(row[COL.despesas_gerais]),
-      margem_pct: asNum(row[COL.margem_pct]),
-      comissao_vendedor: asNum(row[COL.comissao_final_vendedor]),
+      valor_venda: asNum(get(row, cols, "valor_venda")),
+      preco_venda_tabela: asNum(get(row, cols, "preco_venda")),
+      total_nota_fabrica: asNum(get(row, cols, "total_nota_fabrica")),
+      custo_floor_plan: asNum(get(row, cols, "custo_floor_plan")),
+      custo_total_final: asNum(get(row, cols, "custo_total_final")),
+      despesas_gerais: asNum(get(row, cols, "despesas_gerais")),
+      margem_pct: asNum(get(row, cols, "margem_pct")),
+      comissao_vendedor: asNum(get(row, cols, "comissao_vendedor")),
 
-      dias_estoque: asInt(row[COL.media_dias]),
-      placa_troca: asStr(row[COL.placa_troca]),
+      dias_estoque: asInt(get(row, cols, "media_dias")),
+      placa_troca: asStr(get(row, cols, "placa_troca")),
     });
 
     lojasSet.add(codEmpresa);
