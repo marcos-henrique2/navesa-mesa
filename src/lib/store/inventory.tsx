@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
 import type { ParseResult, VeiculoParsed, SnapshotMeta } from "@/lib/parsers/nbs-xlsx";
 import type { VendasParseResult, VendaParsed, VendasSnapshotMeta } from "@/lib/parsers/nbs-vendas-xlsx";
+import type { CustosParseResult, CustoDetalhado, CustosMeta } from "@/lib/parsers/nbs-custos-xls";
 
 export type LojaInfo = {
   cod_empresa: number;
@@ -25,12 +26,18 @@ type InventoryState = {
   vendasMeta: VendasSnapshotMeta | null;
   vendas: VendaParsed[];
   vendasWarnings: string[];
+  custosMeta: CustosMeta | null;
+  /** Custos detalhados indexados por placa. Subiu o relatório de custos? Está aqui. */
+  custosPorPlaca: Record<string, CustoDetalhado>;
+  custosWarnings: string[];
   setFromParse: (result: ParseResult) => void;
   setVendasFromParse: (result: VendasParseResult) => void;
+  setCustosFromParse: (result: CustosParseResult) => void;
   updateLoja: (cod: number, patch: Partial<LojaInfo>) => void;
   removeLoja: (cod: number) => void;
   clear: () => void;
   clearVendas: () => void;
+  clearCustos: () => void;
   isHydrated: boolean;
 };
 
@@ -38,6 +45,7 @@ const INV_KEY = "navesa-mesa:inventory-v1";
 const LOJAS_KEY = "navesa-mesa:lojas-v1";
 const VENDAS_KEY = "navesa-mesa:vendas-v1";
 const VENDEDORES_KEY = "navesa-mesa:vendedores-v1";
+const CUSTOS_KEY = "navesa-mesa:custos-v1";
 
 const SEED_LOJAS: Record<number, LojaInfo> = {
   2: { cod_empresa: 2, nome: "NAVESA FORD AEROPORTO", cidade: "Goiânia" },
@@ -54,6 +62,9 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   const [vendas, setVendas] = useState<VendaParsed[]>([]);
   const [vendasWarnings, setVendasWarnings] = useState<string[]>([]);
   const [vendedores, setVendedores] = useState<Record<string, VendedorInfo>>({});
+  const [custosMeta, setCustosMeta] = useState<CustosMeta | null>(null);
+  const [custosPorPlaca, setCustosPorPlaca] = useState<Record<string, CustoDetalhado>>({});
+  const [custosWarnings, setCustosWarnings] = useState<string[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
@@ -90,6 +101,24 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       if (rawVendedores) setVendedores(JSON.parse(rawVendedores));
     } catch (err) {
       console.warn("Falha ao restaurar vendedores:", err);
+    }
+
+    try {
+      const rawCustos = localStorage.getItem(CUSTOS_KEY);
+      if (rawCustos) {
+        const parsed = JSON.parse(rawCustos) as { meta: CustosMeta; custosPorPlaca: Record<string, CustoDetalhado>; warnings: string[] };
+        if (parsed.meta?.data_geracao) parsed.meta.data_geracao = new Date(parsed.meta.data_geracao) as unknown as Date;
+        for (const k of Object.keys(parsed.custosPorPlaca ?? {})) {
+          const c = parsed.custosPorPlaca[k];
+          if (c.data_fatura) c.data_fatura = new Date(c.data_fatura) as unknown as Date;
+          if (c.data_venda) c.data_venda = new Date(c.data_venda) as unknown as Date;
+        }
+        setCustosMeta(parsed.meta);
+        setCustosPorPlaca(parsed.custosPorPlaca ?? {});
+        setCustosWarnings(parsed.warnings ?? []);
+      }
+    } catch (err) {
+      console.warn("Falha ao restaurar custos:", err);
     }
 
     try {
@@ -245,13 +274,41 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(VENDAS_KEY);
   }, []);
 
+  const setCustosFromParse = useCallback((result: CustosParseResult) => {
+    // Indexar por placa para lookup O(1)
+    const porPlaca: Record<string, CustoDetalhado> = {};
+    for (const c of result.custos) {
+      porPlaca[c.placa] = c;
+    }
+    setCustosMeta(result.meta);
+    setCustosPorPlaca(porPlaca);
+    setCustosWarnings(result.warnings);
+    try {
+      localStorage.setItem(CUSTOS_KEY, JSON.stringify({
+        meta: result.meta,
+        custosPorPlaca: porPlaca,
+        warnings: result.warnings,
+      }));
+    } catch (err) {
+      console.warn("Falha ao persistir custos:", err);
+    }
+  }, []);
+
+  const clearCustos = useCallback(() => {
+    setCustosMeta(null);
+    setCustosPorPlaca({});
+    setCustosWarnings([]);
+    localStorage.removeItem(CUSTOS_KEY);
+  }, []);
+
   return (
     <Ctx.Provider value={{
       meta, veiculos, warnings, lojas, vendedores,
       vendasMeta, vendas, vendasWarnings,
-      setFromParse, setVendasFromParse,
+      custosMeta, custosPorPlaca, custosWarnings,
+      setFromParse, setVendasFromParse, setCustosFromParse,
       updateLoja, removeLoja,
-      clear, clearVendas,
+      clear, clearVendas, clearCustos,
       isHydrated,
     }}>
       {children}
