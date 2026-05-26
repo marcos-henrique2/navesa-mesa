@@ -5,12 +5,15 @@ import {
   useReactTable, getCoreRowModel, getFilteredRowModel, getSortedRowModel, getPaginationRowModel,
   flexRender, type ColumnDef, type SortingState,
 } from "@tanstack/react-table";
-import { ArrowUpDown, ArrowUp, ArrowDown, Search, Trophy, MapPin, TrendingDown, TrendingUp, AlertTriangle } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, Search, Trophy, TrendingDown, TrendingUp } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useInventory } from "@/lib/store/inventory";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
+import { ComposicaoCustos } from "./ComposicaoCustos";
 import type { VendaParsed } from "@/lib/parsers/nbs-vendas-xlsx";
 
 export function VendasAnalise() {
+  const router = useRouter();
   const { vendas, vendasMeta, isHydrated } = useInventory();
 
   const [search, setSearch] = useState("");
@@ -185,6 +188,9 @@ export function VendasAnalise() {
         <KpiCard title="Trocas" value={formatInt(kpis.troca)} subtitle={`${((kpis.troca / Math.max(1, kpis.qt)) * 100).toFixed(0)}% das vendas`} />
       </div>
 
+      {/* Composição de custos */}
+      <ComposicaoCustos vendas={filtered} />
+
       {/* Filtros */}
       <div className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
         <Select label="Loja" value={filtroLoja} onChange={setFiltroLoja} options={[["all", "Todas"], ...lojas.map((l) => [l, l] as [string, string])]} />
@@ -271,7 +277,12 @@ export function VendasAnalise() {
             </thead>
             <tbody>
               {table.getRowModel().rows.map((row) => (
-                <tr key={row.id} className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/50">
+                <tr
+                  key={row.id}
+                  onClick={() => router.push(`/vendas/${row.original.chassi}`)}
+                  className="cursor-pointer border-b border-zinc-100 last:border-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/50"
+                  title="Clique para ver detalhe"
+                >
                   {row.getVisibleCells().map((cell) => (
                     <td key={cell.id} className="px-3 py-2 align-middle">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
@@ -299,12 +310,18 @@ export function VendasAnalise() {
 }
 
 function KpiCard({ title, value, subtitle, tone }: { title: string; value: string; subtitle: string; tone?: "good" | "bad" }) {
-  const toneClass = tone === "good" ? "border-l-green-500" : tone === "bad" ? "border-l-red-500" : "border-l-purple-500";
+  const tones = {
+    good: { bg: "from-emerald-50 to-white", bar: "bg-emerald-500", label: "text-emerald-700" },
+    bad: { bg: "from-red-50 to-white", bar: "bg-red-500", label: "text-red-700" },
+    neutral: { bg: "from-[var(--brand-50)] to-white", bar: "bg-[var(--brand-600)]", label: "text-[var(--brand-700)]" },
+  };
+  const t = tones[tone ?? "neutral"];
   return (
-    <div className={cn("rounded-lg border border-zinc-200 border-l-4 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900", toneClass)}>
-      <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">{title}</p>
-      <p className="mt-1 text-xl font-bold tabular-nums">{value}</p>
-      <p className="text-[11px] text-zinc-500">{subtitle}</p>
+    <div className={cn("relative overflow-hidden rounded-xl border border-[var(--border-soft)] bg-gradient-to-br p-4 shadow-[var(--shadow-sm)]", t.bg)}>
+      <div className={cn("absolute left-0 top-0 h-full w-1", t.bar)} />
+      <p className={cn("text-[10px] font-semibold uppercase tracking-wider", t.label)}>{title}</p>
+      <p className="mt-1 text-xl font-bold tabular-nums tracking-tight text-slate-900">{value}</p>
+      <p className="text-[11px] text-slate-500">{subtitle}</p>
     </div>
   );
 }

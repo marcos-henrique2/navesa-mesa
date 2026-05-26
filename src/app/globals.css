@@ -1,26 +1,91 @@
 @import "tailwindcss";
 
+/* Força light mode: variant dark: só ativa em ancestral com .dark.
+   Como nada no app coloca .dark, ficamos sempre claro mesmo se o SO estiver em dark. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Navesa Mesa — Design System
+   Paleta corporativa azul-marinho + cinzas claros. Light por default. */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Brand */
+  --brand-50:  #EFF4FB;
+  --brand-100: #DBE5F2;
+  --brand-200: #B7CBE5;
+  --brand-300: #8FAFD4;
+  --brand-400: #6792C2;
+  --brand-500: #4476B0;
+  --brand-600: #2F5E96;
+  --brand-700: #234876;
+  --brand-800: #18345A;
+  --brand-900: #0F2542;
+  --brand-950: #081933;
+
+  /* Surfaces */
+  --bg-app:    #F6F8FC;
+  --bg-surface:#FFFFFF;
+  --bg-muted:  #F1F4FA;
+
+  /* Text */
+  --text-strong: #0F172A;
+  --text-body:   #334155;
+  --text-muted:  #64748B;
+  --text-subtle: #94A3B8;
+
+  /* Borders */
+  --border-soft: #E2E8F0;
+  --border-base: #CBD5E1;
+
+  /* Status */
+  --success: #047857;
+  --success-bg: #ECFDF5;
+  --warning: #B45309;
+  --warning-bg: #FFFBEB;
+  --danger:  #B91C1C;
+  --danger-bg: #FEF2F2;
+
+  /* Shadows (sutis pra parecer premium) */
+  --shadow-sm:  0 1px 2px 0 rgba(15, 37, 66, 0.04);
+  --shadow:     0 1px 3px 0 rgba(15, 37, 66, 0.06), 0 1px 2px -1px rgba(15, 37, 66, 0.04);
+  --shadow-md:  0 4px 8px -2px rgba(15, 37, 66, 0.08), 0 2px 4px -2px rgba(15, 37, 66, 0.04);
+  --shadow-lg:  0 12px 24px -8px rgba(15, 37, 66, 0.12), 0 4px 8px -4px rgba(15, 37, 66, 0.06);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--bg-app);
+  --color-foreground: var(--text-strong);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --color-brand-50:  var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-300: var(--brand-300);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+  --color-brand-800: var(--brand-800);
+  --color-brand-900: var(--brand-900);
+  --color-brand-950: var(--brand-950);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  background: var(--bg-app);
+  color: var(--text-body);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg-app);
+  color: var(--text-body);
 }
+
+/* Tabular nums por default em qualquer .tabular-nums (já tem no Tailwind, reforço aqui) */
+.tabular-nums { font-variant-numeric: tabular-nums; }
+
+/* Scrollbar suave */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: #94A3B8; }

@@ -370,16 +370,21 @@ function SegBtn({ active, onClick, children, accent }: { active: boolean; onClic
 }
 
 function Kpi({ title, value, subtitle, tone, active }: { title: string; value: string; subtitle: string; tone: "green" | "amber" | "zinc"; active: boolean }) {
-  const toneClass = { green: "border-l-green-500", amber: "border-l-amber-500", zinc: "border-l-zinc-500" }[tone];
+  const toneClass = {
+    green: { bg: "from-emerald-50 to-white", bar: "bg-emerald-500", label: "text-emerald-700" },
+    amber: { bg: "from-amber-50 to-white", bar: "bg-amber-500", label: "text-amber-700" },
+    zinc: { bg: "from-[var(--brand-50)] to-white", bar: "bg-[var(--brand-600)]", label: "text-[var(--brand-700)]" },
+  }[tone];
   return (
     <div className={cn(
-      "rounded-lg border border-zinc-200 border-l-4 bg-white p-5 transition dark:border-zinc-800 dark:bg-zinc-900",
-      toneClass,
-      active && "ring-2 ring-blue-400 dark:ring-blue-600",
+      "relative overflow-hidden rounded-xl border border-[var(--border-soft)] bg-gradient-to-br p-5 shadow-[var(--shadow-sm)] transition",
+      toneClass.bg,
+      active && "ring-2 ring-[var(--brand-400)]",
     )}>
-      <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">{title}</p>
-      <p className="mt-2 text-2xl font-bold tabular-nums">{value}</p>
-      <p className="mt-1 text-xs text-zinc-500">{subtitle}</p>
+      <div className={cn("absolute left-0 top-0 h-full w-1", toneClass.bar)} />
+      <p className={cn("text-[10px] font-semibold uppercase tracking-wider", toneClass.label)}>{title}</p>
+      <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight text-slate-900">{value}</p>
+      <p className="mt-1 text-xs text-slate-500">{subtitle}</p>
     </div>
   );
 }

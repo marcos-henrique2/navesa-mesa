@@ -1,21 +1,23 @@
 import Link from "next/link";
+import { Upload } from "lucide-react";
 import { VeiculosTable } from "@/components/VeiculosTable";
+import { PageHeader } from "@/components/AppShell";
 
 export default function VeiculosPage() {
   return (
-    <main className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
-      <div className="mx-auto max-w-7xl px-6 py-10">
-        <div className="flex items-center justify-between">
-          <div>
-            <Link href="/" className="text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100">← voltar</Link>
-            <h1 className="mt-4 text-2xl font-bold">🚗 Estoque de veículos</h1>
-          </div>
-          <Link href="/upload" className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900">📤 Novo upload</Link>
-        </div>
-        <div className="mt-8">
-          <VeiculosTable />
-        </div>
+    <>
+      <PageHeader
+        title="Estoque de veículos"
+        subtitle="KPIs, filtros e tabela completa do estoque atual"
+        action={
+          <Link href="/upload" className="inline-flex items-center gap-2 rounded-lg bg-[var(--brand-700)] px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-[var(--brand-800)]">
+            <Upload className="h-4 w-4" /> Novo upload
+          </Link>
+        }
+      />
+      <div className="mx-auto max-w-7xl px-6 py-8">
+        <VeiculosTable />
       </div>
-    </main>
+    </>
   );
 }
