@@ -27,9 +27,15 @@ export type SnapshotMeta = {
   total_lojas: number;
 };
 
+export type LojaParsed = {
+  cod_empresa: number;
+  nome: string;
+};
+
 export type ParseResult = {
   meta: SnapshotMeta;
   veiculos: VeiculoParsed[];
+  lojas: LojaParsed[];
   warnings: string[];
 };
 
@@ -50,7 +56,19 @@ const COL = {
   descricao_situacao: 37,
   custo_total: 46,
   entrada: 50,
+  empresa_nome: 401,
 } as const;
+
+function parseEmpresaCell(value: unknown): { cod: number; nome: string } | null {
+  const s = asStr(value);
+  if (!s) return null;
+  const m = s.match(/^0*(\d+)\s+(.+)$/);
+  if (!m) return null;
+  const cod = parseInt(m[1], 10);
+  const nome = m[2].trim();
+  if (!Number.isFinite(cod) || !nome) return null;
+  return { cod, nome };
+}
 
 function asStr(v: unknown): string | null {
   if (v === null || v === undefined) return null;
@@ -145,7 +163,7 @@ export async function parseNbsXlsx(
 
   const dataRows = rows.slice(3);
   const veiculos: VeiculoParsed[] = [];
-  const lojasSet = new Set<number>();
+  const lojasMap = new Map<number, string>();
 
   for (let i = 0; i < dataRows.length; i++) {
     const row = dataRows[i];
@@ -184,17 +202,27 @@ export async function parseNbsXlsx(
       vendedor_recebeu: asStr(row[COL.vendedor_recebeu]),
     });
 
-    lojasSet.add(cod_empresa);
+    const empresa = parseEmpresaCell(row[COL.empresa_nome]);
+    if (empresa && empresa.cod === cod_empresa && !lojasMap.has(empresa.cod)) {
+      lojasMap.set(empresa.cod, empresa.nome);
+    } else if (!lojasMap.has(cod_empresa)) {
+      lojasMap.set(cod_empresa, "");
+    }
   }
+
+  const lojas: LojaParsed[] = [...lojasMap.entries()]
+    .map(([cod, nome]) => ({ cod_empresa: cod, nome }))
+    .sort((a, b) => a.cod_empresa - b.cod_empresa);
 
   return {
     meta: {
       arquivo_nome: fileName,
       data_geracao: dataGeracao,
       total_veiculos: veiculos.length,
-      total_lojas: lojasSet.size,
+      total_lojas: lojasMap.size,
     },
     veiculos,
+    lojas,
     warnings,
   };
 }

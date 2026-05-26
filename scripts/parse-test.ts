@@ -40,9 +40,11 @@ async function main() {
   console.log(`Preparação: ${qPrep} carros — ${fmt(totalPrep)}`);
   console.log(`Total:     ${qReal + qPrep} carros — ${fmt(totalReal + totalPrep)}`);
 
-  console.log("\n=== POR LOJA ===");
+  console.log("\n=== POR LOJA (com nome do NBS) ===");
+  const nomeByCod = new Map(result.lojas.map((l) => [l.cod_empresa, l.nome]));
   for (const [cod, qt] of [...porLoja.entries()].sort((a, b) => b[1] - a[1])) {
-    console.log(`  Loja ${cod}: ${qt} carros`);
+    const nome = nomeByCod.get(cod) || "(sem nome no XLSX)";
+    console.log(`  Loja ${cod}: ${qt} carros — ${nome}`);
   }
 
   console.log("\n=== AMOSTRA (3 veículos) ===");

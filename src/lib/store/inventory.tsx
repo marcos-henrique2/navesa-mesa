@@ -91,6 +91,16 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
 
       setLojas((current) => {
         const merged = { ...current };
+        // 1) Lojas com nome vindo do XLSX (col Empresa 401) — fonte da verdade do NBS
+        for (const l of result.lojas) {
+          const existing = merged[l.cod_empresa];
+          merged[l.cod_empresa] = {
+            cod_empresa: l.cod_empresa,
+            nome: l.nome || existing?.nome || "",
+            cidade: existing?.cidade ?? "",
+          };
+        }
+        // 2) Garantia: qualquer cód em veículos sem entrada em lojas
         for (const v of result.veiculos) {
           if (!merged[v.cod_empresa]) {
             merged[v.cod_empresa] = { cod_empresa: v.cod_empresa, nome: "", cidade: "" };
