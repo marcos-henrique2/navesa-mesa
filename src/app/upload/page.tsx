@@ -8,17 +8,19 @@ export default function UploadPage() {
         title="Upload de relatórios"
         subtitle="Exporte do NBS e arraste aqui — processamento 100% local no navegador"
       />
-      <div className="mx-auto max-w-5xl px-6 py-8">
-        <div className="grid gap-6 md:grid-cols-2">
+      <div className="mx-auto max-w-7xl px-6 py-8">
+        <div className="grid gap-6 lg:grid-cols-3">
           <UploadDropzone modo="estoque" />
           <UploadDropzone modo="vendas" />
+          <UploadDropzone modo="custos" />
         </div>
 
         <div className="mt-8 rounded-xl border border-[var(--border-soft)] bg-white p-5 shadow-[var(--shadow-sm)]">
           <p className="text-sm font-semibold text-slate-900">📋 Qual é qual?</p>
           <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-slate-600">
-            <li><strong>Estoque</strong> — relatório &quot;Veículos em Estoque&quot; (~556 colunas). Mostra o que está no pátio agora.</li>
-            <li><strong>Vendas</strong> — relatório &quot;Veículos Vendidos&quot; (~344 colunas). Mostra o histórico com cliente, vendedor, margem e dias de giro.</li>
+            <li><strong className="text-blue-700">Estoque</strong> — &quot;Veículos em Estoque&quot;. Mostra o que está no pátio agora.</li>
+            <li><strong className="text-purple-700">Vendas</strong> — &quot;Veículos Vendidos&quot;. Histórico de vendas com cliente, vendedor, dias de giro.</li>
+            <li><strong className="text-emerald-700">Custos</strong> — &quot;Relatório de Custos&quot; (.xls). Tem a margem oficial NBS centavo-a-centavo: Nota Fábrica, Forplan, Impostos, Comissões, Ganhos Indiretos (bônus de fábrica). <strong>Sem ele, a margem usa estimativa.</strong></li>
           </ul>
         </div>
       </div>

@@ -6,27 +6,39 @@ import { useRouter } from "next/navigation";
 import { UploadCloud, FileSpreadsheet, AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { parseNbsXlsx } from "@/lib/parsers/nbs-xlsx";
 import { parseNbsVendasXlsx } from "@/lib/parsers/nbs-vendas-xlsx";
+import { parseNbsCustosXls } from "@/lib/parsers/nbs-custos-xls";
 import { useInventory } from "@/lib/store/inventory";
 import { cn, formatInt } from "@/lib/utils";
 
-type Modo = "estoque" | "vendas";
+type Modo = "estoque" | "vendas" | "custos";
 
 const CONFIG = {
   estoque: {
     title: "Estoque (Veículos em Estoque)",
     desc: "Arraste o XLSX de estoque do NBS aqui.",
     redirect: "/veiculos",
+    accept: { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] },
   },
   vendas: {
     title: "Vendas (Veículos Vendidos)",
     desc: "Arraste o XLSX de vendas do NBS aqui.",
     redirect: "/vendas",
+    accept: { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] },
+  },
+  custos: {
+    title: "Custos (Relatório de Custos)",
+    desc: "Arraste o .xls de Custos do NBS aqui. Bate centavo a centavo com a margem oficial.",
+    redirect: "/vendas",
+    accept: {
+      "application/vnd.ms-excel": [".xls"],
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
+    },
   },
 };
 
 export function UploadDropzone({ modo }: { modo: Modo }) {
   const router = useRouter();
-  const { setFromParse, setVendasFromParse, meta, vendasMeta } = useInventory();
+  const { setFromParse, setVendasFromParse, setCustosFromParse, meta, vendasMeta, custosMeta } = useInventory();
   const [status, setStatus] = useState<"idle" | "parsing" | "done" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -47,9 +59,13 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
           const result = await parseNbsXlsx(buf, file.name);
           setFromParse(result);
           setResultCount(result.meta.total_veiculos);
-        } else {
+        } else if (modo === "vendas") {
           const result = await parseNbsVendasXlsx(buf, file.name);
           setVendasFromParse(result);
+          setResultCount(result.meta.total_vendas);
+        } else {
+          const result = await parseNbsCustosXls(buf, file.name);
+          setCustosFromParse(result);
           setResultCount(result.meta.total_vendas);
         }
         setStatus("done");
@@ -59,22 +75,20 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
         setStatus("error");
       }
     },
-    [modo, setFromParse, setVendasFromParse, router],
+    [modo, setFromParse, setVendasFromParse, setCustosFromParse, router],
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: {
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
-      "application/vnd.ms-excel": [".xls"],
-    },
+    accept: CONFIG[modo].accept,
     maxFiles: 1,
     disabled: status === "parsing",
   });
 
   const cfg = CONFIG[modo];
-  const tone = modo === "estoque" ? "blue" : "purple";
-  const existing = modo === "estoque" ? meta : vendasMeta;
+  const tone: "blue" | "purple" | "emerald" =
+    modo === "estoque" ? "blue" : modo === "vendas" ? "purple" : "emerald";
+  const existing = modo === "estoque" ? meta : modo === "vendas" ? vendasMeta : custosMeta;
 
   return (
     <div className="space-y-3">
@@ -87,9 +101,10 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
         {...getRootProps()}
         className={cn(
           "rounded-xl border-2 border-dashed p-8 text-center transition cursor-pointer",
-          isDragActive
-            ? tone === "blue" ? "border-blue-500 bg-blue-50 dark:bg-blue-950/30" : "border-purple-500 bg-purple-50 dark:bg-purple-950/30"
-            : "border-zinc-300 bg-white dark:border-zinc-700 dark:bg-zinc-900",
+          isDragActive && tone === "blue" && "border-blue-500 bg-blue-50",
+          isDragActive && tone === "purple" && "border-purple-500 bg-purple-50",
+          isDragActive && tone === "emerald" && "border-emerald-500 bg-emerald-50",
+          !isDragActive && "border-zinc-300 bg-white",
           status === "parsing" && "cursor-wait opacity-60",
         )}
       >
@@ -102,12 +117,14 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
       </div>
 
       {existing && status === "idle" && (
-        <div className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs dark:border-zinc-800 dark:bg-zinc-950">
-          <p className="text-zinc-600 dark:text-zinc-400">
+        <div className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs">
+          <p className="text-zinc-600">
             <FileSpreadsheet className="mr-1 inline h-3 w-3" />
             Último upload: {modo === "estoque"
               ? `${formatInt(meta!.total_veiculos)} veículos / ${formatInt(meta!.total_lojas)} lojas`
-              : `${formatInt(vendasMeta!.total_vendas)} vendas`}
+              : modo === "vendas"
+              ? `${formatInt(vendasMeta!.total_vendas)} vendas`
+              : `${formatInt(custosMeta!.total_vendas)} custos detalhados`}
           </p>
         </div>
       )}
