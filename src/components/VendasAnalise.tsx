@@ -29,6 +29,8 @@ export function VendasAnalise() {
 
   // Index de clientes sobre TODAS as vendas (independente do filtro), para detectar recorrência total
   const clientesIndex = useMemo(() => indexarClientes(vendas), [vendas]);
+  // Flag global: existe alguma troca no dataset? Se não, escondemos UI de trocas.
+  const hasAnyTroca = useMemo(() => vendas.some(v => !!v.placa_troca), [vendas]);
 
   const lojas = useMemo(() => [...new Set(vendas.map((v) => v.empresa_nome).filter((x): x is string => !!x))].sort(), [vendas]);
   const vendedores = useMemo(() => [...new Set(vendas.map((v) => v.vendedor_nome).filter((x): x is string => !!x))].sort(), [vendas]);
@@ -193,8 +195,9 @@ export function VendasAnalise() {
       return <span className={cn("tabular-nums", tone)}>{d}</span>;
     } },
     { accessorKey: "comissao_vendedor", header: "Comissão", cell: (info) => <span className="tabular-nums text-xs text-zinc-600">{formatBRL(info.getValue<number | null>())}</span> },
-    { id: "troca", header: "Troca", cell: ({ row }) => row.original.placa_troca ? <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">{row.original.placa_troca}</span> : null },
-  ], [clientesIndex, custosPorPlaca]);
+    // Coluna Troca só aparece se o dataset tem trocas
+    ...(hasAnyTroca ? [{ id: "troca", header: "Troca", cell: ({ row }: { row: { original: VendaParsed } }) => row.original.placa_troca ? <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">{row.original.placa_troca}</span> : null } as ColumnDef<VendaParsed>] : []),
+  ], [clientesIndex, custosPorPlaca, hasAnyTroca]);
 
   const table = useReactTable({
     data: filtered, columns, state: { sorting }, onSortingChange: setSorting,
@@ -224,8 +227,8 @@ export function VendasAnalise() {
         <p className="text-xs text-zinc-500">Período: <strong>{periodo}</strong> · {formatInt(vendasMeta!.total_vendas)} vendas · {formatInt(vendasMeta!.total_lojas)} lojas · {formatInt(vendasMeta!.total_vendedores)} vendedores</p>
       )}
 
-      {/* KPIs */}
-      <div className="grid gap-3 md:grid-cols-5">
+      {/* KPIs — esconde 'Trocas' quando o relatório não trouxe essa info no dataset */}
+      <div className={cn("grid gap-3", hasAnyTroca ? "md:grid-cols-5" : "md:grid-cols-4")}>
         <KpiCard title="Vendas" value={formatInt(kpis.qt)} subtitle={`${kpis.pf} PF · ${kpis.pj} PJ`} />
         <KpiCard title="Faturamento" value={formatBRL(kpis.valor)} subtitle={`Ticket ${formatBRL(kpis.ticketMedio)}`} />
         <KpiCard
@@ -235,7 +238,9 @@ export function VendasAnalise() {
           tone={kpis.margem > 0 ? "good" : "bad"}
         />
         <KpiCard title="Tempo médio" value={`${kpis.diasMedio.toFixed(0)} dias`} subtitle="da entrada à venda" />
-        <KpiCard title="Trocas" value={formatInt(kpis.troca)} subtitle={`${((kpis.troca / Math.max(1, kpis.qt)) * 100).toFixed(0)}% das vendas`} />
+        {hasAnyTroca && (
+          <KpiCard title="Trocas" value={formatInt(kpis.troca)} subtitle={`${((kpis.troca / Math.max(1, kpis.qt)) * 100).toFixed(0)}% das vendas`} />
+        )}
       </div>
 
       {/* Composição de custos */}
@@ -247,7 +252,14 @@ export function VendasAnalise() {
         <Select label="Vendedor" value={filtroVendedor} onChange={setFiltroVendedor} options={[["all", "Todos"], ...vendedores.map((v) => [v, v] as [string, string])]} />
         <Select label="Marca" value={filtroMarca} onChange={setFiltroMarca} options={[["all", "Todas"], ...marcas.map((m) => [m, m] as [string, string])]} />
         <Select label="UF" value={filtroUf} onChange={setFiltroUf} options={[["all", "Todos"], ...ufs.map((u) => [u, u] as [string, string])]} />
-        <Select label="Tipo" value={filtroTipoCli} onChange={(v) => setFiltroTipoCli(v as typeof filtroTipoCli)} options={[["all", "Todos"], ["PF", "Só PF"], ["PJ", "Só PJ"], ["troca", "Com troca"]]} />
+        <Select
+          label="Tipo"
+          value={filtroTipoCli}
+          onChange={(v) => setFiltroTipoCli(v as typeof filtroTipoCli)}
+          options={hasAnyTroca
+            ? [["all", "Todos"], ["PF", "Só PF"], ["PJ", "Só PJ"], ["troca", "Com troca"]]
+            : [["all", "Todos"], ["PF", "Só PF"], ["PJ", "Só PJ"]]}
+        />
         <Select label="Recorrência" value={filtroRecorrencia} onChange={(v) => setFiltroRecorrencia(v as typeof filtroRecorrencia)} options={[["all", "Todas"], ["unica", "1 compra"], ["2-3", "2 a 3"], ["4mais", "4+ (suspeito)"]]} />
 
         <div className="relative ml-auto">
