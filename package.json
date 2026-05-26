@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "parse-test": "tsx scripts/parse-test.ts"
+    "parse-test": "tsx scripts/parse-test.ts",
+    "parse-vendas-test": "tsx scripts/parse-vendas-test.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.79",

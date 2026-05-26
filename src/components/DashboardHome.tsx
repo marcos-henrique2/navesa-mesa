@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { Upload, Car, Building2, Sparkles, FileSpreadsheet } from "lucide-react";
+import { Upload, Car, Building2, Sparkles, FileSpreadsheet, TrendingUp } from "lucide-react";
 import { useInventory } from "@/lib/store/inventory";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
 
 export function DashboardHome() {
-  const { meta, veiculos, isHydrated } = useInventory();
+  const { meta, veiculos, vendasMeta, vendas, isHydrated } = useInventory();
 
   let realQt = 0, prepQt = 0, realRs = 0, prepRs = 0;
   for (const v of veiculos) {
@@ -44,11 +44,27 @@ export function DashboardHome() {
           </section>
         )}
 
-        <section className="grid gap-4 md:grid-cols-3">
-          <Card href="/upload" icon={<Upload className="h-6 w-6" />} title={veiculos.length > 0 ? "Novo upload" : "Subir relatório NBS"} desc={veiculos.length > 0 ? "Substituir o relatório atual." : "Faça upload do XLSX exportado do NBS."} />
-          <Card href="/veiculos" icon={<Car className="h-6 w-6" />} title="Estoque de veículos" desc="Listagem, filtros e KPIs." />
-          <Card href="/lojas" icon={<Building2 className="h-6 w-6" />} title="Cadastro de lojas" desc="Código → nome das filiais." />
+        <section className="grid gap-4 md:grid-cols-4">
+          <Card href="/upload" icon={<Upload className="h-6 w-6" />} title={veiculos.length > 0 ? "Novo upload" : "Subir relatórios"} desc="XLSX de estoque ou vendas do NBS." />
+          <Card href="/veiculos" icon={<Car className="h-6 w-6" />} title="Estoque" desc={veiculos.length > 0 ? `${formatInt(veiculos.length)} veículos` : "Listagem, filtros e KPIs."} />
+          <Card href="/vendas" icon={<TrendingUp className="h-6 w-6" />} title="Análise de vendas" desc={vendas.length > 0 ? `${formatInt(vendas.length)} vendas` : "Ranking de vendedores, giro por marca, margem por loja."} />
+          <Card href="/lojas" icon={<Building2 className="h-6 w-6" />} title="Lojas" desc="Código → nome das filiais." />
         </section>
+
+        {isHydrated && vendas.length > 0 && vendasMeta && (
+          <section className="mt-6 rounded-lg border border-purple-200 bg-purple-50/40 p-5 dark:border-purple-900 dark:bg-purple-950/20">
+            <div className="flex items-center gap-3">
+              <TrendingUp className="h-5 w-5 text-purple-600" />
+              <div className="flex-1">
+                <p className="font-medium">{formatInt(vendasMeta.total_vendas)} vendas registradas · {formatInt(vendasMeta.total_vendedores)} vendedores</p>
+                <p className="text-xs text-zinc-500">
+                  Período {vendasMeta.periodo_inicio ? new Date(vendasMeta.periodo_inicio).toLocaleDateString("pt-BR") : "?"} → {vendasMeta.periodo_fim ? new Date(vendasMeta.periodo_fim).toLocaleDateString("pt-BR") : "?"}
+                </p>
+              </div>
+              <Link href="/vendas" className="rounded-md bg-purple-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-purple-700">Ver análise →</Link>
+            </div>
+          </section>
+        )}
 
         {isHydrated && veiculos.length === 0 && (
           <section className="mt-10 rounded-lg border border-dashed border-zinc-300 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900">
