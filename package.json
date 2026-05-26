@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "parse-test": "tsx scripts/parse-test.ts",
-    "parse-vendas-test": "tsx scripts/parse-vendas-test.ts"
+    "parse-vendas-test": "tsx scripts/parse-vendas-test.ts",
+    "parse-custos-test": "tsx scripts/parse-custos-test.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.79",
