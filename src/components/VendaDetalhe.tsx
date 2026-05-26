@@ -2,13 +2,14 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { ArrowLeft, ShoppingCart, Banknote, Wrench, UserSquare2, TrendingUp, TrendingDown, CheckCircle2, Repeat, AlertCircle } from "lucide-react";
+import { ArrowLeft, ShoppingCart, Banknote, Wrench, UserSquare2, Truck, Landmark, Briefcase, FileText, Gift, TrendingUp, TrendingDown, CheckCircle2, Repeat, AlertCircle, Info } from "lucide-react";
 import { useInventory, nomeOuCodigo } from "@/lib/store/inventory";
 import { indexarClientes, getCliente, tierRecorrencia, TIER_LABEL, type RecorrenciaTier } from "@/lib/analytics/clientes";
+import { calcMargemVenda } from "@/lib/analytics/margem";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
 
 export function VendaDetalhe({ chassi }: { chassi: string }) {
-  const { vendas, lojas, isHydrated } = useInventory();
+  const { vendas, lojas, custosPorPlaca, isHydrated } = useInventory();
 
   const venda = useMemo(() => vendas.find((v) => v.chassi === chassi), [vendas, chassi]);
   const clienteAgg = useMemo(() => {
@@ -16,6 +17,7 @@ export function VendaDetalhe({ chassi }: { chassi: string }) {
     const idx = indexarClientes(vendas);
     return getCliente(idx, venda);
   }, [vendas, venda]);
+  const margemDetail = useMemo(() => venda ? calcMargemVenda(venda, custosPorPlaca) : null, [venda, custosPorPlaca]);
 
   if (!isHydrated) return <p className="text-sm text-zinc-500">Carregando…</p>;
 
@@ -28,21 +30,31 @@ export function VendaDetalhe({ chassi }: { chassi: string }) {
     );
   }
 
-  const aquisicao = venda.total_nota_fabrica ?? 0;
-  const floorPlan = venda.custo_floor_plan ?? 0;
-  const despesas = venda.despesas_gerais ?? 0;
-  const comissao = venda.comissao_vendedor ?? 0;
-  const valorVenda = venda.valor_venda ?? 0;
-  const custoTotal = aquisicao + floorPlan + despesas + comissao;
-  const margem = valorVenda - custoTotal;
-  const margemPct = custoTotal > 0 ? (margem / custoTotal) * 100 : 0;
+  const m = margemDetail!;
+  const valorVenda = m.valor;
+  const custoTotal = m.custo;
+  const margem = m.margem;
+  const margemPct = m.margemPct;
   const positiva = margem > 0;
+  const temOficial = m.fonte === "oficial" && m.componentes !== null;
 
-  const itens = [
-    { label: "Aquisição (Nota Fábrica)", icon: <ShoppingCart className="h-3.5 w-3.5" />, value: aquisicao, color: "bg-blue-500" },
-    { label: "Floor Plan", icon: <Banknote className="h-3.5 w-3.5" />, value: floorPlan, color: "bg-purple-500" },
-    { label: "Despesas gerais", icon: <Wrench className="h-3.5 w-3.5" />, value: despesas, color: "bg-amber-500" },
-    { label: "Comissão vendedor", icon: <UserSquare2 className="h-3.5 w-3.5" />, value: comissao, color: "bg-teal-500" },
+  // Itens da composição: 9 se temos relatório de custos, 4 caso contrário
+  const itens = temOficial && m.componentes ? [
+    { label: "Aquisição (Nota Fábrica − ICMS)", icon: <ShoppingCart className="h-3.5 w-3.5" />, value: m.componentes.nota_fabrica, color: "bg-blue-500" },
+    { label: "Despesas Oficina", icon: <Wrench className="h-3.5 w-3.5" />, value: m.componentes.despesas_oficina, color: "bg-slate-400" },
+    { label: "Frete + ICMS Frete", icon: <Truck className="h-3.5 w-3.5" />, value: m.componentes.frete, color: "bg-slate-500" },
+    { label: "Floor Plan", icon: <Banknote className="h-3.5 w-3.5" />, value: m.componentes.forplan, color: "bg-purple-500" },
+    { label: "Impostos (PIS+COFINS+ICMS)", icon: <Landmark className="h-3.5 w-3.5" />, value: m.componentes.impostos, color: "bg-rose-500" },
+    { label: "Comissões", icon: <UserSquare2 className="h-3.5 w-3.5" />, value: m.componentes.comissoes, color: "bg-teal-500" },
+    { label: "ADM", icon: <Briefcase className="h-3.5 w-3.5" />, value: m.componentes.adm, color: "bg-slate-600" },
+    { label: "Despesas Gerais", icon: <FileText className="h-3.5 w-3.5" />, value: m.componentes.despesas_gerais, color: "bg-amber-500" },
+    { label: "(−) Ganhos Indiretos (Bônus + Valorização)", icon: <Gift className="h-3.5 w-3.5" />, value: m.componentes.ganhos_indiretos, color: "bg-emerald-500", redutor: true as const },
+  ] : [
+    // Fallback sem relatório de custos
+    { label: "Aquisição (estimada)", icon: <ShoppingCart className="h-3.5 w-3.5" />, value: venda.total_nota_fabrica ?? 0, color: "bg-blue-500" },
+    { label: "Floor Plan (estimado)", icon: <Banknote className="h-3.5 w-3.5" />, value: venda.custo_floor_plan ?? 0, color: "bg-purple-500" },
+    { label: "Despesas Gerais (estimadas)", icon: <Wrench className="h-3.5 w-3.5" />, value: venda.despesas_gerais ?? 0, color: "bg-amber-500" },
+    { label: "Comissão Vendedor", icon: <UserSquare2 className="h-3.5 w-3.5" />, value: venda.comissao_vendedor ?? 0, color: "bg-teal-500" },
   ];
 
   return (
@@ -87,64 +99,75 @@ export function VendaDetalhe({ chassi }: { chassi: string }) {
 
 
       {/* Composição de custos da venda */}
-      <section className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <header className="border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+      <section className="rounded-lg border border-[var(--border-soft)] bg-white shadow-[var(--shadow-sm)]">
+        <header className="flex items-center gap-2 border-b border-[var(--border-soft)] px-5 py-3">
           <h3 className="font-semibold">💰 Composição financeira</h3>
+          {temOficial ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+              <CheckCircle2 className="h-3 w-3" /> Oficial NBS
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+              <Info className="h-3 w-3" /> Estimada (sem relatório de custos)
+            </span>
+          )}
         </header>
 
         <div className="grid gap-6 p-5 lg:grid-cols-[1fr,280px]">
           <div className="space-y-3">
             {itens.map((item) => {
-              const pct = custoTotal > 0 ? (item.value / custoTotal) * 100 : 0;
+              // denominador para barra: soma dos valores não-redutores
+              const baseTotal = itens.filter(i => !("redutor" in i && i.redutor)).reduce((s, i) => s + i.value, 0) || 1;
+              const pct = (item.value / baseTotal) * 100;
+              const isRedutor = "redutor" in item && item.redutor;
               return (
                 <div key={item.label}>
                   <div className="flex items-center justify-between gap-3 text-sm">
-                    <span className="inline-flex items-center gap-2 text-zinc-700 dark:text-zinc-300">
+                    <span className={cn("inline-flex items-center gap-2", isRedutor ? "text-emerald-700 font-medium" : "text-slate-700")}>
                       {item.icon} {item.label}
                     </span>
-                    <span className="tabular-nums font-semibold">{formatBRL(item.value)}</span>
+                    <span className={cn("tabular-nums font-semibold", isRedutor && "text-emerald-700")}>
+                      {isRedutor ? "−" : ""}{formatBRL(item.value)}
+                    </span>
                   </div>
                   <div className="mt-1 flex items-center gap-2">
-                    <div className="h-1.5 flex-1 overflow-hidden rounded bg-zinc-200 dark:bg-zinc-800">
+                    <div className="h-1.5 flex-1 overflow-hidden rounded bg-slate-200">
                       <div className={item.color + " h-full"} style={{ width: `${Math.min(100, pct)}%` }} />
                     </div>
-                    <span className="text-xs tabular-nums text-zinc-500" style={{ width: 48 }}>{pct.toFixed(1)}%</span>
+                    <span className="text-xs tabular-nums text-slate-500" style={{ width: 48 }}>{pct.toFixed(1)}%</span>
                   </div>
                 </div>
               );
             })}
 
-            <div className="border-t border-zinc-200 pt-3 dark:border-zinc-800">
+            <div className="border-t border-[var(--border-soft)] pt-3">
               <div className="flex items-center justify-between text-sm">
-                <span className="font-semibold">Custo total</span>
+                <span className="font-semibold">Custo total {temOficial && <span className="text-[10px] font-normal text-slate-500">(oficial NBS)</span>}</span>
                 <span className="tabular-nums font-bold">{formatBRL(custoTotal)}</span>
               </div>
             </div>
           </div>
 
-          <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950">
-            <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">Valor vendido</p>
-            <p className="mt-1 text-2xl font-bold tabular-nums">{formatBRL(valorVenda)}</p>
+          <div className="rounded-lg border border-[var(--border-soft)] bg-slate-50 p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Valor vendido</p>
+            <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">{formatBRL(valorVenda)}</p>
             {venda.preco_venda_tabela && venda.preco_venda_tabela !== valorVenda && (
-              <p className="text-[11px] text-zinc-500">Tabela: {formatBRL(venda.preco_venda_tabela)}</p>
+              <p className="text-[11px] text-slate-500">Tabela: {formatBRL(venda.preco_venda_tabela)}</p>
             )}
 
-            <p className="mt-4 text-[10px] font-medium uppercase tracking-wide text-zinc-500">(−) Custo total</p>
-            <p className="mt-1 text-base font-semibold tabular-nums text-zinc-600 dark:text-zinc-400">{formatBRL(custoTotal)}</p>
+            <p className="mt-4 text-[10px] font-semibold uppercase tracking-wider text-slate-500">(−) Custo Total NBS</p>
+            <p className="mt-1 text-base font-semibold tabular-nums text-slate-600">{formatBRL(custoTotal)}</p>
 
-            <div className="my-3 border-t border-zinc-300 dark:border-zinc-700" />
+            <div className="my-3 border-t border-slate-300" />
 
-            <p className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">Margem</p>
-            <p className={cn("mt-1 flex items-center gap-1 text-2xl font-bold tabular-nums", positiva ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400")}>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Margem Real</p>
+            <p className={cn("mt-1 flex items-center gap-1 text-2xl font-bold tabular-nums", positiva ? "text-emerald-700" : "text-red-700")}>
               {positiva ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />}
               {formatBRL(margem)}
             </p>
-            <p className={cn("text-xs tabular-nums", positiva ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400")}>
-              {margemPct >= 0 ? "+" : ""}{margemPct.toFixed(1)}% sobre o custo
+            <p className={cn("text-xs tabular-nums", positiva ? "text-emerald-700" : "text-red-700")}>
+              {margemPct >= 0 ? "+" : ""}{margemPct.toFixed(2)}% sobre faturamento
             </p>
-            {venda.margem_pct !== null && (
-              <p className="mt-2 text-[10px] text-zinc-500">NBS reporta margem: {venda.margem_pct.toFixed(2)}%</p>
-            )}
           </div>
         </div>
 

@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { Upload, Car, Building2, TrendingUp, FileSpreadsheet, ArrowRight } from "lucide-react";
 import { useInventory } from "@/lib/store/inventory";
+import { agregarMargem } from "@/lib/analytics/margem";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
 import { PageHeader } from "./AppShell";
 
 export function DashboardHome() {
-  const { meta, veiculos, vendasMeta, vendas, isHydrated } = useInventory();
+  const { meta, veiculos, vendasMeta, vendas, custosPorPlaca, isHydrated } = useInventory();
 
   let realQt = 0, prepQt = 0, realRs = 0, prepRs = 0;
   for (const v of veiculos) {
@@ -16,13 +17,12 @@ export function DashboardHome() {
     if (isPrep) { prepQt++; prepRs += preco; } else { realQt++; realRs += preco; }
   }
 
-  let vendasValor = 0, vendasCusto = 0;
-  for (const v of vendas) {
-    vendasValor += v.valor_venda ?? 0;
-    const c = (v.total_nota_fabrica ?? 0) + (v.custo_floor_plan ?? 0) + (v.despesas_gerais ?? 0) + (v.comissao_vendedor ?? 0);
-    vendasCusto += c;
-  }
-  const vendasMargem = vendasValor - vendasCusto;
+  // Margem agregada via lib/analytics/margem.ts (fonte única da verdade)
+  const aggVendas = agregarMargem(vendas, custosPorPlaca);
+  const vendasValor = aggVendas.valor;
+  const vendasCusto = aggVendas.custo;
+  const vendasMargem = aggVendas.margem;
+  const vendasTemOficial = aggVendas.qtComCustoOficial > 0;
 
   const semDados = isHydrated && veiculos.length === 0 && vendas.length === 0;
 
@@ -89,9 +89,9 @@ export function DashboardHome() {
                   />
                   <BigKpi
                     accent={vendasMargem >= 0 ? "emerald" : "red"}
-                    label="Margem líquida"
+                    label={vendasTemOficial ? "Margem (oficial NBS)" : "Margem (estimada)"}
                     value={formatBRL(vendasMargem)}
-                    sublabel={`${vendasCusto > 0 ? ((vendasMargem / vendasCusto) * 100).toFixed(1) : "—"}% sobre custo`}
+                    sublabel={`${vendasValor > 0 ? ((vendasMargem / vendasValor) * 100).toFixed(2) : "—"}% sobre faturamento`}
                   />
                 </div>
                 {vendasMeta?.periodo_inicio && vendasMeta?.periodo_fim && (

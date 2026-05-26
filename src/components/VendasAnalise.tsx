@@ -11,11 +11,12 @@ import { useInventory } from "@/lib/store/inventory";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
 import { ComposicaoCustos } from "./ComposicaoCustos";
 import { indexarClientes, chaveCliente, tierRecorrencia } from "@/lib/analytics/clientes";
+import { agregarMargem, calcMargemVenda } from "@/lib/analytics/margem";
 import type { VendaParsed } from "@/lib/parsers/nbs-vendas-xlsx";
 
 export function VendasAnalise() {
   const router = useRouter();
-  const { vendas, vendasMeta, isHydrated } = useInventory();
+  const { vendas, vendasMeta, custosPorPlaca, isHydrated } = useInventory();
 
   const [search, setSearch] = useState("");
   const [filtroLoja, setFiltroLoja] = useState("all");
@@ -60,57 +61,68 @@ export function VendasAnalise() {
   }, [vendas, filtroLoja, filtroVendedor, filtroMarca, filtroUf, filtroTipoCli, filtroRecorrencia, clientesIndex, search]);
 
   const kpis = useMemo(() => {
-    let valor = 0, custo = 0, comissao = 0, dias = 0, comDias = 0;
+    // Usa fórmula oficial NBS (lib/analytics/margem.ts)
+    const agg = agregarMargem(filtered, custosPorPlaca);
+
+    let comissao = 0, dias = 0, comDias = 0;
     let pf = 0, pj = 0, troca = 0;
     for (const v of filtered) {
-      valor += v.valor_venda ?? 0;
-      custo += v.custo_total_final ?? 0;
       comissao += v.comissao_vendedor ?? 0;
       if (v.dias_estoque !== null) { dias += v.dias_estoque; comDias++; }
       if (v.cliente_tipo === "PF") pf++;
       else if (v.cliente_tipo === "PJ") pj++;
       if (v.placa_troca) troca++;
     }
-    const margem = valor - custo;
+
     return {
-      qt: filtered.length, valor, custo, margem, comissao,
-      margemPct: custo > 0 ? (margem / custo) * 100 : 0,
-      ticketMedio: filtered.length > 0 ? valor / filtered.length : 0,
+      qt: filtered.length,
+      valor: agg.valor,
+      custo: agg.custo,
+      margem: agg.margem,
+      margemPct: agg.margemPct,           // sobre faturamento (oficial NBS)
+      cobertura: agg.cobertura,            // % de vendas com custos oficiais
+      temCustosOficiais: agg.qtComCustoOficial > 0,
+      comissao,
+      ticketMedio: filtered.length > 0 ? agg.valor / filtered.length : 0,
       diasMedio: comDias > 0 ? dias / comDias : 0,
       pf, pj, troca,
     };
-  }, [filtered]);
+  }, [filtered, custosPorPlaca]);
 
-  // Rankings
+  // Rankings — todos usam a margem oficial via calcMargemVenda
   const rankingLojas = useMemo(() => {
     const map = new Map<string, { qt: number; valor: number; margem: number; dias: number; comDias: number }>();
     for (const v of filtered) {
+      const m = calcMargemVenda(v, custosPorPlaca);
       const k = v.empresa_nome || `Loja ${v.cod_empresa}`;
       const agg = map.get(k) ?? { qt: 0, valor: 0, margem: 0, dias: 0, comDias: 0 };
       agg.qt++;
-      agg.valor += v.valor_venda ?? 0;
-      agg.margem += (v.valor_venda ?? 0) - (v.custo_total_final ?? 0);
+      agg.valor += m.valor;
+      agg.margem += m.margem;
       if (v.dias_estoque !== null) { agg.dias += v.dias_estoque; agg.comDias++; }
       map.set(k, agg);
     }
     return [...map.entries()].map(([nome, agg]) => ({
-      nome, ...agg, diasMedio: agg.comDias > 0 ? agg.dias / agg.comDias : 0, margemPct: agg.valor > 0 ? (agg.margem / (agg.valor - agg.margem)) * 100 : 0,
+      nome, ...agg,
+      diasMedio: agg.comDias > 0 ? agg.dias / agg.comDias : 0,
+      margemPct: agg.valor > 0 ? (agg.margem / agg.valor) * 100 : 0,   // % sobre faturamento
     })).sort((a, b) => b.valor - a.valor);
-  }, [filtered]);
+  }, [filtered, custosPorPlaca]);
 
   const rankingVendedores = useMemo(() => {
     const map = new Map<string, { qt: number; valor: number; margem: number; comissao: number }>();
     for (const v of filtered) {
+      const m = calcMargemVenda(v, custosPorPlaca);
       const k = v.vendedor_nome || v.vendedor_codigo || "(sem vendedor)";
       const agg = map.get(k) ?? { qt: 0, valor: 0, margem: 0, comissao: 0 };
       agg.qt++;
-      agg.valor += v.valor_venda ?? 0;
-      agg.margem += (v.valor_venda ?? 0) - (v.custo_total_final ?? 0);
+      agg.valor += m.valor;
+      agg.margem += m.margem;
       agg.comissao += v.comissao_vendedor ?? 0;
       map.set(k, agg);
     }
     return [...map.entries()].map(([nome, agg]) => ({ nome, ...agg })).sort((a, b) => b.qt - a.qt);
-  }, [filtered]);
+  }, [filtered, custosPorPlaca]);
 
   const rankingMarcas = useMemo(() => {
     const map = new Map<string, { qt: number; valor: number; dias: number; comDias: number }>();
@@ -165,9 +177,14 @@ export function VendasAnalise() {
     } },
     { accessorKey: "valor_venda", header: "Valor", cell: (info) => <span className="tabular-nums font-medium">{formatBRL(info.getValue<number | null>())}</span> },
     { id: "margem_real", header: "Margem R$", cell: ({ row }) => {
-      const margem = (row.original.valor_venda ?? 0) - (row.original.custo_total_final ?? 0);
-      const tone = margem > 5000 ? "text-green-700 dark:text-green-400" : margem > 0 ? "" : "text-red-700 dark:text-red-400";
-      return <span className={cn("tabular-nums", tone)}>{formatBRL(margem)}</span>;
+      const m = calcMargemVenda(row.original, custosPorPlaca);
+      const tone = m.margem > 5000 ? "text-emerald-700" : m.margem > 0 ? "" : "text-red-700";
+      return (
+        <span className={cn("tabular-nums", tone)} title={m.fonte === "oficial" ? "Margem oficial NBS" : "Estimativa (sem relatório de custos)"}>
+          {formatBRL(m.margem)}
+          {m.fonte === "fallback" && <span className="ml-0.5 text-[10px] text-amber-600">~</span>}
+        </span>
+      );
     } },
     { accessorKey: "dias_estoque", header: "Dias", cell: (info) => {
       const d = info.getValue<number | null>();
@@ -177,7 +194,7 @@ export function VendasAnalise() {
     } },
     { accessorKey: "comissao_vendedor", header: "Comissão", cell: (info) => <span className="tabular-nums text-xs text-zinc-600">{formatBRL(info.getValue<number | null>())}</span> },
     { id: "troca", header: "Troca", cell: ({ row }) => row.original.placa_troca ? <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">{row.original.placa_troca}</span> : null },
-  ], [clientesIndex]);
+  ], [clientesIndex, custosPorPlaca]);
 
   const table = useReactTable({
     data: filtered, columns, state: { sorting }, onSortingChange: setSorting,
@@ -211,7 +228,12 @@ export function VendasAnalise() {
       <div className="grid gap-3 md:grid-cols-5">
         <KpiCard title="Vendas" value={formatInt(kpis.qt)} subtitle={`${kpis.pf} PF · ${kpis.pj} PJ`} />
         <KpiCard title="Faturamento" value={formatBRL(kpis.valor)} subtitle={`Ticket ${formatBRL(kpis.ticketMedio)}`} />
-        <KpiCard title="Margem" value={formatBRL(kpis.margem)} subtitle={`${kpis.margemPct.toFixed(1)}% sobre custo`} tone={kpis.margem > 0 ? "good" : "bad"} />
+        <KpiCard
+          title={kpis.temCustosOficiais ? "Margem (oficial NBS)" : "Margem (estimada)"}
+          value={formatBRL(kpis.margem)}
+          subtitle={`${kpis.margemPct.toFixed(2)}% s/ faturamento${kpis.temCustosOficiais && kpis.cobertura < 1 ? ` · cobertura ${(kpis.cobertura * 100).toFixed(0)}%` : ""}`}
+          tone={kpis.margem > 0 ? "good" : "bad"}
+        />
         <KpiCard title="Tempo médio" value={`${kpis.diasMedio.toFixed(0)} dias`} subtitle="da entrada à venda" />
         <KpiCard title="Trocas" value={formatInt(kpis.troca)} subtitle={`${((kpis.troca / Math.max(1, kpis.qt)) * 100).toFixed(0)}% das vendas`} />
       </div>
