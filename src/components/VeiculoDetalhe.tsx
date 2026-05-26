@@ -3,13 +3,13 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, AlertTriangle, Lightbulb } from "lucide-react";
-import { useInventory, nomeOuCodigo, nomeVendedor } from "@/lib/store/inventory";
+import { useInventory, nomeOuCodigo } from "@/lib/store/inventory";
 import { FipeBox } from "./FipeBox";
 import { sugerirPreco } from "@/lib/pricing/suggest";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
 
 export function VeiculoDetalhe({ chassi }: { chassi: string }) {
-  const { veiculos, lojas, vendedores, isHydrated } = useInventory();
+  const { veiculos, lojas, isHydrated } = useInventory();
   const [precoFipe, setPrecoFipe] = useState<number | null>(null);
 
   const veiculo = useMemo(() => veiculos.find((v) => v.chassi === chassi), [veiculos, chassi]);
@@ -68,7 +68,6 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
           <Row label="Custo total" value={formatBRL(veiculo.custo_total)} muted />
           <Row label="Margem bruta" value={margemAtual === null ? "—" : `${margemAtual.toFixed(1)}%`} bold tone={margemAtual !== null ? (margemAtual >= 7 ? "good" : margemAtual >= 3 ? "warn" : "bad") : undefined} />
           <Row label="Dias de pátio" value={formatInt(veiculo.dias_patio)} />
-          <Row label="Vendedor" value={nomeVendedor(veiculo.vendedor_recebeu, vendedores)} />
           <Row label="Data entrada" value={veiculo.data_entrada ? new Date(veiculo.data_entrada).toLocaleDateString("pt-BR") : "—"} />
         </Card>
       </div>
