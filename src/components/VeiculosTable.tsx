@@ -12,6 +12,7 @@ import {
   type SortingState,
 } from "@tanstack/react-table";
 import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, Search } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useInventory, nomeOuCodigo } from "@/lib/store/inventory";
 import { cn, formatBRL, formatInt } from "@/lib/utils";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
@@ -21,6 +22,7 @@ function ehPreparacao(v: VeiculoParsed): boolean {
 }
 
 export function VeiculosTable() {
+  const router = useRouter();
   const { veiculos, meta, lojas, isHydrated } = useInventory();
   const [includePrep, setIncludePrep] = useState(true);
   const [search, setSearch] = useState("");
@@ -209,10 +211,12 @@ export function VeiculosTable() {
               {table.getRowModel().rows.map((row) => (
                 <tr
                   key={row.id}
+                  onClick={() => router.push(`/veiculos/${row.original.chassi}`)}
                   className={cn(
-                    "border-b border-zinc-100 last:border-0 dark:border-zinc-800",
-                    ehPreparacao(row.original) && "bg-amber-50/40 dark:bg-amber-950/10",
+                    "cursor-pointer border-b border-zinc-100 last:border-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/50",
+                    ehPreparacao(row.original) && "bg-amber-50/40 hover:bg-amber-100/60 dark:bg-amber-950/10 dark:hover:bg-amber-950/20",
                   )}
+                  title="Clique para precificar"
                 >
                   {row.getVisibleCells().map((cell) => (
                     <td key={cell.id} className="px-3 py-2 align-middle">
