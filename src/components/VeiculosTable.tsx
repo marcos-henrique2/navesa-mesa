@@ -14,6 +14,8 @@ import {
 import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, Search, SlidersHorizontal, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useInventory } from "@/lib/store/inventory";
+import { classificarPatio } from "@/lib/inventory/status";
+import { classificarVeiculo, contarPorModelo, CLASSE_COR, type Classe } from "@/lib/pricing/classificacao";
 import { cn, formatBRL, formatInt } from "@/lib/utils";
 import { ResumoPorDimensao } from "./ResumoPorDimensao";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
@@ -21,7 +23,8 @@ import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 type StatusFiltro = "all" | "real" | "prep";
 
 function ehPreparacao(v: VeiculoParsed): boolean {
-  return v.patio.trim().toUpperCase() === "PREPARAÇÃO";
+  // Alinhado com NBS: PREPARAÇÃO + BLOQUEADO = "em preparação"
+  return classificarPatio(v.patio) === "preparacao";
 }
 
 export function VeiculosTable() {
@@ -36,6 +39,7 @@ export function VeiculosTable() {
   const [filtroComb, setFiltroComb] = useState<string>("all");
   const [filtroSituacao, setFiltroSituacao] = useState<string>("all");
   const [filtroPatio, setFiltroPatio] = useState<string>("all");
+  const [filtroClasse, setFiltroClasse] = useState<"all" | Classe | "showroom" | "repasse">("all");
   const [avancadoOpen, setAvancadoOpen] = useState(false);
   const [anoMin, setAnoMin] = useState<string>("");
   const [anoMax, setAnoMax] = useState<string>("");
@@ -59,6 +63,16 @@ export function VeiculosTable() {
     return s.trim() === "" || !Number.isFinite(n) ? null : n;
   };
 
+  // Cache de classificação por chassi (rec O(N) na variação do estoque)
+  const classifMap = useMemo(() => {
+    const contagem = contarPorModelo(veiculos);
+    const m = new Map<string, ReturnType<typeof classificarVeiculo>>();
+    for (const v of veiculos) {
+      m.set(v.chassi, classificarVeiculo(v, { contagemPorModelo: contagem }));
+    }
+    return m;
+  }, [veiculos]);
+
   // Filtros aplicados EXCETO status. Usado para KPIs e resumo agregado por status.
   const filteredExceptStatus = useMemo(() => {
     const aMin = num(anoMin), aMax = num(anoMax);
@@ -73,6 +87,15 @@ export function VeiculosTable() {
       if (filtroComb !== "all" && v.combustivel !== filtroComb) return false;
       if (filtroSituacao !== "all" && v.descricao_situacao !== filtroSituacao) return false;
       if (filtroPatio !== "all" && v.patio.trim() !== filtroPatio) return false;
+      if (filtroClasse !== "all") {
+        const c = classifMap.get(v.chassi);
+        if (!c) return false;
+        if (filtroClasse === "showroom" || filtroClasse === "repasse") {
+          if (c.canal !== filtroClasse) return false;
+        } else {
+          if (c.classe !== filtroClasse) return false;
+        }
+      }
       if (aMin !== null && (v.ano_modelo ?? -Infinity) < aMin) return false;
       if (aMax !== null && (v.ano_modelo ?? Infinity) > aMax) return false;
       if (kMin !== null && (v.km ?? -Infinity) < kMin) return false;
@@ -88,7 +111,7 @@ export function VeiculosTable() {
       }
       return true;
     });
-  }, [veiculos, filtroLoja, filtroMarca, filtroCor, filtroComb, filtroSituacao, filtroPatio, anoMin, anoMax, kmMin, kmMax, precoMin, precoMax, diasMin, diasMax, search]);
+  }, [veiculos, filtroLoja, filtroMarca, filtroCor, filtroComb, filtroSituacao, filtroPatio, filtroClasse, classifMap, anoMin, anoMax, kmMin, kmMax, precoMin, precoMax, diasMin, diasMax, search]);
 
   // Filtros + status final (a tabela exibe esses)
   const filtered = useMemo(() => {
@@ -132,6 +155,25 @@ export function VeiculosTable() {
       );
     } },
     { accessorKey: "placa", header: "Placa", cell: (info) => <span className="font-mono text-xs">{info.getValue<string>()}</span> },
+    {
+      id: "classe",
+      header: "Classe",
+      accessorFn: (v) => classifMap.get(v.chassi)?.classe ?? "?",
+      cell: ({ row }) => {
+        const c = classifMap.get(row.original.chassi);
+        if (!c) return <span className="text-zinc-400 text-xs">—</span>;
+        const cor = CLASSE_COR[c.classe];
+        return (
+          <span
+            className={cn("inline-flex h-5 w-5 items-center justify-center rounded text-[10px] font-bold", cor.bg, cor.text)}
+            title={`${c.classe} · ${c.canal === "showroom" ? "Show Room" : "Repasse"}${c.rebaixadoPorEstoque ? " (rebaixado)" : ""}`}
+          >
+            {c.classe}
+          </span>
+        );
+      },
+      size: 60,
+    },
     { accessorKey: "marca", header: "Marca" },
     { accessorKey: "modelo", header: "Modelo", cell: (info) => <span className="text-xs">{info.getValue<string>()}</span> },
     { accessorKey: "ano_modelo", header: "Ano", cell: (info) => info.getValue<number | null>() ?? "—" },
@@ -151,7 +193,7 @@ export function VeiculosTable() {
     { accessorKey: "valor_aquisicao", header: "Aquisição", cell: (info) => <span className="tabular-nums text-zinc-600">{formatBRL(info.getValue<number | null>())}</span> },
     { accessorKey: "custo_total", header: "Custo Total", cell: (info) => <span className="tabular-nums text-zinc-600">{formatBRL(info.getValue<number | null>())}</span> },
     { accessorKey: "dias_patio", header: "Dias", cell: (info) => <span className="tabular-nums">{info.getValue<number | null>() ?? "—"}</span> },
-  ], [lojas]);
+  ], [lojas, classifMap]);
 
   const table = useReactTable({
     data: filtered,
@@ -252,6 +294,16 @@ export function VeiculosTable() {
           <Select label="Comb" value={filtroComb} onChange={setFiltroComb} options={[["all", "Todos"], ...combs.map((c) => [c, c] as [string, string])]} />
           <Select label="Pátio" value={filtroPatio} onChange={setFiltroPatio} options={[["all", "Todos"], ...patios.map((p) => [p, p] as [string, string])]} />
           <Select label="Situação" value={filtroSituacao} onChange={setFiltroSituacao} options={[["all", "Todas"], ...situacoes.map((s) => [s, s] as [string, string])]} />
+          <Select label="Classe" value={filtroClasse} onChange={(v) => setFiltroClasse(v as "all" | Classe | "showroom" | "repasse")} options={[
+            ["all", "Todas"],
+            ["showroom", "▸ Show Room"],
+            ["repasse", "▸ Repasse"],
+            ["A", "A"],
+            ["B", "B"],
+            ["C", "C"],
+            ["D", "D"],
+            ["E", "E"],
+          ]} />
 
           <div className="relative ml-auto">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-zinc-400" />

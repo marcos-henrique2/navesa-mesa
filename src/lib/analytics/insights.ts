@@ -1,0 +1,1122 @@
+/**
+ * INSIGHTS — Agregações operacionais sobre vendas + custos + estoque.
+ *
+ * Funções puras, deterministicas. Consumidas pela página /insights
+ * e pelo chat IA como contexto. Não dependem de React.
+ *
+ * Cada função recebe os datasets crus e retorna estruturas serializáveis
+ * (arrays/objetos/numbers) — sem Date, sem Map, sem class — pra poder
+ * enviar pra API do chat sem perda.
+ */
+
+import type { VendaParsed } from "@/lib/parsers/nbs-vendas-xlsx";
+import type { CustoDetalhado } from "@/lib/parsers/nbs-custos-xls";
+import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
+import { calcMargemVenda } from "./margem";
+import { classificarVeiculo } from "@/lib/pricing/classificacao";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+type CustosMap = Record<string, CustoDetalhado>;
+
+function pctSafe(num: number, den: number): number {
+  return den > 0 ? (num / den) * 100 : 0;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A) SUMÁRIO GLOBAL — KPIs principais + dependência de Ganhos Indiretos
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type SumarioGlobal = {
+  qt: number;
+  faturamento: number;
+  custo: number;
+  margem: number;
+  margemPct: number;
+  ganhosIndiretos: number;
+  /** Margem se cortassem os bônus de fábrica. */
+  margemSemBonus: number;
+  /** True se a operação depende dos bônus pra ser positiva. */
+  dependeDeBonus: boolean;
+  cobertura: number;
+};
+
+export function sumarioGlobal(
+  vendas: VendaParsed[],
+  custosPorPlaca: CustosMap,
+): SumarioGlobal {
+  let valor = 0,
+    custo = 0,
+    ganhos = 0,
+    comOficial = 0;
+  for (const v of vendas) {
+    const m = calcMargemVenda(v, custosPorPlaca);
+    valor += m.valor;
+    custo += m.custo;
+    if (m.fonte === "oficial" && m.componentes) {
+      comOficial++;
+      ganhos += m.componentes.ganhos_indiretos;
+    }
+  }
+  const margem = valor - custo;
+  return {
+    qt: vendas.length,
+    faturamento: valor,
+    custo,
+    margem,
+    margemPct: pctSafe(margem, valor),
+    ganhosIndiretos: ganhos,
+    margemSemBonus: margem - ganhos,
+    dependeDeBonus: ganhos > margem,
+    cobertura: vendas.length > 0 ? comOficial / vendas.length : 0,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B) MARGEM POR LOJA
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type MargemPorLoja = {
+  loja: string;
+  qt: number;
+  faturamento: number;
+  custo: number;
+  margem: number;
+  margemPct: number;
+  ganhosIndiretos: number;
+  giroMedio: number;
+};
+
+export function margemPorLoja(
+  vendas: VendaParsed[],
+  custosPorPlaca: CustosMap,
+): MargemPorLoja[] {
+  const map = new Map<
+    string,
+    {
+      qt: number;
+      valor: number;
+      custo: number;
+      margem: number;
+      ganhos: number;
+      diasSoma: number;
+      diasN: number;
+    }
+  >();
+  for (const v of vendas) {
+    const k = v.empresa_nome || `Loja ${v.cod_empresa}`;
+    if (!map.has(k))
+      map.set(k, { qt: 0, valor: 0, custo: 0, margem: 0, ganhos: 0, diasSoma: 0, diasN: 0 });
+    const r = map.get(k)!;
+    const m = calcMargemVenda(v, custosPorPlaca);
+    r.qt++;
+    r.valor += m.valor;
+    r.custo += m.custo;
+    r.margem += m.margem;
+    if (m.componentes) r.ganhos += m.componentes.ganhos_indiretos;
+    if (v.dias_estoque != null) {
+      r.diasSoma += v.dias_estoque;
+      r.diasN++;
+    }
+  }
+  return [...map.entries()]
+    .map(([loja, r]) => ({
+      loja,
+      qt: r.qt,
+      faturamento: r.valor,
+      custo: r.custo,
+      margem: r.margem,
+      margemPct: pctSafe(r.margem, r.valor),
+      ganhosIndiretos: r.ganhos,
+      giroMedio: r.diasN > 0 ? r.diasSoma / r.diasN : 0,
+    }))
+    .sort((a, b) => b.margem - a.margem);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// C) MARGEM POR MARCA
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type MargemPorMarca = {
+  marca: string;
+  qt: number;
+  faturamento: number;
+  margem: number;
+  margemPct: number;
+  ganhosIndiretos: number;
+};
+
+export function margemPorMarca(
+  vendas: VendaParsed[],
+  custosPorPlaca: CustosMap,
+): MargemPorMarca[] {
+  const map = new Map<
+    string,
+    { qt: number; valor: number; margem: number; ganhos: number }
+  >();
+  for (const v of vendas) {
+    const k = (v.marca ?? "—").toUpperCase();
+    if (!map.has(k)) map.set(k, { qt: 0, valor: 0, margem: 0, ganhos: 0 });
+    const r = map.get(k)!;
+    const m = calcMargemVenda(v, custosPorPlaca);
+    r.qt++;
+    r.valor += m.valor;
+    r.margem += m.margem;
+    if (m.componentes) r.ganhos += m.componentes.ganhos_indiretos;
+  }
+  return [...map.entries()]
+    .map(([marca, r]) => ({
+      marca,
+      qt: r.qt,
+      faturamento: r.valor,
+      margem: r.margem,
+      margemPct: pctSafe(r.margem, r.valor),
+      ganhosIndiretos: r.ganhos,
+    }))
+    .sort((a, b) => b.qt - a.qt);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// D) GIRO (dias_estoque) vs MARGEM — buckets
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type GiroBucket = {
+  faixa: string;
+  diasMin: number;
+  diasMax: number;
+  qt: number;
+  faturamento: number;
+  margem: number;
+  margemPct: number;
+  margemPorUnidade: number;
+};
+
+const BUCKETS: { label: string; min: number; max: number }[] = [
+  { label: "0-15 dias", min: 0, max: 15 },
+  { label: "16-30 dias", min: 16, max: 30 },
+  { label: "31-60 dias", min: 31, max: 60 },
+  { label: "61-90 dias", min: 61, max: 90 },
+  { label: "91-180 dias", min: 91, max: 180 },
+  { label: "180+ dias", min: 181, max: Number.POSITIVE_INFINITY },
+];
+
+export function giroVsMargem(
+  vendas: VendaParsed[],
+  custosPorPlaca: CustosMap,
+): GiroBucket[] {
+  const acc = BUCKETS.map((b) => ({
+    ...b,
+    qt: 0,
+    valor: 0,
+    margem: 0,
+  }));
+  for (const v of vendas) {
+    if (v.dias_estoque == null) continue;
+    const m = calcMargemVenda(v, custosPorPlaca);
+    for (const b of acc) {
+      if (v.dias_estoque >= b.min && v.dias_estoque <= b.max) {
+        b.qt++;
+        b.valor += m.valor;
+        b.margem += m.margem;
+        break;
+      }
+    }
+  }
+  return acc.map((b) => ({
+    faixa: b.label,
+    diasMin: b.min,
+    diasMax: b.max === Number.POSITIVE_INFINITY ? -1 : b.max,
+    qt: b.qt,
+    faturamento: b.valor,
+    margem: b.margem,
+    margemPct: pctSafe(b.margem, b.valor),
+    margemPorUnidade: b.qt > 0 ? b.margem / b.qt : 0,
+  }));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// E) MODELOS — top + piores margens
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type MargemPorModelo = {
+  modelo: string;
+  qt: number;
+  faturamento: number;
+  margem: number;
+  margemPct: number;
+};
+
+export function margemPorModelo(
+  vendas: VendaParsed[],
+  custosPorPlaca: CustosMap,
+  opts: { minVendas?: number } = {},
+): MargemPorModelo[] {
+  const minQt = opts.minVendas ?? 3;
+  const map = new Map<string, { qt: number; valor: number; margem: number }>();
+  for (const v of vendas) {
+    const k = (v.modelo ?? "—").trim().toUpperCase();
+    if (!map.has(k)) map.set(k, { qt: 0, valor: 0, margem: 0 });
+    const r = map.get(k)!;
+    const m = calcMargemVenda(v, custosPorPlaca);
+    r.qt++;
+    r.valor += m.valor;
+    r.margem += m.margem;
+  }
+  return [...map.entries()]
+    .filter(([, r]) => r.qt >= minQt)
+    .map(([modelo, r]) => ({
+      modelo,
+      qt: r.qt,
+      faturamento: r.valor,
+      margem: r.margem,
+      margemPct: pctSafe(r.margem, r.valor),
+    }))
+    .sort((a, b) => a.margem - b.margem); // ascending: piores primeiro
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// F) TROCAS vs SEM TROCAS
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type TrocasResumo = {
+  comTroca: {
+    qt: number;
+    faturamento: number;
+    margem: number;
+    margemPct: number;
+    margemPorUnidade: number;
+    ticketMedio: number;
+    ganhosIndiretos: number;
+  };
+  semTroca: {
+    qt: number;
+    faturamento: number;
+    margem: number;
+    margemPct: number;
+    margemPorUnidade: number;
+    ticketMedio: number;
+    ganhosIndiretos: number;
+  };
+};
+
+export function trocasVsSem(
+  vendas: VendaParsed[],
+  custosPorPlaca: CustosMap,
+): TrocasResumo {
+  const grupos = {
+    troca: { qt: 0, valor: 0, margem: 0, ganhos: 0 },
+    sem: { qt: 0, valor: 0, margem: 0, ganhos: 0 },
+  };
+  for (const v of vendas) {
+    const g = v.placa_troca ? grupos.troca : grupos.sem;
+    const m = calcMargemVenda(v, custosPorPlaca);
+    g.qt++;
+    g.valor += m.valor;
+    g.margem += m.margem;
+    if (m.componentes) g.ganhos += m.componentes.ganhos_indiretos;
+  }
+  const build = (g: typeof grupos.troca) => ({
+    qt: g.qt,
+    faturamento: g.valor,
+    margem: g.margem,
+    margemPct: pctSafe(g.margem, g.valor),
+    margemPorUnidade: g.qt > 0 ? g.margem / g.qt : 0,
+    ticketMedio: g.qt > 0 ? g.valor / g.qt : 0,
+    ganhosIndiretos: g.ganhos,
+  });
+  return { comTroca: build(grupos.troca), semTroca: build(grupos.sem) };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// G) VENDEDORES
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type MargemPorVendedor = {
+  vendedor: string;
+  qt: number;
+  faturamento: number;
+  margem: number;
+  margemPct: number;
+  comissao: number;
+};
+
+export function margemPorVendedor(
+  vendas: VendaParsed[],
+  custosPorPlaca: CustosMap,
+  opts: { minVendas?: number } = {},
+): MargemPorVendedor[] {
+  const minQt = opts.minVendas ?? 1;
+  const map = new Map<
+    string,
+    { qt: number; valor: number; margem: number; comissao: number }
+  >();
+  for (const v of vendas) {
+    const k = v.vendedor_nome || v.vendedor_codigo || "—";
+    if (!map.has(k)) map.set(k, { qt: 0, valor: 0, margem: 0, comissao: 0 });
+    const r = map.get(k)!;
+    const m = calcMargemVenda(v, custosPorPlaca);
+    r.qt++;
+    r.valor += m.valor;
+    r.margem += m.margem;
+    r.comissao += v.comissao_vendedor ?? 0;
+  }
+  return [...map.entries()]
+    .filter(([, r]) => r.qt >= minQt)
+    .map(([vendedor, r]) => ({
+      vendedor,
+      qt: r.qt,
+      faturamento: r.valor,
+      margem: r.margem,
+      margemPct: pctSafe(r.margem, r.valor),
+      comissao: r.comissao,
+    }))
+    .sort((a, b) => b.margem - a.margem);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// H) OUTLIERS — vendas individuais com maior lucro/prejuízo
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type VendaOutlier = {
+  placa: string;
+  modelo: string;
+  marca: string | null;
+  valor: number;
+  margem: number;
+  margemPct: number;
+  loja: string | null;
+  vendedor: string | null;
+};
+
+export function outliers(
+  vendas: VendaParsed[],
+  custosPorPlaca: CustosMap,
+  opts: { top?: number; modo?: "lucro" | "prejuizo" } = {},
+): VendaOutlier[] {
+  const top = opts.top ?? 10;
+  const modo = opts.modo ?? "lucro";
+  const lista = vendas.map((v) => {
+    const m = calcMargemVenda(v, custosPorPlaca);
+    return {
+      placa: v.placa,
+      modelo: v.modelo,
+      marca: v.marca,
+      valor: m.valor,
+      margem: m.margem,
+      margemPct: m.margemPct,
+      loja: v.empresa_nome,
+      vendedor: v.vendedor_nome,
+    };
+  });
+  lista.sort((a, b) => (modo === "lucro" ? b.margem - a.margem : a.margem - b.margem));
+  return lista.slice(0, top);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// I) ESTOQUE EM RISCO — carros parados de modelos com histórico negativo
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type EstoqueRiscoItem = {
+  placa: string;
+  modelo: string;
+  marca: string | null;
+  preco: number;
+  margemHistoricaMedia: number;
+  vendasHistoricas: number;
+  diasNoPatio: number | null;
+};
+
+export type EstoqueRiscoResumo = {
+  totalCarros: number;
+  comHistorico: number;
+  semHistorico: number;
+  qtEmRisco: number;
+  valorEmRisco: number;
+  qtSeguro: number;
+  valorSeguro: number;
+  itens: EstoqueRiscoItem[];
+};
+
+export function estoqueEmRisco(
+  veiculos: VeiculoParsed[],
+  vendas: VendaParsed[],
+  custosPorPlaca: CustosMap,
+  opts: { topPiores?: number } = {},
+): EstoqueRiscoResumo {
+  const topPiores = opts.topPiores ?? 20;
+
+  // Histórico médio de margem por modelo (normalizado uppercase)
+  const hist = new Map<string, { qt: number; somaMargem: number }>();
+  for (const v of vendas) {
+    const k = (v.modelo ?? "—").trim().toUpperCase();
+    if (!hist.has(k)) hist.set(k, { qt: 0, somaMargem: 0 });
+    const r = hist.get(k)!;
+    const m = calcMargemVenda(v, custosPorPlaca);
+    r.qt++;
+    r.somaMargem += m.margem;
+  }
+
+  let comHist = 0,
+    semHist = 0,
+    qtRisco = 0,
+    valorRisco = 0,
+    qtSeguro = 0,
+    valorSeguro = 0;
+  const itens: EstoqueRiscoItem[] = [];
+
+  for (const veh of veiculos) {
+    const k = (veh.modelo ?? "—").trim().toUpperCase();
+    const h = hist.get(k);
+    if (!h || h.qt === 0) {
+      semHist++;
+      continue;
+    }
+    comHist++;
+    const media = h.somaMargem / h.qt;
+    const preco = veh.preco_venda ?? 0;
+    if (media < 0) {
+      qtRisco++;
+      valorRisco += preco;
+      itens.push({
+        placa: veh.placa ?? "—",
+        modelo: veh.modelo ?? "—",
+        marca: veh.marca ?? null,
+        preco,
+        margemHistoricaMedia: media,
+        vendasHistoricas: h.qt,
+        diasNoPatio: veh.dias_patio ?? null,
+      });
+    } else {
+      qtSeguro++;
+      valorSeguro += preco;
+    }
+  }
+
+  itens.sort((a, b) => a.margemHistoricaMedia - b.margemHistoricaMedia);
+
+  return {
+    totalCarros: veiculos.length,
+    comHistorico: comHist,
+    semHistorico: semHist,
+    qtEmRisco: qtRisco,
+    valorEmRisco: valorRisco,
+    qtSeguro,
+    valorSeguro,
+    itens: itens.slice(0, topPiores),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// J) CLIENTES RECORRENTES
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type ClienteRecorrente = {
+  nome: string;
+  codigo: string | null;
+  tipo: "PF" | "PJ" | "?";
+  qt: number;
+  faturamento: number;
+  margem: number;
+};
+
+export function clientesRecorrentes(
+  vendas: VendaParsed[],
+  custosPorPlaca: CustosMap,
+  opts: { minCompras?: number } = {},
+): ClienteRecorrente[] {
+  const min = opts.minCompras ?? 2;
+  const map = new Map<
+    string,
+    { nome: string; codigo: string | null; tipo: "PF" | "PJ" | "?"; qt: number; valor: number; margem: number }
+  >();
+  for (const v of vendas) {
+    const k = v.cliente_codigo?.trim() || `__sem_doc__${v.cliente_nome ?? ""}`;
+    if (!map.has(k)) {
+      map.set(k, {
+        nome: v.cliente_nome ?? "?",
+        codigo: v.cliente_codigo,
+        tipo: v.cliente_tipo ?? "?",
+        qt: 0,
+        valor: 0,
+        margem: 0,
+      });
+    }
+    const r = map.get(k)!;
+    const m = calcMargemVenda(v, custosPorPlaca);
+    r.qt++;
+    r.valor += m.valor;
+    r.margem += m.margem;
+  }
+  return [...map.values()]
+    .filter((c) => c.qt >= min)
+    .map((c) => ({
+      nome: c.nome,
+      codigo: c.codigo,
+      tipo: c.tipo,
+      qt: c.qt,
+      faturamento: c.valor,
+      margem: c.margem,
+    }))
+    .sort((a, b) => b.qt - a.qt);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// K) CROSS-TABS — Loja × Modelo, Loja × Marca, Loja × Vendedor
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type TopItemPorLoja = {
+  loja: string;
+  totalVendasLoja: number;
+  itens: { nome: string; qt: number; faturamento: number; margem: number; margemPct: number }[];
+};
+
+function topPorLojaGen(
+  vendas: VendaParsed[],
+  custosPorPlaca: CustosMap,
+  pickKey: (v: VendaParsed) => string,
+  topPorLoja: number,
+): TopItemPorLoja[] {
+  // map[loja][item] = { qt, valor, margem }
+  const data = new Map<
+    string,
+    { total: number; por: Map<string, { qt: number; valor: number; margem: number }> }
+  >();
+  for (const v of vendas) {
+    const loja = v.empresa_nome || `Loja ${v.cod_empresa}`;
+    const item = pickKey(v);
+    if (!data.has(loja)) data.set(loja, { total: 0, por: new Map() });
+    const d = data.get(loja)!;
+    d.total++;
+    if (!d.por.has(item)) d.por.set(item, { qt: 0, valor: 0, margem: 0 });
+    const r = d.por.get(item)!;
+    const m = calcMargemVenda(v, custosPorPlaca);
+    r.qt++;
+    r.valor += m.valor;
+    r.margem += m.margem;
+  }
+  return [...data.entries()]
+    .map(([loja, d]) => ({
+      loja,
+      totalVendasLoja: d.total,
+      itens: [...d.por.entries()]
+        .map(([nome, r]) => ({
+          nome,
+          qt: r.qt,
+          faturamento: r.valor,
+          margem: r.margem,
+          margemPct: pctSafe(r.margem, r.valor),
+        }))
+        .sort((a, b) => b.qt - a.qt)
+        .slice(0, topPorLoja),
+    }))
+    .sort((a, b) => b.totalVendasLoja - a.totalVendasLoja);
+}
+
+export function topModelosPorLoja(
+  vendas: VendaParsed[],
+  custosPorPlaca: CustosMap,
+  opts: { topPorLoja?: number } = {},
+): TopItemPorLoja[] {
+  return topPorLojaGen(vendas, custosPorPlaca, (v) => (v.modelo ?? "—").trim().toUpperCase(), opts.topPorLoja ?? 5);
+}
+
+export function topMarcasPorLoja(
+  vendas: VendaParsed[],
+  custosPorPlaca: CustosMap,
+  opts: { topPorLoja?: number } = {},
+): TopItemPorLoja[] {
+  return topPorLojaGen(vendas, custosPorPlaca, (v) => (v.marca ?? "—").trim().toUpperCase(), opts.topPorLoja ?? 5);
+}
+
+export function topVendedoresPorLoja(
+  vendas: VendaParsed[],
+  custosPorPlaca: CustosMap,
+  opts: { topPorLoja?: number } = {},
+): TopItemPorLoja[] {
+  return topPorLojaGen(
+    vendas,
+    custosPorPlaca,
+    (v) => v.vendedor_nome || v.vendedor_codigo || "—",
+    opts.topPorLoja ?? 5,
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// L) ONDE CADA MODELO É VENDIDO — útil pra "onde a Ranger XLT mais vende?"
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type LojasPorModelo = {
+  modelo: string;
+  totalVendido: number;
+  lojas: { loja: string; qt: number; faturamento: number; margem: number; margemPct: number }[];
+};
+
+export function lojasPorModelo(
+  vendas: VendaParsed[],
+  custosPorPlaca: CustosMap,
+  opts: { minVendasModelo?: number; topModelos?: number; topLojasPorModelo?: number } = {},
+): LojasPorModelo[] {
+  const minMod = opts.minVendasModelo ?? 5;
+  const topModelos = opts.topModelos ?? 20;
+  const topLojas = opts.topLojasPorModelo ?? 5;
+
+  const data = new Map<string, { total: number; por: Map<string, { qt: number; valor: number; margem: number }> }>();
+  for (const v of vendas) {
+    const modelo = (v.modelo ?? "—").trim().toUpperCase();
+    const loja = v.empresa_nome || `Loja ${v.cod_empresa}`;
+    if (!data.has(modelo)) data.set(modelo, { total: 0, por: new Map() });
+    const d = data.get(modelo)!;
+    d.total++;
+    if (!d.por.has(loja)) d.por.set(loja, { qt: 0, valor: 0, margem: 0 });
+    const r = d.por.get(loja)!;
+    const m = calcMargemVenda(v, custosPorPlaca);
+    r.qt++;
+    r.valor += m.valor;
+    r.margem += m.margem;
+  }
+
+  return [...data.entries()]
+    .filter(([, d]) => d.total >= minMod)
+    .sort((a, b) => b[1].total - a[1].total)
+    .slice(0, topModelos)
+    .map(([modelo, d]) => ({
+      modelo,
+      totalVendido: d.total,
+      lojas: [...d.por.entries()]
+        .map(([loja, r]) => ({
+          loja,
+          qt: r.qt,
+          faturamento: r.valor,
+          margem: r.margem,
+          margemPct: pctSafe(r.margem, r.valor),
+        }))
+        .sort((a, b) => b.qt - a.qt)
+        .slice(0, topLojas),
+    }));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// M) TENDÊNCIA TEMPORAL — vendas por mês
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type VendasPorMes = {
+  ano: number;
+  mes: number;
+  rotulo: string;
+  qt: number;
+  faturamento: number;
+  margem: number;
+  margemPct: number;
+  ticketMedio: number;
+};
+
+export function vendasPorMes(vendas: VendaParsed[], custosPorPlaca: CustosMap): VendasPorMes[] {
+  const map = new Map<string, { ano: number; mes: number; qt: number; valor: number; margem: number }>();
+  for (const v of vendas) {
+    if (!v.data_venda) continue;
+    const d = new Date(v.data_venda);
+    const ano = d.getFullYear();
+    const mes = d.getMonth() + 1;
+    const k = `${ano}-${String(mes).padStart(2, "0")}`;
+    if (!map.has(k)) map.set(k, { ano, mes, qt: 0, valor: 0, margem: 0 });
+    const r = map.get(k)!;
+    const m = calcMargemVenda(v, custosPorPlaca);
+    r.qt++;
+    r.valor += m.valor;
+    r.margem += m.margem;
+  }
+  const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+  return [...map.values()]
+    .sort((a, b) => (a.ano - b.ano) * 100 + (a.mes - b.mes))
+    .map((r) => ({
+      ano: r.ano,
+      mes: r.mes,
+      rotulo: `${MESES[r.mes - 1]}/${r.ano}`,
+      qt: r.qt,
+      faturamento: r.valor,
+      margem: r.margem,
+      margemPct: pctSafe(r.margem, r.valor),
+      ticketMedio: r.qt > 0 ? r.valor / r.qt : 0,
+    }));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// N) DEMOGRAFIA — UF, PF×PJ, idade do veículo, KM
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type VendasPorUF = {
+  uf: string;
+  qt: number;
+  faturamento: number;
+  margem: number;
+  margemPct: number;
+};
+
+export function vendasPorUF(vendas: VendaParsed[], custosPorPlaca: CustosMap): VendasPorUF[] {
+  const map = new Map<string, { qt: number; valor: number; margem: number }>();
+  for (const v of vendas) {
+    const uf = (v.cliente_uf ?? "—").toUpperCase();
+    if (!map.has(uf)) map.set(uf, { qt: 0, valor: 0, margem: 0 });
+    const r = map.get(uf)!;
+    const m = calcMargemVenda(v, custosPorPlaca);
+    r.qt++;
+    r.valor += m.valor;
+    r.margem += m.margem;
+  }
+  return [...map.entries()]
+    .map(([uf, r]) => ({
+      uf,
+      qt: r.qt,
+      faturamento: r.valor,
+      margem: r.margem,
+      margemPct: pctSafe(r.margem, r.valor),
+    }))
+    .sort((a, b) => b.qt - a.qt);
+}
+
+export type ResumoPFPJ = {
+  pf: { qt: number; faturamento: number; margem: number; margemPct: number; ticketMedio: number };
+  pj: { qt: number; faturamento: number; margem: number; margemPct: number; ticketMedio: number };
+  semDoc: { qt: number; faturamento: number; margem: number; margemPct: number };
+};
+
+export function pfVsPj(vendas: VendaParsed[], custosPorPlaca: CustosMap): ResumoPFPJ {
+  const buckets = {
+    pf: { qt: 0, valor: 0, margem: 0 },
+    pj: { qt: 0, valor: 0, margem: 0 },
+    semDoc: { qt: 0, valor: 0, margem: 0 },
+  };
+  for (const v of vendas) {
+    const m = calcMargemVenda(v, custosPorPlaca);
+    const b = v.cliente_tipo === "PF" ? buckets.pf : v.cliente_tipo === "PJ" ? buckets.pj : buckets.semDoc;
+    b.qt++;
+    b.valor += m.valor;
+    b.margem += m.margem;
+  }
+  return {
+    pf: {
+      qt: buckets.pf.qt,
+      faturamento: buckets.pf.valor,
+      margem: buckets.pf.margem,
+      margemPct: pctSafe(buckets.pf.margem, buckets.pf.valor),
+      ticketMedio: buckets.pf.qt > 0 ? buckets.pf.valor / buckets.pf.qt : 0,
+    },
+    pj: {
+      qt: buckets.pj.qt,
+      faturamento: buckets.pj.valor,
+      margem: buckets.pj.margem,
+      margemPct: pctSafe(buckets.pj.margem, buckets.pj.valor),
+      ticketMedio: buckets.pj.qt > 0 ? buckets.pj.valor / buckets.pj.qt : 0,
+    },
+    semDoc: {
+      qt: buckets.semDoc.qt,
+      faturamento: buckets.semDoc.valor,
+      margem: buckets.semDoc.margem,
+      margemPct: pctSafe(buckets.semDoc.margem, buckets.semDoc.valor),
+    },
+  };
+}
+
+export type IdadeVeiculoBucket = {
+  faixa: string;
+  anosMin: number;
+  anosMax: number;
+  qt: number;
+  faturamento: number;
+  margem: number;
+  margemPct: number;
+  ticketMedio: number;
+};
+
+export function idadeVeiculoVsMargem(
+  vendas: VendaParsed[],
+  custosPorPlaca: CustosMap,
+  anoReferencia: number = new Date().getFullYear(),
+): IdadeVeiculoBucket[] {
+  const FAIXAS: { label: string; min: number; max: number }[] = [
+    { label: "0–2 anos (seminovo)", min: 0, max: 2 },
+    { label: "3–5 anos", min: 3, max: 5 },
+    { label: "6–8 anos", min: 6, max: 8 },
+    { label: "9–12 anos", min: 9, max: 12 },
+    { label: "13+ anos (usadão)", min: 13, max: 999 },
+  ];
+  const acc = FAIXAS.map((f) => ({ ...f, qt: 0, valor: 0, margem: 0 }));
+  for (const v of vendas) {
+    if (v.ano_fabricacao == null) continue;
+    const idade = anoReferencia - v.ano_fabricacao;
+    const m = calcMargemVenda(v, custosPorPlaca);
+    for (const f of acc) {
+      if (idade >= f.min && idade <= f.max) {
+        f.qt++;
+        f.valor += m.valor;
+        f.margem += m.margem;
+        break;
+      }
+    }
+  }
+  return acc.map((f) => ({
+    faixa: f.label,
+    anosMin: f.min,
+    anosMax: f.max === 999 ? -1 : f.max,
+    qt: f.qt,
+    faturamento: f.valor,
+    margem: f.margem,
+    margemPct: pctSafe(f.margem, f.valor),
+    ticketMedio: f.qt > 0 ? f.valor / f.qt : 0,
+  }));
+}
+
+export type KmBucket = {
+  faixa: string;
+  qt: number;
+  faturamento: number;
+  margem: number;
+  margemPct: number;
+  ticketMedio: number;
+};
+
+export function kmVsMargem(vendas: VendaParsed[], custosPorPlaca: CustosMap): KmBucket[] {
+  const FAIXAS: { label: string; min: number; max: number }[] = [
+    { label: "0–20.000 km", min: 0, max: 20000 },
+    { label: "20.001–50.000 km", min: 20001, max: 50000 },
+    { label: "50.001–100.000 km", min: 50001, max: 100000 },
+    { label: "100.001–150.000 km", min: 100001, max: 150000 },
+    { label: "150.001+ km", min: 150001, max: Number.POSITIVE_INFINITY },
+  ];
+  const acc = FAIXAS.map((f) => ({ ...f, qt: 0, valor: 0, margem: 0 }));
+  for (const v of vendas) {
+    if (v.km == null) continue;
+    const m = calcMargemVenda(v, custosPorPlaca);
+    for (const f of acc) {
+      if (v.km >= f.min && v.km <= f.max) {
+        f.qt++;
+        f.valor += m.valor;
+        f.margem += m.margem;
+        break;
+      }
+    }
+  }
+  return acc.map((f) => ({
+    faixa: f.label,
+    qt: f.qt,
+    faturamento: f.valor,
+    margem: f.margem,
+    margemPct: pctSafe(f.margem, f.valor),
+    ticketMedio: f.qt > 0 ? f.valor / f.qt : 0,
+  }));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// O) ESTOQUE ATUAL — distribuição por loja e por marca
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type EstoquePorLoja = {
+  loja: string;
+  qt: number;
+  valorEmEstoque: number;
+  diasPatioMedio: number;
+  /** Carros parados há mais de 60 dias — alerta. */
+  qtAcimaDe60Dias: number;
+};
+
+export function estoquePorLoja(veiculos: VeiculoParsed[], lojaNomePorCod: Record<number, string> = {}): EstoquePorLoja[] {
+  const map = new Map<
+    string,
+    { qt: number; valor: number; diasSoma: number; diasN: number; over60: number }
+  >();
+  for (const v of veiculos) {
+    const nome = lojaNomePorCod[v.cod_empresa] || `Loja ${v.cod_empresa}`;
+    if (!map.has(nome)) map.set(nome, { qt: 0, valor: 0, diasSoma: 0, diasN: 0, over60: 0 });
+    const r = map.get(nome)!;
+    r.qt++;
+    r.valor += v.preco_venda ?? 0;
+    if (v.dias_patio != null) {
+      r.diasSoma += v.dias_patio;
+      r.diasN++;
+      if (v.dias_patio > 60) r.over60++;
+    }
+  }
+  return [...map.entries()]
+    .map(([loja, r]) => ({
+      loja,
+      qt: r.qt,
+      valorEmEstoque: r.valor,
+      diasPatioMedio: r.diasN > 0 ? r.diasSoma / r.diasN : 0,
+      qtAcimaDe60Dias: r.over60,
+    }))
+    .sort((a, b) => b.qt - a.qt);
+}
+
+export type EstoquePorMarca = {
+  marca: string;
+  qt: number;
+  valorEmEstoque: number;
+  diasPatioMedio: number;
+};
+
+export function estoquePorMarca(veiculos: VeiculoParsed[]): EstoquePorMarca[] {
+  const map = new Map<string, { qt: number; valor: number; diasSoma: number; diasN: number }>();
+  for (const v of veiculos) {
+    const marca = (v.marca ?? "—").toUpperCase();
+    if (!map.has(marca)) map.set(marca, { qt: 0, valor: 0, diasSoma: 0, diasN: 0 });
+    const r = map.get(marca)!;
+    r.qt++;
+    r.valor += v.preco_venda ?? 0;
+    if (v.dias_patio != null) {
+      r.diasSoma += v.dias_patio;
+      r.diasN++;
+    }
+  }
+  return [...map.entries()]
+    .map(([marca, r]) => ({
+      marca,
+      qt: r.qt,
+      valorEmEstoque: r.valor,
+      diasPatioMedio: r.diasN > 0 ? r.diasSoma / r.diasN : 0,
+    }))
+    .sort((a, b) => b.qt - a.qt);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// O') CLASSIFICAÇÃO Auto Avaliar — distribuição A-E do estoque atual
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type DistribuicaoClasses = {
+  classes: { classe: "A" | "B" | "C" | "D" | "E"; qt: number; valor: number; canal: "showroom" | "repasse" }[];
+  totalShowroom: { qt: number; valor: number };
+  totalRepasse: { qt: number; valor: number };
+  rebaixadosPorEstoque: number;
+};
+
+export function distribuicaoClasses(
+  veiculos: VeiculoParsed[],
+): DistribuicaoClasses {
+  // Import dinâmico evita ciclo de imports
+  // (classificacao não depende de insights, mas insights importa coisa que pode acabar dependendo dele)
+  // Como aqui é função pura síncrona, vamos importar diretamente no topo:
+  // (movido pro import do arquivo)
+  const contagem = new Map<string, number>();
+  for (const v of veiculos) {
+    const k = (v.modelo ?? "").trim().toUpperCase();
+    contagem.set(k, (contagem.get(k) ?? 0) + 1);
+  }
+
+  const classes = {
+    A: { qt: 0, valor: 0 },
+    B: { qt: 0, valor: 0 },
+    C: { qt: 0, valor: 0 },
+    D: { qt: 0, valor: 0 },
+    E: { qt: 0, valor: 0 },
+  } as Record<"A" | "B" | "C" | "D" | "E", { qt: number; valor: number }>;
+  let totalShowroomQt = 0, totalShowroomRs = 0;
+  let totalRepasseQt = 0, totalRepasseRs = 0;
+  let rebaixados = 0;
+
+  for (const v of veiculos) {
+    const c = classificarVeiculo(v, { contagemPorModelo: contagem });
+    classes[c.classe].qt++;
+    classes[c.classe].valor += v.preco_venda ?? 0;
+    if (c.canal === "showroom") {
+      totalShowroomQt++;
+      totalShowroomRs += v.preco_venda ?? 0;
+    } else {
+      totalRepasseQt++;
+      totalRepasseRs += v.preco_venda ?? 0;
+    }
+    if (c.rebaixadoPorEstoque) rebaixados++;
+  }
+
+  return {
+    classes: (["A", "B", "C", "D", "E"] as const).map((k) => ({
+      classe: k,
+      qt: classes[k].qt,
+      valor: classes[k].valor,
+      // canal "natural" da classe (não considera rebaixamento)
+      canal: k === "A" || k === "B" ? "showroom" : "repasse",
+    })),
+    totalShowroom: { qt: totalShowroomQt, valor: totalShowroomRs },
+    totalRepasse: { qt: totalRepasseQt, valor: totalRepasseRs },
+    rebaixadosPorEstoque: rebaixados,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P) BUNDLE COMPLETO — usado pelo /chat pra enviar contexto pro LLM
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type InsightsBundle = {
+  sumario: SumarioGlobal;
+  lojas: MargemPorLoja[];
+  marcas: MargemPorMarca[];
+  giro: GiroBucket[];
+  modelosPiores: MargemPorModelo[];
+  modelosMelhores: MargemPorModelo[];
+  trocas: TrocasResumo;
+  vendedoresTop: MargemPorVendedor[];
+  vendedoresPiores: MargemPorVendedor[];
+  outliersLucro: VendaOutlier[];
+  outliersPrejuizo: VendaOutlier[];
+  estoque: EstoqueRiscoResumo | null;
+  clientesRecorrentes: ClienteRecorrente[];
+  // Cross-tabs
+  topModelosPorLoja: TopItemPorLoja[];
+  topMarcasPorLoja: TopItemPorLoja[];
+  topVendedoresPorLoja: TopItemPorLoja[];
+  lojasDeCadaModelo: LojasPorModelo[];
+  // Temporal
+  vendasPorMes: VendasPorMes[];
+  // Demografia
+  vendasPorUF: VendasPorUF[];
+  pfVsPj: ResumoPFPJ;
+  idadeVeiculo: IdadeVeiculoBucket[];
+  km: KmBucket[];
+  // Estoque
+  estoquePorLoja: EstoquePorLoja[] | null;
+  estoquePorMarca: EstoquePorMarca[] | null;
+  classificacao: DistribuicaoClasses | null;
+};
+
+export function montarBundle(
+  vendas: VendaParsed[],
+  custosPorPlaca: CustosMap,
+  veiculos: VeiculoParsed[],
+): InsightsBundle {
+  const modelos = margemPorModelo(vendas, custosPorPlaca, { minVendas: 3 });
+  const vendedores = margemPorVendedor(vendas, custosPorPlaca, { minVendas: 5 });
+
+  // Mapa cod_empresa → nome (pra estoquePorLoja)
+  const lojaNomePorCod: Record<number, string> = {};
+  for (const v of vendas) {
+    if (v.empresa_nome) lojaNomePorCod[v.cod_empresa] = v.empresa_nome;
+  }
+
+  return {
+    sumario: sumarioGlobal(vendas, custosPorPlaca),
+    lojas: margemPorLoja(vendas, custosPorPlaca),
+    marcas: margemPorMarca(vendas, custosPorPlaca),
+    giro: giroVsMargem(vendas, custosPorPlaca),
+    modelosPiores: modelos.slice(0, 15),
+    modelosMelhores: [...modelos].reverse().slice(0, 15),
+    trocas: trocasVsSem(vendas, custosPorPlaca),
+    vendedoresTop: vendedores.slice(0, 10),
+    vendedoresPiores: [...vendedores].reverse().slice(0, 10),
+    outliersLucro: outliers(vendas, custosPorPlaca, { top: 10, modo: "lucro" }),
+    outliersPrejuizo: outliers(vendas, custosPorPlaca, { top: 10, modo: "prejuizo" }),
+    estoque: veiculos.length > 0 ? estoqueEmRisco(veiculos, vendas, custosPorPlaca, { topPiores: 20 }) : null,
+    clientesRecorrentes: clientesRecorrentes(vendas, custosPorPlaca, { minCompras: 2 }).slice(0, 20),
+    topModelosPorLoja: topModelosPorLoja(vendas, custosPorPlaca, { topPorLoja: 7 }),
+    topMarcasPorLoja: topMarcasPorLoja(vendas, custosPorPlaca, { topPorLoja: 5 }),
+    topVendedoresPorLoja: topVendedoresPorLoja(vendas, custosPorPlaca, { topPorLoja: 5 }),
+    lojasDeCadaModelo: lojasPorModelo(vendas, custosPorPlaca, { minVendasModelo: 5, topModelos: 20, topLojasPorModelo: 5 }),
+    vendasPorMes: vendasPorMes(vendas, custosPorPlaca),
+    vendasPorUF: vendasPorUF(vendas, custosPorPlaca),
+    pfVsPj: pfVsPj(vendas, custosPorPlaca),
+    idadeVeiculo: idadeVeiculoVsMargem(vendas, custosPorPlaca),
+    km: kmVsMargem(vendas, custosPorPlaca),
+    estoquePorLoja: veiculos.length > 0 ? estoquePorLoja(veiculos, lojaNomePorCod) : null,
+    estoquePorMarca: veiculos.length > 0 ? estoquePorMarca(veiculos) : null,
+    classificacao: veiculos.length > 0 ? distribuicaoClasses(veiculos) : null,
+  };
+}

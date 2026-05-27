@@ -10,6 +10,7 @@ export type VendaParsed = {
   ano_modelo: number | null;
   cor_externa: string | null;
   renavam: string | null;
+  km: number | null;
 
   // Loja
   cod_empresa: number;
@@ -96,6 +97,7 @@ const FIELD_HEADERS: Record<string, string[]> = {
   cor_externa: ["Cor Externa"],
   ano_modelo: ["Ano/Modelo", "Ano/m"],
   renavam: ["Renavam"],
+  km: ["KM_USADO", "Quilometragem", "KM"],
   comb: ["Comb"],
   tipo: ["Tipo"],
   marca: ["Descrição Marca", "Marca", "Linha1"],
@@ -119,31 +121,36 @@ function lookupColumns(
   const out: Record<string, number> = {};
 
   for (const [field, headers] of Object.entries(FIELD_HEADERS)) {
-    const targets = headers.map(norm);
-    const candidates: number[] = [];
-    for (let i = 0; i < headerRow.length; i++) {
-      if (targets.includes(norm(headerRow[i]))) candidates.push(i);
-    }
-    if (candidates.length === 0) {
-      out[field] = -1;
-      continue;
-    }
-    if (candidates.length === 1) {
-      out[field] = candidates[0];
-      continue;
-    }
-    // Múltiplas: escolher a com mais valores preenchidos não-zero na amostra
-    let best = candidates[0];
-    let bestFill = -1;
-    for (const c of candidates) {
-      let fill = 0;
-      for (const row of sampleRows) {
-        const v = row[c];
-        if (v !== null && v !== undefined && v !== "" && v !== 0) fill++;
+    // Itera aliases EM ORDEM — primeiro alias com pelo menos uma coluna no header vence.
+    // Isso permite definir "Descrição Marca" como prioridade sobre "Linha1" (fallback).
+    let chosen = -1;
+    for (const alias of headers) {
+      const target = norm(alias);
+      const candidates: number[] = [];
+      for (let i = 0; i < headerRow.length; i++) {
+        if (norm(headerRow[i]) === target) candidates.push(i);
       }
-      if (fill > bestFill) { bestFill = fill; best = c; }
+      if (candidates.length === 0) continue;
+
+      if (candidates.length === 1) {
+        chosen = candidates[0];
+        break;
+      }
+      // Múltiplas colunas com o MESMO header — desempata por preenchimento na amostra
+      let best = candidates[0];
+      let bestFill = -1;
+      for (const c of candidates) {
+        let fill = 0;
+        for (const row of sampleRows) {
+          const v = row[c];
+          if (v !== null && v !== undefined && v !== "" && v !== 0) fill++;
+        }
+        if (fill > bestFill) { bestFill = fill; best = c; }
+      }
+      chosen = best;
+      break;
     }
-    out[field] = best;
+    out[field] = chosen;
   }
 
   return out;
@@ -321,6 +328,7 @@ export async function parseNbsVendasXlsx(
       ano_modelo: mod,
       cor_externa: asStr(get(row, cols, "cor_externa"))?.toUpperCase() ?? null,
       renavam: asStr(get(row, cols, "renavam")),
+      km: asInt(get(row, cols, "km")),
 
       cod_empresa: codEmpresa,
       empresa_nome: empresa?.nome ?? null,

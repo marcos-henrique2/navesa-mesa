@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Car, TrendingUp, Building2, Upload, Menu, X } from "lucide-react";
+import { LayoutDashboard, Car, TrendingUp, Building2, Upload, Menu, X, Sparkles, MessageSquare } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +17,8 @@ const NAV: NavItem[] = [
   { href: "/", label: "Dashboard", icon: <LayoutDashboard className="h-4 w-4" />, match: (p) => p === "/" },
   { href: "/veiculos", label: "Estoque", icon: <Car className="h-4 w-4" />, match: (p) => p.startsWith("/veiculos") },
   { href: "/vendas", label: "Análise de Vendas", icon: <TrendingUp className="h-4 w-4" />, match: (p) => p.startsWith("/vendas") },
+  { href: "/insights", label: "Insights", icon: <Sparkles className="h-4 w-4" />, match: (p) => p.startsWith("/insights") },
+  { href: "/chat", label: "Chat IA", icon: <MessageSquare className="h-4 w-4" />, match: (p) => p.startsWith("/chat") },
   { href: "/upload", label: "Upload de Relatórios", icon: <Upload className="h-4 w-4" />, match: (p) => p.startsWith("/upload") },
   { href: "/lojas", label: "Cadastro de Lojas", icon: <Building2 className="h-4 w-4" />, match: (p) => p.startsWith("/lojas") },
 ];

@@ -27,7 +27,7 @@ const CONFIG = {
   },
   custos: {
     title: "Custos (Relatório de Custos)",
-    desc: "Arraste o .xls de Custos do NBS aqui. Bate centavo a centavo com a margem oficial.",
+    desc: "Arraste o .xls de Custos do NBS aqui.",
     redirect: "/vendas",
     accept: {
       "application/vnd.ms-excel": [".xls"],
@@ -38,11 +38,12 @@ const CONFIG = {
 
 export function UploadDropzone({ modo }: { modo: Modo }) {
   const router = useRouter();
-  const { setFromParse, setVendasFromParse, setCustosFromParse, meta, vendasMeta, custosMeta } = useInventory();
+  const { setFromParse, setVendasFromParse, setCustosFromParse, clearVendas, clearCustos, meta, vendasMeta, custosMeta } = useInventory();
   const [status, setStatus] = useState<"idle" | "parsing" | "done" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [resultCount, setResultCount] = useState<number | null>(null);
+  const [mergeFeedback, setMergeFeedback] = useState<string | null>(null);
 
   const onDrop = useCallback(
     async (accepted: File[]) => {
@@ -52,6 +53,7 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
       setFileName(file.name);
       setStatus("parsing");
       setError(null);
+      setMergeFeedback(null);
 
       try {
         const buf = await file.arrayBuffer();
@@ -61,15 +63,29 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
           setResultCount(result.meta.total_veiculos);
         } else if (modo === "vendas") {
           const result = await parseNbsVendasXlsx(buf, file.name);
-          setVendasFromParse(result);
+          const delta = setVendasFromParse(result);
           setResultCount(result.meta.total_vendas);
+          if (delta.mantidas > 0 || delta.substituidas > 0) {
+            const partes: string[] = [];
+            partes.push(`+${delta.novas} novas`);
+            if (delta.substituidas > 0) partes.push(`${delta.substituidas} atualizadas`);
+            if (delta.mantidas > 0) partes.push(`${delta.mantidas} mantidas do histórico`);
+            setMergeFeedback(partes.join(" · "));
+          }
         } else {
           const result = await parseNbsCustosXls(buf, file.name);
-          setCustosFromParse(result);
+          const delta = setCustosFromParse(result);
           setResultCount(result.meta.total_vendas);
+          if (delta.mantidos > 0 || delta.substituidos > 0) {
+            const partes: string[] = [];
+            partes.push(`+${delta.novos} novos`);
+            if (delta.substituidos > 0) partes.push(`${delta.substituidos} atualizados`);
+            if (delta.mantidos > 0) partes.push(`${delta.mantidos} mantidos do histórico`);
+            setMergeFeedback(partes.join(" · "));
+          }
         }
         setStatus("done");
-        setTimeout(() => router.push(CONFIG[modo].redirect), 1000);
+        setTimeout(() => router.push(CONFIG[modo].redirect), 1500);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Erro desconhecido");
         setStatus("error");
@@ -92,7 +108,7 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
 
   return (
     <div className="space-y-3">
-      <div>
+      <div className="min-h-[3.5rem]">
         <h3 className="font-semibold">{cfg.title}</h3>
         <p className="text-xs text-zinc-500">{cfg.desc}</p>
       </div>
@@ -118,14 +134,39 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
 
       {existing && status === "idle" && (
         <div className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs">
-          <p className="text-zinc-600">
-            <FileSpreadsheet className="mr-1 inline h-3 w-3" />
-            Último upload: {modo === "estoque"
-              ? `${formatInt(meta!.total_veiculos)} veículos / ${formatInt(meta!.total_lojas)} lojas`
-              : modo === "vendas"
-              ? `${formatInt(vendasMeta!.total_vendas)} vendas`
-              : `${formatInt(custosMeta!.total_vendas)} custos detalhados`}
-          </p>
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0 flex-1 text-zinc-600">
+              <p>
+                <FileSpreadsheet className="mr-1 inline h-3 w-3" />
+                {modo === "estoque" && <>{formatInt(meta!.total_veiculos)} veículos / {formatInt(meta!.total_lojas)} lojas</>}
+                {modo === "vendas" && <>{formatInt(vendasMeta!.total_vendas)} vendas acumuladas</>}
+                {modo === "custos" && <>{formatInt(custosMeta!.total_vendas)} custos detalhados</>}
+              </p>
+              {modo === "vendas" && vendasMeta?.periodo_inicio && vendasMeta?.periodo_fim && (
+                <p className="mt-0.5 text-[10px] text-slate-500">
+                  Período: {new Date(vendasMeta.periodo_inicio).toLocaleDateString("pt-BR")} → {new Date(vendasMeta.periodo_fim).toLocaleDateString("pt-BR")}
+                </p>
+              )}
+              {modo === "custos" && custosMeta?.periodo && (
+                <p className="mt-0.5 text-[10px] text-slate-500">{custosMeta.periodo}</p>
+              )}
+            </div>
+            {modo !== "estoque" && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm(`Apagar todo o histórico acumulado de ${modo}? Você precisará re-subir do zero.`)) {
+                    if (modo === "vendas") clearVendas();
+                    else clearCustos();
+                  }
+                }}
+                className="shrink-0 rounded px-2 py-0.5 text-[10px] text-slate-500 hover:bg-slate-200 hover:text-slate-700"
+                title="Limpar histórico acumulado"
+              >
+                Limpar histórico
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -141,10 +182,17 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
                 </p>
               )}
               {status === "done" && (
-                <p className="mt-1 flex items-center gap-2 text-xs text-green-600">
-                  <CheckCircle2 className="h-3 w-3" />
-                  {formatInt(resultCount ?? 0)} registros — redirecionando…
-                </p>
+                <>
+                  <p className="mt-1 flex items-center gap-2 text-xs text-green-600">
+                    <CheckCircle2 className="h-3 w-3" />
+                    {formatInt(resultCount ?? 0)} registros — redirecionando…
+                  </p>
+                  {mergeFeedback && (
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Merge incremental: {mergeFeedback}
+                    </p>
+                  )}
+                </>
               )}
               {status === "error" && (
                 <p className="mt-1 flex items-center gap-2 text-xs text-red-600">

@@ -4,18 +4,32 @@ import Link from "next/link";
 import { Upload, Car, Building2, TrendingUp, FileSpreadsheet, ArrowRight } from "lucide-react";
 import { useInventory } from "@/lib/store/inventory";
 import { agregarMargem } from "@/lib/analytics/margem";
+import { classificarPatio, type StatusVeiculo } from "@/lib/inventory/status";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
 import { PageHeader } from "./AppShell";
 
 export function DashboardHome() {
   const { meta, veiculos, vendasMeta, vendas, custosPorPlaca, isHydrated } = useInventory();
 
-  let realQt = 0, prepQt = 0, realRs = 0, prepRs = 0;
+  // Classifica todo veículo em uma de 5 categorias (preparação alinhada com NBS = 354)
+  const status: Record<StatusVeiculo, { qt: number; valor: number }> = {
+    disponivel: { qt: 0, valor: 0 },
+    transito: { qt: 0, valor: 0 },
+    preparacao: { qt: 0, valor: 0 },
+    bloqueado: { qt: 0, valor: 0 },
+    oficina: { qt: 0, valor: 0 },
+    documentacao: { qt: 0, valor: 0 },
+    outro: { qt: 0, valor: 0 },
+  };
   for (const v of veiculos) {
-    const isPrep = v.patio.trim().toUpperCase() === "PREPARAÇÃO";
-    const preco = v.preco_venda ?? 0;
-    if (isPrep) { prepQt++; prepRs += preco; } else { realQt++; realRs += preco; }
+    const s = classificarPatio(v.patio);
+    status[s].qt++;
+    status[s].valor += v.preco_venda ?? 0;
   }
+  const totalQt = veiculos.length;
+  const totalRs = veiculos.reduce((s, v) => s + (v.preco_venda ?? 0), 0);
+  const outrosQt = status.bloqueado.qt + status.oficina.qt + status.documentacao.qt + status.outro.qt;
+  const outrosRs = status.bloqueado.valor + status.oficina.valor + status.documentacao.valor + status.outro.valor;
 
   // Margem agregada via lib/analytics/margem.ts (fonte única da verdade)
   const aggVendas = agregarMargem(vendas, custosPorPlaca);
@@ -47,26 +61,41 @@ export function DashboardHome() {
             {isHydrated && veiculos.length > 0 && (
               <section>
                 <SectionHeader title="Estoque atual" link={{ href: "/veiculos", label: "Ver estoque completo" }} />
-                <div className="grid gap-4 md:grid-cols-3">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                   <BigKpi
                     accent="emerald"
-                    label="Estoque real"
-                    value={formatBRL(realRs)}
-                    sublabel={`${formatInt(realQt)} carros disponíveis`}
+                    label="Disponível pra venda"
+                    value={formatBRL(status.disponivel.valor)}
+                    sublabel={`${formatInt(status.disponivel.qt)} em pátio comercial`}
                   />
                   <BigKpi
                     accent="amber"
                     label="Em preparação"
-                    value={formatBRL(prepRs)}
-                    sublabel={`${formatInt(prepQt)} carros fantasmas`}
+                    value={formatBRL(status.preparacao.valor)}
+                    sublabel={`${formatInt(status.preparacao.qt)} carros (alinhado NBS)`}
+                  />
+                  <BigKpi
+                    accent="slate"
+                    label="Em trânsito"
+                    value={formatBRL(status.transito.valor)}
+                    sublabel={`${formatInt(status.transito.qt)} a caminho do pátio`}
                   />
                   <BigKpi
                     accent="brand"
                     label="Total geral"
-                    value={formatBRL(realRs + prepRs)}
-                    sublabel={`${formatInt(realQt + prepQt)} em ${formatInt(meta?.total_lojas ?? 0)} lojas`}
+                    value={formatBRL(totalRs)}
+                    sublabel={`${formatInt(totalQt)} em ${formatInt(meta?.total_lojas ?? 0)} lojas`}
                   />
                 </div>
+                {outrosQt > 0 && (
+                  <p className="mt-3 text-xs text-slate-500">
+                    {status.bloqueado.qt > 0 && <>+ {formatInt(status.bloqueado.qt)} bloqueado{status.bloqueado.qt === 1 ? "" : "s"} · </>}
+                    {status.oficina.qt > 0 && <>{formatInt(status.oficina.qt)} em oficina externa · </>}
+                    {status.documentacao.qt > 0 && <>{formatInt(status.documentacao.qt)} com pendência de documentação · </>}
+                    {status.outro.qt > 0 && <>{formatInt(status.outro.qt)} sem classificação · </>}
+                    {formatBRL(outrosRs)} parados
+                  </p>
+                )}
               </section>
             )}
 

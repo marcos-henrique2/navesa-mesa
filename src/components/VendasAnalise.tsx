@@ -150,6 +150,10 @@ export function VendasAnalise() {
     { accessorKey: "placa", header: "Placa", cell: (info) => <span className="font-mono text-xs">{info.getValue<string>()}</span> },
     { accessorKey: "marca", header: "Marca" },
     { accessorKey: "modelo", header: "Modelo", cell: (info) => <span className="text-xs">{info.getValue<string>()}</span> },
+    { accessorKey: "km", header: "KM", cell: (info) => {
+      const v = info.getValue<number | null>();
+      return <span className="tabular-nums text-xs text-zinc-600">{v != null ? formatInt(v) : "—"}</span>;
+    } },
     { accessorKey: "vendedor_nome", header: "Vendedor", cell: (info) => <span className="text-xs">{info.getValue<string | null>() ?? "—"}</span> },
     { accessorKey: "cliente_nome", header: "Cliente", cell: (info) => {
       const row = info.row.original;

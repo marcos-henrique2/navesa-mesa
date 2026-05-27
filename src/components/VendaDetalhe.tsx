@@ -78,7 +78,9 @@ export function VendaDetalhe({ chassi }: { chassi: string }) {
       <div className="grid gap-4 md:grid-cols-2">
         <Card title="🚗 Veículo">
           <Row label="Marca / Modelo" value={`${venda.marca ?? "—"} · ${venda.modelo}`} />
+          <Row label="Placa" value={venda.placa ?? "—"} />
           <Row label="Ano fab./mod." value={`${venda.ano_fabricacao ?? "—"} / ${venda.ano_modelo ?? "—"}`} />
+          <Row label="Quilometragem" value={venda.km != null ? `${formatInt(venda.km)} km` : "—"} />
           <Row label="Cor" value={venda.cor_externa ?? "—"} />
           <Row label="Renavam" value={venda.renavam ?? "—"} />
           <Row label="Loja vendedora" value={venda.empresa_nome || nomeOuCodigo(lojas, venda.cod_empresa)} />

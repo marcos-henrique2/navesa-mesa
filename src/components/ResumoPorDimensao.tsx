@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { BarChart3 } from "lucide-react";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import { nomeOuCodigo, type LojaInfo } from "@/lib/store/inventory";
+import { classificarPatio } from "@/lib/inventory/status";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
 
 type Dim = "marca" | "loja" | "cor" | "combustivel" | "patio" | "situacao";
@@ -44,7 +45,7 @@ export function ResumoPorDimensao({ veiculos, lojas }: Props) {
     for (const v of veiculos) {
       const key = dimKey(v, dim, lojas);
       const preco = v.preco_venda ?? 0;
-      const isPrep = v.patio.trim().toUpperCase() === "PREPARAÇÃO";
+      const isPrep = classificarPatio(v.patio) === "preparacao";
       const existing = map.get(key) ?? { qt: 0, valor: 0, qtPrep: 0 };
       existing.qt++;
       existing.valor += preco;

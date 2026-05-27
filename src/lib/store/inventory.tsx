@@ -1,9 +1,10 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useRef, type ReactNode } from "react";
 import type { ParseResult, VeiculoParsed, SnapshotMeta } from "@/lib/parsers/nbs-xlsx";
 import type { VendasParseResult, VendaParsed, VendasSnapshotMeta } from "@/lib/parsers/nbs-vendas-xlsx";
 import type { CustosParseResult, CustoDetalhado, CustosMeta } from "@/lib/parsers/nbs-custos-xls";
+import { mergeVendas, mergeCustos, type MergeResultVendas, type MergeResultCustos } from "./merge";
 
 export type LojaInfo = {
   cod_empresa: number;
@@ -31,8 +32,10 @@ type InventoryState = {
   custosPorPlaca: Record<string, CustoDetalhado>;
   custosWarnings: string[];
   setFromParse: (result: ParseResult) => void;
-  setVendasFromParse: (result: VendasParseResult) => void;
-  setCustosFromParse: (result: CustosParseResult) => void;
+  /** Merge incremental: substitui vendas dentro do período do novo arquivo, mantém o resto. */
+  setVendasFromParse: (result: VendasParseResult) => MergeResultVendas["delta"];
+  /** Merge incremental: substitui custos por placa, mantém placas não presentes no novo arquivo. */
+  setCustosFromParse: (result: CustosParseResult) => MergeResultCustos["delta"];
   updateLoja: (cod: number, patch: Partial<LojaInfo>) => void;
   removeLoja: (cod: number) => void;
   clear: () => void;
@@ -66,6 +69,12 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   const [custosPorPlaca, setCustosPorPlaca] = useState<Record<string, CustoDetalhado>>({});
   const [custosWarnings, setCustosWarnings] = useState<string[]>([]);
   const [isHydrated, setIsHydrated] = useState(false);
+
+  // Refs pra leitura síncrona durante merge incremental (state pode estar stale dentro de useCallback)
+  const vendasRef = useRef<VendaParsed[]>([]);
+  const vendasMetaRef = useRef<VendasSnapshotMeta | null>(null);
+  const custosRef = useRef<Record<string, CustoDetalhado>>({});
+  const custosMetaRef = useRef<CustosMeta | null>(null);
 
   useEffect(() => {
     try {
@@ -114,7 +123,9 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
           if (c.data_venda) c.data_venda = new Date(c.data_venda) as unknown as Date;
         }
         setCustosMeta(parsed.meta);
+        custosMetaRef.current = parsed.meta;
         setCustosPorPlaca(parsed.custosPorPlaca ?? {});
+        custosRef.current = parsed.custosPorPlaca ?? {};
         setCustosWarnings(parsed.warnings ?? []);
       }
     } catch (err) {
@@ -136,7 +147,9 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
           if (v.data_entrada) v.data_entrada = new Date(v.data_entrada) as unknown as Date;
         }
         setVendasMeta(parsed.meta);
+        vendasMetaRef.current = parsed.meta;
         setVendas(parsed.vendas);
+        vendasRef.current = parsed.vendas;
         setVendasWarnings(parsed.warnings ?? []);
       }
     } catch (err) {
@@ -221,82 +234,96 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setVendasFromParse = useCallback((result: VendasParseResult) => {
-    setVendasMeta(result.meta);
-    setVendas(result.vendas);
-    setVendasWarnings(result.warnings);
+    // Merge incremental: substitui vendas dentro do período do novo arquivo, mantém o resto
+    const merged = mergeVendas(vendasRef.current, vendasMetaRef.current, result);
+
+    setVendasMeta(merged.meta);
+    vendasMetaRef.current = merged.meta;
+    setVendas(merged.vendas);
+    vendasRef.current = merged.vendas;
+    setVendasWarnings(merged.warnings);
     try {
-      localStorage.setItem(VENDAS_KEY, JSON.stringify(result));
+      localStorage.setItem(VENDAS_KEY, JSON.stringify({
+        meta: merged.meta,
+        vendas: merged.vendas,
+        warnings: merged.warnings,
+      }));
     } catch (err) {
       console.warn("Falha ao persistir vendas:", err);
     }
 
-    // Popular mapping de vendedores (código → nome completo) a partir das vendas
+    // Popular mapping de vendedores apenas com as vendas do upload novo
     setVendedores((current) => {
-      const merged = { ...current };
+      const updated = { ...current };
       for (const v of result.vendas) {
         if (v.vendedor_codigo && v.vendedor_nome) {
-          merged[v.vendedor_codigo] = {
+          updated[v.vendedor_codigo] = {
             codigo: v.vendedor_codigo,
             nome: v.vendedor_nome,
             cpf: v.vendedor_cpf,
           };
         }
-        // "Quem recebeu" às vezes traz um código diferente — se já tivermos o nome dele em
-        // outra venda, fica resolvido pelo mapping existente.
       }
       try {
-        localStorage.setItem(VENDEDORES_KEY, JSON.stringify(merged));
+        localStorage.setItem(VENDEDORES_KEY, JSON.stringify(updated));
       } catch {}
-      return merged;
+      return updated;
     });
 
     // Merge lojas se vierem novas nas vendas
     setLojas((current) => {
-      const merged = { ...current };
+      const updated = { ...current };
       for (const v of result.vendas) {
-        if (v.empresa_nome && !merged[v.cod_empresa]?.nome) {
-          merged[v.cod_empresa] = { cod_empresa: v.cod_empresa, nome: v.empresa_nome, cidade: merged[v.cod_empresa]?.cidade ?? "" };
-        } else if (!merged[v.cod_empresa]) {
-          merged[v.cod_empresa] = { cod_empresa: v.cod_empresa, nome: v.empresa_nome ?? "", cidade: "" };
+        if (v.empresa_nome && !updated[v.cod_empresa]?.nome) {
+          updated[v.cod_empresa] = { cod_empresa: v.cod_empresa, nome: v.empresa_nome, cidade: updated[v.cod_empresa]?.cidade ?? "" };
+        } else if (!updated[v.cod_empresa]) {
+          updated[v.cod_empresa] = { cod_empresa: v.cod_empresa, nome: v.empresa_nome ?? "", cidade: "" };
         }
       }
       try {
-        localStorage.setItem(LOJAS_KEY, JSON.stringify(merged));
+        localStorage.setItem(LOJAS_KEY, JSON.stringify(updated));
       } catch {}
-      return merged;
+      return updated;
     });
+
+    return merged.delta;
   }, []);
 
   const clearVendas = useCallback(() => {
     setVendasMeta(null);
+    vendasMetaRef.current = null;
     setVendas([]);
+    vendasRef.current = [];
     setVendasWarnings([]);
     localStorage.removeItem(VENDAS_KEY);
   }, []);
 
   const setCustosFromParse = useCallback((result: CustosParseResult) => {
-    // Indexar por placa para lookup O(1)
-    const porPlaca: Record<string, CustoDetalhado> = {};
-    for (const c of result.custos) {
-      porPlaca[c.placa] = c;
-    }
-    setCustosMeta(result.meta);
-    setCustosPorPlaca(porPlaca);
-    setCustosWarnings(result.warnings);
+    // Merge incremental: substitui custos por placa, mantém placas não presentes no novo arquivo
+    const merged = mergeCustos(custosRef.current, custosMetaRef.current, result);
+
+    setCustosMeta(merged.meta);
+    custosMetaRef.current = merged.meta;
+    setCustosPorPlaca(merged.custosPorPlaca);
+    custosRef.current = merged.custosPorPlaca;
+    setCustosWarnings(merged.warnings);
     try {
       localStorage.setItem(CUSTOS_KEY, JSON.stringify({
-        meta: result.meta,
-        custosPorPlaca: porPlaca,
-        warnings: result.warnings,
+        meta: merged.meta,
+        custosPorPlaca: merged.custosPorPlaca,
+        warnings: merged.warnings,
       }));
     } catch (err) {
       console.warn("Falha ao persistir custos:", err);
     }
+    return merged.delta;
   }, []);
 
   const clearCustos = useCallback(() => {
     setCustosMeta(null);
+    custosMetaRef.current = null;
     setCustosPorPlaca({});
+    custosRef.current = {};
     setCustosWarnings([]);
     localStorage.removeItem(CUSTOS_KEY);
   }, []);
