@@ -69,7 +69,7 @@ export function FipeBox({ veiculo, onValorChange }: Props) {
     setState({ kind: "loading" });
     try {
       const modelos = await getModelos(marca.codigo);
-      const sugeridos = findModelos(veiculo.modelo, modelos).map((m) => m.modelo);
+      const sugeridos = findModelos(veiculo.modelo, modelos, 5, veiculo.combustivel ?? null).map((m) => m.modelo);
 
       if (sugeridos.length === 0) {
         setState({ kind: "needs-choice", marca, modelos, sugeridos: [], ano: veiculo.ano_modelo });

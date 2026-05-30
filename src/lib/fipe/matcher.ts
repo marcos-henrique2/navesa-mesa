@@ -85,6 +85,8 @@ const CRITICAL_TOKENS = new Set([
   "20TFSI", "40TFSI", "45TFSI", "55TFSI", "30TDI", "40TDI",
   "T200", "T270", "T300", "D300", "D350",
   "M40I", "M50I", "M340I",
+  // Combustíveis (alta discriminação: Diesel vs Flex muda preço fortemente)
+  "DIESEL", "FLEX", "GASOLINA", "HIBRIDO", "ELETRICO", "ETANOL",
 ]);
 
 const IMPORTANT_TOKENS = new Set([
@@ -92,16 +94,16 @@ const IMPORTANT_TOKENS = new Set([
   "CD",  // cabine dupla
   "CS",  // cabine simples
   "TRACK", "BLINDADO",
+  // Cilindradas (discriminam motorização: 2.0 vs 2.8 muda versão e preço)
+  "1.0", "1.2", "1.3", "1.4", "1.5", "1.6", "1.8", "2.0", "2.2", "2.5", "2.8", "3.0", "3.5",
 ]);
 
 const STOPWORDS = new Set([
-  "1.0", "1.2", "1.3", "1.4", "1.5", "1.6", "1.8", "2.0", "2.2", "2.5", "2.8", "3.0", "3.5",
   "16V", "8V", "12V", "4P", "2P", "5P",
   "AUT", "AUTOMATICO", "AUTOMÁTICO", "AUTOMATIC", "AT", "MT", "CVT", "DSG",
   "MANUAL", "TIPTRONIC", "S-TRONIC", "STRONIC", "GEARTRONIC",
-  "FLEX", "GASOLINA", "DIESEL", "HIBRIDO", "ELETRICO", "ETANOL",
   "4X4", "4X2", "4WD", "AWD", "FWD", "RWD",
-  "VVT", "DOHC", "SOHC", "DI", "MPFI", "MPI", "GDI", "TDI",
+  "VVT", "DOHC", "SOHC", "DI", "MPFI", "MPI", "GDI",
   "16V.", "L",
 ]);
 
@@ -131,7 +133,7 @@ function normalize(s: string): string {
 }
 
 function tokens(s: string): string[] {
-  let toks = normalize(s).split(" ").filter((t) => t.length > 0);
+  const toks = normalize(s).split(" ").filter((t) => t.length > 0);
 
   // Unir combos conhecidos (ex: ["40", "TFSI"] -> ["40TFSI"])
   for (const [a, b, joined] of TOKEN_COMBINATIONS) {
@@ -180,10 +182,24 @@ type ModeloMatch = { modelo: FipeModelo; score: number };
  *
  * Bônus extra se o primeiro token significativo bater (geralmente é o nome do carro: Q3, X1, etc).
  */
+/** Tokens de cilindrada no formato "1.0", "2.0", "2.8" etc. */
+const CYLINDER_RE = /^[1-3]\.[0-9]$/;
+
+/** Mapeia combustível NBS bruto → token de cilindrada/combustível usado no scoring. */
+function combustivelTokenFromNbs(combNbs: string | null | undefined): string | null {
+  if (!combNbs) return null;
+  const c = combNbs.toUpperCase().trim();
+  if (!c) return null;
+  // Mantém só os que estão em CRITICAL_TOKENS (DIESEL, FLEX, GASOLINA, HIBRIDO, ELETRICO, ETANOL)
+  if (CRITICAL_TOKENS.has(c)) return c;
+  return null;
+}
+
 export function findModelos(
   nbsModelo: string,
   fipeModelos: FipeModelo[],
   topN = 5,
+  combNbs: string | null = null,
 ): ModeloMatch[] {
   const nbsToks = tokens(nbsModelo).filter((t) => tokenWeight(t) > 0);
   if (nbsToks.length === 0) return [];
@@ -192,8 +208,16 @@ export function findModelos(
   const nbsWeight = nbsToks.reduce((s, t) => s + tokenWeight(t), 0);
   const firstNbs = nbsToks[0];
 
-  const scored = fipeModelos
-    .map<ModeloMatch>((m) => {
+  // Tiebreaker context: cilindrada NBS (ex: "2.0") e combustível NBS (ex: "DIESEL")
+  const nbsCilindrada = nbsToks.find((t) => CYLINDER_RE.test(t)) ?? null;
+  const nbsCombustivel = combustivelTokenFromNbs(combNbs) ?? nbsToks.find((t) =>
+    ["DIESEL", "FLEX", "GASOLINA", "HIBRIDO", "ELETRICO", "ETANOL"].includes(t),
+  ) ?? null;
+
+  type ScoredInternal = ModeloMatch & { fipeSet: Set<string> };
+
+  const scored: ScoredInternal[] = fipeModelos
+    .map<ScoredInternal>((m) => {
       const fipeToks = tokens(m.nome).filter((t) => tokenWeight(t) > 0);
       const fipeSet = new Set(fipeToks);
 
@@ -212,13 +236,26 @@ export function findModelos(
       // Bônus: primeiro token significativo do NBS bate com algum token do FIPE
       if (firstNbs && fipeSet.has(firstNbs)) score += 0.1;
 
-      return { modelo: m, score };
+      return { modelo: m, score, fipeSet };
     })
     .filter((x) => x.score > 0.15)
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => {
+      const diff = b.score - a.score;
+      // Tiebreaker (diff < 0.05): preferir candidato com cilindrada e combustível batendo
+      if (Math.abs(diff) < 0.05) {
+        const cylA = nbsCilindrada ? (a.fipeSet.has(nbsCilindrada) ? 1 : 0) : 0;
+        const cylB = nbsCilindrada ? (b.fipeSet.has(nbsCilindrada) ? 1 : 0) : 0;
+        if (cylA !== cylB) return cylB - cylA;
+
+        const combA = nbsCombustivel ? (a.fipeSet.has(nbsCombustivel) ? 1 : 0) : 0;
+        const combB = nbsCombustivel ? (b.fipeSet.has(nbsCombustivel) ? 1 : 0) : 0;
+        if (combA !== combB) return combB - combA;
+      }
+      return diff;
+    })
     .slice(0, topN);
 
-  return scored;
+  return scored.map(({ modelo, score }) => ({ modelo, score }));
 }
 
 export function findAno(

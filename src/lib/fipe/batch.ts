@@ -160,7 +160,7 @@ export async function runFipeBatch(
 
       // Modelos (cacheado pela primeira marca)
       const fipeModelos = await getModelos(fipeMarca.codigo);
-      const modeloMatches = findModelos(sample.modelo, fipeModelos, 1);
+      const modeloMatches = findModelos(sample.modelo, fipeModelos, 1, sample.combustivel ?? null);
       if (modeloMatches.length === 0) {
         for (const v of veiculosGrupo) erros.push({ chassi: v.chassi, modelo: v.modelo, motivo: "modelo-nao-encontrado" });
         continue;
