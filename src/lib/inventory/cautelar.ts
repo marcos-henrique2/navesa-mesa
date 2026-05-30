@@ -8,50 +8,92 @@
  *   - "com_restricao"  → desce 1 classe (recomendação pra repasse)
  *   - "aprovado"       → não afeta classificação automática (mantém o que a regra disse)
  *
- * Storage: localStorage indexado por chassi (não some entre uploads de estoque).
+ * Storage: Supabase (tabela cautelar, PK chassi). Cache em memória pra leituras
+ * síncronas. Escritas são otimistas (cache + dispatch event) e persistem em background.
  */
 
 import { useSyncExternalStore } from "react";
+import {
+  listCautelares,
+  upsertCautelar,
+  deleteCautelar,
+  upsertCautelaresEmLote,
+} from "@/lib/data/cautelar";
 
 export type StatusCautelar = "aprovado" | "com_restricao" | "reprovado";
 
-const KEY = "navesa-mesa:cautelar-v1";
 const EVT = "navesa-mesa:cautelar-updated";
 
-// ───── Persistência ─────────────────────────────────────────────────────────
+// Cache em memória (single source of truth pro hook)
+let cachedMap: Record<string, StatusCautelar> = {};
+let cacheSnapshot: Record<string, StatusCautelar> = cachedMap;
+let loadingPromise: Promise<void> | null = null;
+let loaded = false;
 
-function readAll(): Record<string, StatusCautelar> {
-  if (typeof window === "undefined") return {};
-  try {
-    return JSON.parse(localStorage.getItem(KEY) ?? "{}") as Record<string, StatusCautelar>;
-  } catch {
-    return {};
-  }
+function notify() {
+  // Cria nova referência pra useSyncExternalStore detectar mudança
+  cacheSnapshot = { ...cachedMap };
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(EVT));
 }
 
-function writeAll(data: Record<string, StatusCautelar>): void {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(KEY, JSON.stringify(data));
-    window.dispatchEvent(new Event(EVT));
-  } catch (err) {
-    console.warn("Falha ao salvar cautelar:", err);
-  }
+async function ensureLoaded(): Promise<void> {
+  if (loaded) return;
+  if (loadingPromise) return loadingPromise;
+  loadingPromise = (async () => {
+    try {
+      cachedMap = await listCautelares();
+      loaded = true;
+      cacheSnapshot = { ...cachedMap };
+      if (typeof window !== "undefined") window.dispatchEvent(new Event(EVT));
+    } catch (err) {
+      console.error("Falha ao carregar cautelares do Supabase:", err);
+    } finally {
+      loadingPromise = null;
+    }
+  })();
+  return loadingPromise;
 }
+
+// ───── Leitura síncrona (do cache) ──────────────────────────────────────────
 
 export function getCautelar(chassi: string): StatusCautelar | null {
-  return readAll()[chassi] ?? null;
+  return cachedMap[chassi] ?? null;
 }
+
+/**
+ * Retorna o mapa cautelar. Tipo `Readonly` previne mutação acidental do cache
+ * por consumidores. Pra mutar use setCautelar/setMultipleCautelares/etc.
+ */
+export function getAllCautelares(): Readonly<Record<string, StatusCautelar>> {
+  return cachedMap;
+}
+
+// ───── Escritas (otimistas + persistência em background com rollback) ──────
+//
+// Padrão: capturamos o estado anterior das chaves afetadas, aplicamos no cache,
+// notificamos, e disparamos a persistência. Em caso de erro, restauramos o
+// estado anterior + notify() — UI volta a refletir o Supabase.
 
 export function setCautelar(chassi: string, status: StatusCautelar | null): void {
-  const data = readAll();
-  if (status === null) delete data[chassi];
-  else data[chassi] = status;
-  writeAll(data);
-}
-
-export function getAllCautelares(): Record<string, StatusCautelar> {
-  return readAll();
+  const previo = cachedMap[chassi]; // undefined se não existia
+  if (status === null) {
+    delete cachedMap[chassi];
+    notify();
+    deleteCautelar(chassi).catch((e) => {
+      console.error("Falha ao remover cautelar (rollback aplicado):", e);
+      if (previo !== undefined) cachedMap[chassi] = previo;
+      notify();
+    });
+  } else {
+    cachedMap[chassi] = status;
+    notify();
+    upsertCautelar(chassi, status).catch((e) => {
+      console.error("Falha ao salvar cautelar (rollback aplicado):", e);
+      if (previo === undefined) delete cachedMap[chassi];
+      else cachedMap[chassi] = previo;
+      notify();
+    });
+  }
 }
 
 /**
@@ -64,17 +106,30 @@ export function setMultipleCautelares(
   novas: Record<string, StatusCautelar>,
   opts: { overwrite?: boolean } = {},
 ): { aplicados: number; ignorados: number } {
-  const data = readAll();
   let aplicados = 0, ignorados = 0;
+  const paraSalvar: Record<string, StatusCautelar> = {};
+  const previos: Record<string, StatusCautelar | undefined> = {};
   for (const [chassi, status] of Object.entries(novas)) {
-    if (!opts.overwrite && data[chassi]) {
+    if (!opts.overwrite && cachedMap[chassi]) {
       ignorados++;
       continue;
     }
-    data[chassi] = status;
+    previos[chassi] = cachedMap[chassi];
+    cachedMap[chassi] = status;
+    paraSalvar[chassi] = status;
     aplicados++;
   }
-  writeAll(data);
+  if (aplicados > 0) {
+    notify();
+    upsertCautelaresEmLote(paraSalvar).catch((e) => {
+      console.error("Falha ao salvar cautelares em lote (rollback aplicado):", e);
+      for (const [chassi, anterior] of Object.entries(previos)) {
+        if (anterior === undefined) delete cachedMap[chassi];
+        else cachedMap[chassi] = anterior;
+      }
+      notify();
+    });
+  }
   return { aplicados, ignorados };
 }
 
@@ -83,59 +138,43 @@ export function setMultipleCautelares(
  * Útil pra default "aprovado em massa".
  */
 export function aprovarTodosSemCautelar(chassis: string[]): { aprovados: number } {
-  const data = readAll();
+  const paraSalvar: Record<string, StatusCautelar> = {};
+  const aprovadosLista: string[] = [];
   let aprovados = 0;
   for (const ch of chassis) {
-    if (!data[ch]) {
-      data[ch] = "aprovado";
+    if (!cachedMap[ch]) {
+      cachedMap[ch] = "aprovado";
+      paraSalvar[ch] = "aprovado";
+      aprovadosLista.push(ch);
       aprovados++;
     }
   }
-  if (aprovados > 0) writeAll(data);
+  if (aprovados > 0) {
+    notify();
+    upsertCautelaresEmLote(paraSalvar).catch((e) => {
+      console.error("Falha ao aprovar em massa (rollback aplicado):", e);
+      for (const ch of aprovadosLista) delete cachedMap[ch];
+      notify();
+    });
+  }
   return { aprovados };
 }
 
-// ───── Hook React (snapshot cacheado pra useSyncExternalStore) ──────────────
+// ───── Hook React ───────────────────────────────────────────────────────────
 
 const EMPTY: Record<string, StatusCautelar> = {};
-let cachedRaw: string | null | undefined = undefined;
-let cachedMap: Record<string, StatusCautelar> = EMPTY;
 
 function readSnapshot(): Record<string, StatusCautelar> {
-  if (typeof window === "undefined") return EMPTY;
-  const raw = localStorage.getItem(KEY);
-  if (raw === cachedRaw) return cachedMap;
-  cachedRaw = raw;
-  try {
-    cachedMap = raw ? (JSON.parse(raw) as Record<string, StatusCautelar>) : {};
-  } catch {
-    cachedMap = {};
-  }
-  return cachedMap;
-}
-
-function invalidate() {
-  cachedRaw = undefined;
+  return cacheSnapshot;
 }
 
 function subscribe(callback: () => void): () => void {
   if (typeof window === "undefined") return () => {};
-  const onStorage = (e: StorageEvent) => {
-    if (e.key === KEY) {
-      invalidate();
-      callback();
-    }
-  };
-  const onLocal = () => {
-    invalidate();
-    callback();
-  };
-  window.addEventListener("storage", onStorage);
+  // Dispara load na primeira subscrição
+  ensureLoaded();
+  const onLocal = () => callback();
   window.addEventListener(EVT, onLocal);
-  return () => {
-    window.removeEventListener("storage", onStorage);
-    window.removeEventListener(EVT, onLocal);
-  };
+  return () => window.removeEventListener(EVT, onLocal);
 }
 
 function getServerSnapshot(): Record<string, StatusCautelar> {

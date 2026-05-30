@@ -8,6 +8,8 @@ import {
   salvarSnapshot,
   removerSnapshot,
   listarSnapshots,
+  ensureSnapshotsLoaded,
+  getCachedSnapshots,
   type Snapshot,
 } from "@/lib/storage/snapshots";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
@@ -16,41 +18,24 @@ const EVT = "navesa-mesa:snapshots-updated";
 
 function subscribe(cb: () => void): () => void {
   if (typeof window === "undefined") return () => {};
-  const onStorage = (e: StorageEvent) => {
-    if (e.key === "navesa-mesa:snapshots-v1") cb();
-  };
-  window.addEventListener("storage", onStorage);
+  ensureSnapshotsLoaded();
   window.addEventListener(EVT, cb);
-  return () => {
-    window.removeEventListener("storage", onStorage);
-    window.removeEventListener(EVT, cb);
-  };
+  return () => window.removeEventListener(EVT, cb);
 }
 
-// Snapshot do localStorage cacheado por referência (evita loop do useSyncExternalStore)
-let cacheRaw: string | null | undefined;
-let cacheArr: Snapshot[] = [];
-function getSnapshots(): Snapshot[] {
-  if (typeof window === "undefined") return cacheArr;
-  const raw = localStorage.getItem("navesa-mesa:snapshots-v1");
-  if (raw === cacheRaw) return cacheArr;
-  cacheRaw = raw;
-  cacheArr = listarSnapshots();
-  return cacheArr;
-}
-function getServer(): Snapshot[] {
+function getServer(): readonly Snapshot[] {
   return [];
 }
 
-function useSnapshots(): Snapshot[] {
-  return useSyncExternalStore(subscribe, getSnapshots, getServer);
+function useSnapshots(): readonly Snapshot[] {
+  return useSyncExternalStore(subscribe, getCachedSnapshots, getServer);
 }
 
 export function HistoricoSnapshots() {
   const { vendas, veiculos, custosPorPlaca, isHydrated } = useInventory();
   const snapshots = useSnapshots();
 
-  const salvarFoto = useCallback(() => {
+  const salvarFoto = useCallback(async () => {
     const snap = capturarSnapshot(vendas, custosPorPlaca, veiculos);
     if (!snap.vendas && !snap.estoque) {
       alert("Nenhum dado carregado pra fotografar. Suba os relatórios primeiro.");
@@ -58,7 +43,11 @@ export function HistoricoSnapshots() {
     }
     const jaExiste = listarSnapshots().some((s) => s.id === snap.id);
     if (jaExiste && !confirm("Já existe uma foto de hoje. Sobrescrever com o estado atual?")) return;
-    salvarSnapshot(snap);
+    try {
+      await salvarSnapshot(snap);
+    } catch (err) {
+      alert(`Falha ao salvar foto: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }, [vendas, custosPorPlaca, veiculos]);
 
   if (!isHydrated) return <div className="p-6 text-sm text-slate-500">Carregando…</div>;
@@ -198,7 +187,15 @@ function SecaoVendas({ snapshots }: { snapshots: Snapshot[] }) {
                   {formatBRL(s.vendas!.margemSemBonus)}
                 </td>
                 <td className="px-4 py-2 text-right">
-                  <button onClick={() => { if (confirm(`Apagar foto de ${fmtData(s.id)}?`)) removerSnapshot(s.id); }} className="text-slate-300 hover:text-red-500" title="Apagar foto">
+                  <button
+                    onClick={async () => {
+                      if (!confirm(`Apagar foto de ${fmtData(s.id)}?`)) return;
+                      try { await removerSnapshot(s.id); }
+                      catch (err) { alert(`Falha: ${err instanceof Error ? err.message : String(err)}`); }
+                    }}
+                    className="text-slate-300 hover:text-red-500"
+                    title="Apagar foto"
+                  >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </td>

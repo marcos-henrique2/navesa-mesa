@@ -1,6 +1,7 @@
 import { UploadDropzone } from "@/components/UploadDropzone";
 import { PageHeader } from "@/components/AppShell";
 import { BackupRestore } from "@/components/BackupRestore";
+import { MigrarParaSupabase } from "@/components/MigrarParaSupabase";
 
 export default function UploadPage() {
   return (
@@ -25,7 +26,8 @@ export default function UploadPage() {
           </ul>
         </div>
 
-        <div className="mt-6">
+        <div className="mt-6 space-y-4">
+          <MigrarParaSupabase />
           <BackupRestore />
         </div>
       </div>

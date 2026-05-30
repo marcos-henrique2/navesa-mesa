@@ -7,20 +7,25 @@
  *   1. Agrupa veículos por (marca, modelo, ano, comb) — muitos carros iguais → 1 chamada FIPE.
  *   2. Pra cada grupo único: resolve marca → modelos → ano → valor (4 chamadas).
  *   3. Aplica o resultado em todos os veículos do grupo.
- *   4. Salva tudo num batch result indexado por chassi.
+ *   4. Salva tudo no Supabase indexado por chassi.
  *
- * Cache: usa o cache existente do service (30 dias), e armazena o batch result em localStorage
- * separado pra leitura rápida sem refetch.
+ * Cache: persiste o batch result no Supabase (tabela fipe_batch). Hook useFipeBatch
+ * mantém uma cópia em memória pra leitura síncrona reativa.
  */
 
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import type { FipeMatch } from "./types";
 import { findMarca, findModelos, findAno } from "./matcher";
 import { getMarcas, getModelos, getAnos, getValor, parseFipeValor } from "./service";
+import {
+  loadBatchFromSupabase,
+  saveBatchToSupabase,
+  clearBatchSupabase,
+} from "@/lib/data/fipe-batch";
 
-const BATCH_KEY = "navesa-mesa:fipe-batch-v1";
 const BATCH_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 dias (FIPE muda mensalmente, mas estoque diariamente)
 const DELAY_BETWEEN_CALLS_MS = 100; // 10 req/s — confortável pra API gratuita
+const EVT = "navesa-mesa:fipe-batch-updated";
 
 export type BatchFipeItem = {
   chassi: string;
@@ -51,6 +56,42 @@ export type BatchProgress = {
   matchesAteAgora: number;
   errosAteAgora: number;
 };
+
+// ───── Cache em memória ─────────────────────────────────────────────────────
+
+let cached: BatchResult | null = null;
+let loaded = false;
+let loadingPromise: Promise<BatchResult | null> | null = null;
+
+function notify() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(EVT));
+}
+
+/**
+ * Carrega o batch do Supabase pro cache. Usado pelo hook na primeira renderização.
+ * Idempotente — chamadas concorrentes reusam a mesma Promise.
+ */
+export async function ensureBatchLoaded(): Promise<BatchResult | null> {
+  if (loaded) return cached;
+  if (loadingPromise) return loadingPromise;
+  loadingPromise = (async () => {
+    try {
+      const r = await loadBatchFromSupabase();
+      if (r && Date.now() - r.timestamp <= BATCH_TTL_MS) cached = r;
+      else cached = null;
+      loaded = true;
+      notify();
+      return cached;
+    } catch (err) {
+      console.error("Falha ao carregar batch FIPE do Supabase:", err);
+      loaded = true;
+      return null;
+    } finally {
+      loadingPromise = null;
+    }
+  })();
+  return loadingPromise;
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -181,47 +222,42 @@ export async function runFipeBatch(
     errosAteAgora: erros.length,
   });
 
-  // Salva no localStorage
+  // Persiste no Supabase + atualiza cache
   try {
-    localStorage.setItem(BATCH_KEY, JSON.stringify(result));
-    // Dispatch evento pra hooks na mesma aba detectarem a mudança
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(new Event("navesa-mesa:fipe-batch-updated"));
-    }
+    await saveBatchToSupabase(result);
+    cached = result;
+    loaded = true;
+    notify();
   } catch (err) {
-    console.warn("Falha ao salvar batch FIPE:", err);
+    console.warn("Falha ao salvar batch FIPE no Supabase:", err);
   }
 
   return result;
 }
 
 /**
- * Lê o batch result salvo no localStorage, se ainda fresco (<7 dias).
+ * Lê o batch result do cache em memória (já carregado pelo hook).
+ * Retorna null se ainda não carregado ou batch expirado (>7 dias).
  */
 export function loadCachedBatch(): BatchResult | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(BATCH_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as BatchResult;
-    if (Date.now() - parsed.timestamp > BATCH_TTL_MS) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
+  if (!cached) return null;
+  if (Date.now() - cached.timestamp > BATCH_TTL_MS) return null;
+  return cached;
 }
 
 /** Idade do batch em horas (ou null se não houver). */
 export function batchIdadeHoras(): number | null {
-  const cached = loadCachedBatch();
-  if (!cached) return null;
-  return (Date.now() - cached.timestamp) / (1000 * 60 * 60);
+  const c = loadCachedBatch();
+  if (!c) return null;
+  return (Date.now() - c.timestamp) / (1000 * 60 * 60);
 }
 
+/** Limpa o batch (Supabase + cache + dispara evento). Fire-and-forget. */
 export function clearBatch(): void {
-  if (typeof window === "undefined") return;
-  localStorage.removeItem(BATCH_KEY);
-  window.dispatchEvent(new Event("navesa-mesa:fipe-batch-updated"));
+  cached = null;
+  loaded = true;
+  notify();
+  clearBatchSupabase().catch((err) => console.warn("Falha ao limpar batch FIPE no Supabase:", err));
 }
 
 /**

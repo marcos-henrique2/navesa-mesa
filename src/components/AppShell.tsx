@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { LayoutDashboard, Car, TrendingUp, Building2, Upload, Menu, X, Sparkles, MessageSquare, History, ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { DataGate } from "./DataGate";
 
 const COLLAPSED_KEY = "navesa-mesa:sidebar-collapsed";
 
@@ -74,7 +75,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <span className="font-semibold text-slate-900">Navesa Mesa</span>
         </header>
 
-        <main className="flex-1 min-w-0">{children}</main>
+        <main className="flex-1 min-w-0"><DataGate>{children}</DataGate></main>
       </div>
     </div>
   );

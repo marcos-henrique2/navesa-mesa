@@ -59,11 +59,11 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
         const buf = await file.arrayBuffer();
         if (modo === "estoque") {
           const result = await parseNbsXlsx(buf, file.name);
-          setFromParse(result);
+          await setFromParse(result);
           setResultCount(result.meta.total_veiculos);
         } else if (modo === "vendas") {
           const result = await parseNbsVendasXlsx(buf, file.name);
-          const delta = setVendasFromParse(result);
+          const delta = await setVendasFromParse(result);
           setResultCount(result.meta.total_vendas);
           if (delta.mantidas > 0 || delta.substituidas > 0) {
             const partes: string[] = [];
@@ -74,7 +74,7 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
           }
         } else {
           const result = await parseNbsCustosXls(buf, file.name);
-          const delta = setCustosFromParse(result);
+          const delta = await setCustosFromParse(result);
           setResultCount(result.meta.total_vendas);
           if (delta.mantidos > 0 || delta.substituidos > 0) {
             const partes: string[] = [];

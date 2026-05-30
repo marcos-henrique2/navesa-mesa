@@ -1,10 +1,13 @@
+"use client";
+
 /**
  * SNAPSHOTS HISTÓRICOS — fotos do estado do negócio ao longo do tempo.
  *
- * Cada snapshot guarda só os KPIs agregados (não os dados crus) — leve, cabe muitos
- * no localStorage. Permite ver evolução: margem subiu/caiu? estoque parado diminuiu?
+ * Cada snapshot guarda só os KPIs agregados (não os dados crus) — leve.
+ * Permite ver evolução: margem subiu/caiu? estoque parado diminuiu?
  *
  * Dedup por dia: uma foto por data (a mais recente do dia sobrescreve).
+ * Storage: Supabase (tabela kpi_snapshots). Cache em memória + evento pra UI reativa.
  */
 
 import type { VendaParsed } from "@/lib/parsers/nbs-vendas-xlsx";
@@ -12,8 +15,13 @@ import type { CustoDetalhado } from "@/lib/parsers/nbs-custos-xls";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import { sumarioGlobal } from "@/lib/analytics/insights";
 import { classificarPatio } from "@/lib/inventory/status";
+import {
+  listKpiSnapshots,
+  upsertKpiSnapshot,
+  deleteKpiSnapshot,
+} from "@/lib/data/kpi-snapshots";
 
-const KEY = "navesa-mesa:snapshots-v1";
+const EVT = "navesa-mesa:snapshots-updated";
 
 export type Snapshot = {
   /** ID = data YYYY-MM-DD (dedup por dia). */
@@ -42,6 +50,56 @@ export type Snapshot = {
   } | null;
 };
 
+// ───── Cache em memória ─────────────────────────────────────────────────────
+
+let cached: Snapshot[] = [];
+let cacheSnapshot: Snapshot[] = cached;
+let loaded = false;
+let loadingPromise: Promise<void> | null = null;
+
+function notify() {
+  cacheSnapshot = [...cached];
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(EVT));
+}
+
+export async function ensureSnapshotsLoaded(): Promise<void> {
+  if (loaded) return;
+  if (loadingPromise) return loadingPromise;
+  loadingPromise = (async () => {
+    try {
+      cached = await listKpiSnapshots();
+      loaded = true;
+      notify();
+    } catch (err) {
+      console.error("Falha ao carregar snapshots do Supabase:", err);
+      loaded = true;
+    } finally {
+      loadingPromise = null;
+    }
+  })();
+  return loadingPromise;
+}
+
+/**
+ * Retorna a lista cacheada. Tipo `readonly` previne mutação acidental do cache
+ * (.push, .sort in-place, etc.) — consumidores devem clonar antes de modificar.
+ */
+export function getCachedSnapshots(): readonly Snapshot[] {
+  return cacheSnapshot;
+}
+
+/**
+ * Gera ID do snapshot no formato YYYY-MM-DD usando a data LOCAL do navegador.
+ * NÃO use toISOString().slice(0,10) — isso retorna UTC e quebra o dedup-por-dia
+ * pra usuários em fuso negativo (ex.: SP UTC-3 após 21h gera id do dia seguinte).
+ */
+function idDoDiaLocal(d: Date): string {
+  const ano = d.getFullYear();
+  const mes = String(d.getMonth() + 1).padStart(2, "0");
+  const dia = String(d.getDate()).padStart(2, "0");
+  return `${ano}-${mes}-${dia}`;
+}
+
 /** Monta um snapshot a partir do estado atual (não salva). */
 export function capturarSnapshot(
   vendas: VendaParsed[],
@@ -49,7 +107,7 @@ export function capturarSnapshot(
   veiculos: VeiculoParsed[],
 ): Snapshot {
   const hoje = new Date();
-  const id = hoje.toISOString().slice(0, 10);
+  const id = idDoDiaLocal(hoje);
 
   let vendasSnap: Snapshot["vendas"] = null;
   if (vendas.length > 0) {
@@ -112,36 +170,42 @@ export function capturarSnapshot(
   return { id, capturadoEm: hoje.toISOString(), vendas: vendasSnap, estoque: estoqueSnap };
 }
 
-export function listarSnapshots(): Snapshot[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw) as Snapshot[];
-    return Array.isArray(arr) ? arr.sort((a, b) => a.id.localeCompare(b.id)) : [];
-  } catch {
-    return [];
-  }
+export function listarSnapshots(): readonly Snapshot[] {
+  return cacheSnapshot;
 }
 
-/** Salva (ou sobrescreve a foto do mesmo dia). Retorna a lista atualizada. */
-export function salvarSnapshot(snap: Snapshot): Snapshot[] {
-  const atual = listarSnapshots().filter((s) => s.id !== snap.id);
-  const nova = [...atual, snap].sort((a, b) => a.id.localeCompare(b.id));
+/**
+ * Salva (ou sobrescreve a foto do mesmo dia) no Supabase + cache local.
+ * Otimista: atualiza cache antes do upsert. Em caso de erro, faz ROLLBACK do
+ * cache pra estado anterior antes de propagar o erro — UI volta a refletir o
+ * que está no Supabase.
+ */
+export async function salvarSnapshot(snap: Snapshot): Promise<Snapshot[]> {
+  const previo = cached;
+  cached = [...previo.filter((s) => s.id !== snap.id), snap].sort((a, b) => a.id.localeCompare(b.id));
+  notify();
   try {
-    localStorage.setItem(KEY, JSON.stringify(nova));
-    window.dispatchEvent(new Event("navesa-mesa:snapshots-updated"));
+    await upsertKpiSnapshot(snap);
   } catch (err) {
-    console.warn("Falha ao salvar snapshot:", err);
+    cached = previo;
+    notify();
+    console.error("Falha ao salvar snapshot no Supabase (rollback aplicado):", err);
+    throw err;
   }
-  return nova;
+  return cached;
 }
 
-export function removerSnapshot(id: string): Snapshot[] {
-  const nova = listarSnapshots().filter((s) => s.id !== id);
+export async function removerSnapshot(id: string): Promise<Snapshot[]> {
+  const previo = cached;
+  cached = previo.filter((s) => s.id !== id);
+  notify();
   try {
-    localStorage.setItem(KEY, JSON.stringify(nova));
-    window.dispatchEvent(new Event("navesa-mesa:snapshots-updated"));
-  } catch {}
-  return nova;
+    await deleteKpiSnapshot(id);
+  } catch (err) {
+    cached = previo;
+    notify();
+    console.error("Falha ao remover snapshot no Supabase (rollback aplicado):", err);
+    throw err;
+  }
+  return cached;
 }

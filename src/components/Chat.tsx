@@ -7,36 +7,18 @@ import { useInventory } from "@/lib/store/inventory";
 import { useFipeBatch } from "@/lib/fipe/useFipeBatch";
 import { useCautelares } from "@/lib/inventory/cautelar";
 import { montarBundle } from "@/lib/analytics/insights";
+import {
+  listChatMessages,
+  inserirMensagem,
+  clearChatMessages,
+} from "@/lib/data/chat";
 import { cn } from "@/lib/utils";
 
 type ChatMessage = {
+  id?: number;
   role: "user" | "assistant";
   content: string;
 };
-
-const CHAT_KEY = "navesa-mesa:chat-v1";
-
-/** Carrega histórico do chat do localStorage. SSR-safe (retorna [] no servidor). */
-function carregarHistorico(): ChatMessage[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(CHAT_KEY);
-    if (!raw) return [];
-    const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? (arr as ChatMessage[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function salvarHistorico(messages: ChatMessage[]): void {
-  if (typeof window === "undefined") return;
-  try {
-    localStorage.setItem(CHAT_KEY, JSON.stringify(messages));
-  } catch (err) {
-    console.warn("Falha ao salvar histórico do chat:", err);
-  }
-}
 
 const SUGESTOES = [
   // Diagnóstico estratégico
@@ -62,18 +44,29 @@ export function Chat() {
   const { vendas, veiculos, custosPorPlaca, vendasMeta, isHydrated } = useInventory();
   const fipeBatch = useFipeBatch();
   const cautelares = useCautelares();
-  // Lazy init lê o histórico salvo (só roda no client; conteúdo só renderiza após isHydrated)
-  const [messages, setMessages] = useState<ChatMessage[]>(carregarHistorico);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [carregandoHistorico, setCarregandoHistorico] = useState(true);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Persiste o histórico sempre que mudar (sobrevive reload)
+  // Carrega histórico do Supabase ao montar
   useEffect(() => {
-    salvarHistorico(messages);
-  }, [messages]);
+    let cancelado = false;
+    (async () => {
+      try {
+        const hist = await listChatMessages();
+        if (!cancelado) setMessages(hist.map((m) => ({ id: m.id, role: m.role, content: m.content })));
+      } catch (err) {
+        console.error("Falha ao carregar histórico do chat:", err);
+      } finally {
+        if (!cancelado) setCarregandoHistorico(false);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, []);
 
   const bundle = useMemo(() => {
     if (vendas.length === 0) return null;
@@ -96,21 +89,41 @@ export function Chat() {
     if (!prompt.trim() || streaming) return;
 
     const userMsg: ChatMessage = { role: "user", content: prompt };
-    const next = [...messages, userMsg];
-    setMessages(next);
+    setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setStreaming(true);
     setError(null);
 
+    // Persiste user PRIMEIRO (await) — garante que user.id < assistant.id no Supabase.
+    // Sem isso, em respostas rápidas o assistant pode chegar antes e a ordem do
+    // histórico vira invertida no reload (assistant aparecendo antes do user).
+    let userId: number | undefined;
+    try {
+      userId = await inserirMensagem("user", prompt);
+      setMessages((prev) => {
+        const copy = [...prev];
+        const idx = copy.findIndex((m) => m === userMsg);
+        if (idx >= 0 && userId !== undefined) copy[idx] = { ...userMsg, id: userId };
+        return copy;
+      });
+    } catch (e) {
+      console.error("Falha ao salvar mensagem do user:", e);
+      // Continua mesmo se falhar — UX mostra a pergunta, mas histórico ficará incompleto
+    }
+
     const ac = new AbortController();
     abortRef.current = ac;
 
+    // monta payload com snapshot atual (não com state futuro)
+    const payloadMessages = [...messages, userMsg];
+
+    let acc = ""; // conteúdo acumulado do stream — acessível no catch
     try {
       const resp = await fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
         signal: ac.signal,
-        body: JSON.stringify({ messages: next, bundle, periodo }),
+        body: JSON.stringify({ messages: payloadMessages, bundle, periodo }),
       });
 
       if (!resp.ok) {
@@ -130,7 +143,6 @@ export function Chat() {
 
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
-      let acc = "";
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -141,25 +153,71 @@ export function Chat() {
           return copy;
         });
       }
+
+      // Persiste assistant no Supabase (uma vez só, com o conteúdo final)
+      if (acc.length > 0) {
+        try {
+          const id = await inserirMensagem("assistant", acc);
+          setMessages((prev) => {
+            const copy = [...prev];
+            const last = copy[copy.length - 1];
+            if (last && last.role === "assistant" && !last.id) {
+              copy[copy.length - 1] = { ...last, id };
+            }
+            return copy;
+          });
+        } catch (e) {
+          console.error("Falha ao salvar resposta do assistente:", e);
+        }
+      }
     } catch (e) {
       if ((e as Error).name === "AbortError") return;
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
-      setMessages((prev) => prev.filter((_, i) => !(i === prev.length - 1 && prev[i].role === "assistant" && prev[i].content === "")));
+
+      // Se chegou conteúdo parcial antes do erro, salva com marca de "interrompida"
+      // pra não perder no reload (e o usuário sabe que foi parcial).
+      if (acc.length > 0) {
+        const conteudoMarcado = `${acc}\n\n_⚠️ Resposta interrompida — tente novamente._`;
+        setMessages((prev) => {
+          const copy = [...prev];
+          const last = copy[copy.length - 1];
+          if (last?.role === "assistant") copy[copy.length - 1] = { ...last, content: conteudoMarcado };
+          return copy;
+        });
+        inserirMensagem("assistant", conteudoMarcado)
+          .then((id) =>
+            setMessages((prev) => {
+              const copy = [...prev];
+              const last = copy[copy.length - 1];
+              if (last?.role === "assistant" && !last.id) copy[copy.length - 1] = { ...last, id };
+              return copy;
+            }),
+          )
+          .catch((err) => console.error("Falha ao salvar resposta parcial:", err));
+      } else {
+        // Sem conteúdo parcial — remove o placeholder vazio
+        setMessages((prev) => prev.filter((_, i) => !(i === prev.length - 1 && prev[i].role === "assistant" && prev[i].content === "")));
+      }
     } finally {
       setStreaming(false);
       abortRef.current = null;
     }
   }
 
-  function reset() {
+  async function reset() {
     if (messages.length > 0 && !confirm("Limpar toda a conversa? O histórico salvo será apagado.")) return;
     abortRef.current?.abort();
     setMessages([]);
     setError(null);
+    try {
+      await clearChatMessages();
+    } catch (e) {
+      console.error("Falha ao limpar histórico:", e);
+    }
   }
 
-  if (!isHydrated) return <div className="p-6 text-sm text-slate-500">Carregando…</div>;
+  if (!isHydrated || carregandoHistorico) return <div className="p-6 text-sm text-slate-500">Carregando…</div>;
 
   return (
     <div className="mx-auto flex h-[calc(100vh-9rem)] max-w-4xl flex-col">
@@ -199,7 +257,7 @@ export function Chat() {
         ) : (
           <div className="mx-auto max-w-3xl space-y-4">
             {messages.map((m, i) => (
-              <MessageBubble key={i} role={m.role} content={m.content} streaming={streaming && i === messages.length - 1 && m.role === "assistant"} />
+              <MessageBubble key={m.id ?? i} role={m.role} content={m.content} streaming={streaming && i === messages.length - 1 && m.role === "assistant"} />
             ))}
             {streaming && messages[messages.length - 1]?.role === "user" && (
               <div className="flex items-center gap-2 text-xs text-slate-500">
