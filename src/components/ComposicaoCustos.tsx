@@ -28,6 +28,7 @@ export function ComposicaoCustos({ vendas }: { vendas: VendaParsed[] }) {
   // Itens da composição. Se temos custos oficiais: 9 linhas. Senão: fallback com aviso.
   const itens: LineItem[] = temCustosOficiais ? [
     { label: "Aquisição (Nota Fábrica)", icon: <ShoppingCart className="h-3.5 w-3.5" />, value: agg.componentes.nota_fabrica, color: "bg-blue-500" },
+    { label: "(−) Ganhos Indiretos (Bônus + Valorização)", icon: <Gift className="h-3.5 w-3.5" />, value: agg.componentes.ganhos_indiretos, color: "bg-emerald-500", redutor: true },
     { label: "Despesas Oficina", icon: <Wrench className="h-3.5 w-3.5" />, value: agg.componentes.despesas_oficina, color: "bg-slate-400" },
     { label: "Frete + ICMS Frete", icon: <Truck className="h-3.5 w-3.5" />, value: agg.componentes.frete, color: "bg-slate-500" },
     { label: "Floor Plan", icon: <Banknote className="h-3.5 w-3.5" />, value: agg.componentes.forplan, color: "bg-purple-500" },
@@ -35,7 +36,6 @@ export function ComposicaoCustos({ vendas }: { vendas: VendaParsed[] }) {
     { label: "Comissões", icon: <UserSquare2 className="h-3.5 w-3.5" />, value: agg.componentes.comissoes, color: "bg-teal-500" },
     { label: "ADM", icon: <Briefcase className="h-3.5 w-3.5" />, value: agg.componentes.adm, color: "bg-slate-600" },
     { label: "Despesas Gerais", icon: <FileText className="h-3.5 w-3.5" />, value: agg.componentes.despesas_gerais, color: "bg-amber-500" },
-    { label: "(−) Ganhos Indiretos (Bônus + Valorização)", icon: <Gift className="h-3.5 w-3.5" />, value: agg.componentes.ganhos_indiretos, color: "bg-emerald-500", redutor: true },
   ] : [];
 
   // Soma absoluta dos itens (custos somam, redutor não conta no denominador da barra)

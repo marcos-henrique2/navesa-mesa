@@ -41,6 +41,7 @@ export function VendaDetalhe({ chassi }: { chassi: string }) {
   // Itens da composição: 9 se temos relatório de custos, 4 caso contrário
   const itens = temOficial && m.componentes ? [
     { label: "Aquisição (Nota Fábrica − ICMS)", icon: <ShoppingCart className="h-3.5 w-3.5" />, value: m.componentes.nota_fabrica, color: "bg-blue-500" },
+    { label: "(−) Ganhos Indiretos (Bônus + Valorização)", icon: <Gift className="h-3.5 w-3.5" />, value: m.componentes.ganhos_indiretos, color: "bg-emerald-500", redutor: true as const },
     { label: "Despesas Oficina", icon: <Wrench className="h-3.5 w-3.5" />, value: m.componentes.despesas_oficina, color: "bg-slate-400" },
     { label: "Frete + ICMS Frete", icon: <Truck className="h-3.5 w-3.5" />, value: m.componentes.frete, color: "bg-slate-500" },
     { label: "Floor Plan", icon: <Banknote className="h-3.5 w-3.5" />, value: m.componentes.forplan, color: "bg-purple-500" },
@@ -48,7 +49,6 @@ export function VendaDetalhe({ chassi }: { chassi: string }) {
     { label: "Comissões", icon: <UserSquare2 className="h-3.5 w-3.5" />, value: m.componentes.comissoes, color: "bg-teal-500" },
     { label: "ADM", icon: <Briefcase className="h-3.5 w-3.5" />, value: m.componentes.adm, color: "bg-slate-600" },
     { label: "Despesas Gerais", icon: <FileText className="h-3.5 w-3.5" />, value: m.componentes.despesas_gerais, color: "bg-amber-500" },
-    { label: "(−) Ganhos Indiretos (Bônus + Valorização)", icon: <Gift className="h-3.5 w-3.5" />, value: m.componentes.ganhos_indiretos, color: "bg-emerald-500", redutor: true as const },
   ] : [
     // Fallback sem relatório de custos
     { label: "Aquisição (estimada)", icon: <ShoppingCart className="h-3.5 w-3.5" />, value: venda.total_nota_fabrica ?? 0, color: "bg-blue-500" },

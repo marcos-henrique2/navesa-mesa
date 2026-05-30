@@ -16,8 +16,13 @@ import { useRouter } from "next/navigation";
 import { useInventory } from "@/lib/store/inventory";
 import { classificarPatio } from "@/lib/inventory/status";
 import { classificarVeiculo, contarPorModelo, CLASSE_COR, type Classe } from "@/lib/pricing/classificacao";
+import { useFipeBatch } from "@/lib/fipe/useFipeBatch";
+import { calcularDesvioFipe } from "@/lib/fipe/batch";
+import { useCautelares, CAUTELAR_ICONE, CAUTELAR_LABEL, type StatusCautelar } from "@/lib/inventory/cautelar";
 import { cn, formatBRL, formatInt } from "@/lib/utils";
 import { ResumoPorDimensao } from "./ResumoPorDimensao";
+import { FipeBatchRunner } from "./FipeBatchRunner";
+import { CautelarBatchActions } from "./CautelarBatchActions";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 
 type StatusFiltro = "all" | "real" | "prep";
@@ -40,6 +45,11 @@ export function VeiculosTable() {
   const [filtroSituacao, setFiltroSituacao] = useState<string>("all");
   const [filtroPatio, setFiltroPatio] = useState<string>("all");
   const [filtroClasse, setFiltroClasse] = useState<"all" | Classe | "showroom" | "repasse">("all");
+  const [filtroFipe, setFiltroFipe] = useState<"all" | "acima" | "abaixo" | "sem">("all");
+  const [filtroCautelar, setFiltroCautelar] = useState<"all" | StatusCautelar | "sem">("all");
+
+  const fipeBatch = useFipeBatch();
+  const cautelares = useCautelares();
   const [avancadoOpen, setAvancadoOpen] = useState(false);
   const [anoMin, setAnoMin] = useState<string>("");
   const [anoMax, setAnoMax] = useState<string>("");
@@ -63,15 +73,18 @@ export function VeiculosTable() {
     return s.trim() === "" || !Number.isFinite(n) ? null : n;
   };
 
-  // Cache de classificação por chassi (rec O(N) na variação do estoque)
+  // Cache de classificação por chassi (recalcula quando cautelares mudam também)
   const classifMap = useMemo(() => {
     const contagem = contarPorModelo(veiculos);
     const m = new Map<string, ReturnType<typeof classificarVeiculo>>();
     for (const v of veiculos) {
-      m.set(v.chassi, classificarVeiculo(v, { contagemPorModelo: contagem }));
+      m.set(v.chassi, classificarVeiculo(v, {
+        contagemPorModelo: contagem,
+        cautelar: cautelares[v.chassi] ?? null,
+      }));
     }
     return m;
-  }, [veiculos]);
+  }, [veiculos, cautelares]);
 
   // Filtros aplicados EXCETO status. Usado para KPIs e resumo agregado por status.
   const filteredExceptStatus = useMemo(() => {
@@ -96,6 +109,27 @@ export function VeiculosTable() {
           if (c.classe !== filtroClasse) return false;
         }
       }
+      if (filtroCautelar !== "all") {
+        const c = cautelares[v.chassi] ?? null;
+        if (filtroCautelar === "sem") {
+          if (c !== null) return false;
+        } else if (c !== filtroCautelar) {
+          return false;
+        }
+      }
+      if (filtroFipe !== "all") {
+        const item = fipeBatch?.items[v.chassi];
+        const desv = item ? calcularDesvioFipe(v.preco_venda, item.precoFipe) : null;
+        if (filtroFipe === "sem") {
+          if (item) return false; // só mostra os SEM match
+        } else if (!desv) {
+          return false;
+        } else if (filtroFipe === "acima" && desv.pct <= 0) {
+          return false;
+        } else if (filtroFipe === "abaixo" && desv.pct >= 0) {
+          return false;
+        }
+      }
       if (aMin !== null && (v.ano_modelo ?? -Infinity) < aMin) return false;
       if (aMax !== null && (v.ano_modelo ?? Infinity) > aMax) return false;
       if (kMin !== null && (v.km ?? -Infinity) < kMin) return false;
@@ -111,7 +145,7 @@ export function VeiculosTable() {
       }
       return true;
     });
-  }, [veiculos, filtroLoja, filtroMarca, filtroCor, filtroComb, filtroSituacao, filtroPatio, filtroClasse, classifMap, anoMin, anoMax, kmMin, kmMax, precoMin, precoMax, diasMin, diasMax, search]);
+  }, [veiculos, filtroLoja, filtroMarca, filtroCor, filtroComb, filtroSituacao, filtroPatio, filtroClasse, filtroFipe, filtroCautelar, classifMap, fipeBatch, cautelares, anoMin, anoMax, kmMin, kmMax, precoMin, precoMax, diasMin, diasMax, search]);
 
   // Filtros + status final (a tabela exibe esses)
   const filtered = useMemo(() => {
@@ -125,13 +159,13 @@ export function VeiculosTable() {
   const kpis = useMemo(() => {
     let realQt = 0, prepQt = 0, realRs = 0, prepRs = 0;
     for (const v of filteredExceptStatus) {
-      const preco = v.preco_venda ?? 0;
+      const custo = v.valor_aquisicao ?? 0; // custo de fábrica (capital travado)
       if (ehPreparacao(v)) {
         prepQt++;
-        prepRs += preco;
+        prepRs += custo;
       } else {
         realQt++;
-        realRs += preco;
+        realRs += custo;
       }
     }
     return { realQt, prepQt, realRs, prepRs, totalQt: realQt + prepQt, totalRs: realRs + prepRs };
@@ -174,6 +208,17 @@ export function VeiculosTable() {
       },
       size: 60,
     },
+    {
+      id: "cautelar",
+      header: "Cautelar",
+      accessorFn: (v) => cautelares[v.chassi] ?? "",
+      cell: ({ row }) => {
+        const c = cautelares[row.original.chassi];
+        if (!c) return <span className="text-zinc-300 text-xs">—</span>;
+        return <span className="text-base" title={CAUTELAR_LABEL[c]}>{CAUTELAR_ICONE[c]}</span>;
+      },
+      size: 80,
+    },
     { accessorKey: "marca", header: "Marca" },
     { accessorKey: "modelo", header: "Modelo", cell: (info) => <span className="text-xs">{info.getValue<string>()}</span> },
     { accessorKey: "ano_modelo", header: "Ano", cell: (info) => info.getValue<number | null>() ?? "—" },
@@ -190,10 +235,42 @@ export function VeiculosTable() {
     { accessorKey: "combustivel", header: "Comb" },
     { accessorKey: "patio", header: "Pátio", cell: (info) => <span className="text-xs">{info.getValue<string>().trim()}</span> },
     { accessorKey: "preco_venda", header: "Preço Venda", cell: (info) => <span className="tabular-nums">{formatBRL(info.getValue<number | null>())}</span> },
+    {
+      id: "fipe_pct",
+      header: "vs FIPE",
+      accessorFn: (v) => {
+        const item = fipeBatch?.items[v.chassi];
+        const desv = item ? calcularDesvioFipe(v.preco_venda, item.precoFipe) : null;
+        return desv?.pct ?? null;
+      },
+      cell: ({ row }) => {
+        const v = row.original;
+        const item = fipeBatch?.items[v.chassi];
+        if (!item) {
+          return <span className="text-xs text-zinc-300">—</span>;
+        }
+        const desv = calcularDesvioFipe(v.preco_venda, item.precoFipe);
+        if (!desv) return <span className="text-xs text-zinc-300">—</span>;
+        const tone = desv.pct > 5
+          ? "text-red-700"
+          : desv.pct > 0
+            ? "text-amber-700"
+            : desv.pct > -5
+              ? "text-emerald-700"
+              : "text-emerald-800 font-semibold";
+        return (
+          <span className={cn("tabular-nums text-xs", tone)} title={`FIPE: ${formatBRL(item.precoFipe)}`}>
+            {desv.pct >= 0 ? "+" : ""}{desv.pct.toFixed(1)}%
+          </span>
+        );
+      },
+      size: 80,
+      sortUndefined: "last",
+    },
     { accessorKey: "valor_aquisicao", header: "Aquisição", cell: (info) => <span className="tabular-nums text-zinc-600">{formatBRL(info.getValue<number | null>())}</span> },
     { accessorKey: "custo_total", header: "Custo Total", cell: (info) => <span className="tabular-nums text-zinc-600">{formatBRL(info.getValue<number | null>())}</span> },
     { accessorKey: "dias_patio", header: "Dias", cell: (info) => <span className="tabular-nums">{info.getValue<number | null>() ?? "—"}</span> },
-  ], [lojas, classifMap]);
+  ], [lojas, classifMap, fipeBatch, cautelares]);
 
   const table = useReactTable({
     data: filtered,
@@ -237,6 +314,12 @@ export function VeiculosTable() {
 
   return (
     <div className="space-y-6">
+      {/* Banner FIPE batch */}
+      <FipeBatchRunner />
+
+      {/* Ações em massa de cautelar */}
+      <CautelarBatchActions />
+
       {/* Status segmented control */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="inline-flex rounded-lg border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-900">
@@ -260,25 +343,25 @@ export function VeiculosTable() {
         )}
       </div>
 
-      {/* KPIs reativos */}
+      {/* KPIs reativos — valores em CUSTO DE FÁBRICA (capital travado) */}
       <div className="grid gap-4 md:grid-cols-3">
         <Kpi
           tone="green"
-          title="Estoque REAL"
+          title="Estoque REAL (custo)"
           value={formatBRL(kpis.realRs)}
           subtitle={`${formatInt(kpis.realQt)} carros (exc. preparação)`}
           active={statusFiltro === "real"}
         />
         <Kpi
           tone="amber"
-          title="Em PREPARAÇÃO"
+          title="Em PREPARAÇÃO (custo)"
           value={formatBRL(kpis.prepRs)}
           subtitle={`${formatInt(kpis.prepQt)} fantasmas`}
           active={statusFiltro === "prep"}
         />
         <Kpi
           tone="zinc"
-          title="TOTAL"
+          title="TOTAL (custo de fábrica)"
           value={formatBRL(kpis.totalRs)}
           subtitle={`${formatInt(kpis.totalQt)} carros`}
           active={statusFiltro === "all"}
@@ -303,6 +386,19 @@ export function VeiculosTable() {
             ["C", "C"],
             ["D", "D"],
             ["E", "E"],
+          ]} />
+          <Select label="vs FIPE" value={filtroFipe} onChange={(v) => setFiltroFipe(v as "all" | "acima" | "abaixo" | "sem")} options={[
+            ["all", "Todos"],
+            ["acima", "🔴 Acima da FIPE"],
+            ["abaixo", "🟢 Abaixo da FIPE"],
+            ["sem", "❓ Sem match FIPE"],
+          ]} />
+          <Select label="Cautelar" value={filtroCautelar} onChange={(v) => setFiltroCautelar(v as "all" | StatusCautelar | "sem")} options={[
+            ["all", "Todas"],
+            ["aprovado", "✅ Aprovado"],
+            ["com_restricao", "⚠️ Com restrição"],
+            ["reprovado", "🔴 Reprovado"],
+            ["sem", "❔ Sem cautelar"],
           ]} />
 
           <div className="relative ml-auto">
@@ -341,7 +437,8 @@ export function VeiculosTable() {
       <div className="flex items-baseline justify-between">
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
           Mostrando <strong>{formatInt(filtered.length)}</strong> carro{filtered.length === 1 ? "" : "s"} ·
-          valor exibido: <strong>{formatBRL(filtered.reduce((s, v) => s + (v.preco_venda ?? 0), 0))}</strong>
+          custo de fábrica: <strong>{formatBRL(filtered.reduce((s, v) => s + (v.valor_aquisicao ?? 0), 0))}</strong> ·
+          venda: <strong>{formatBRL(filtered.reduce((s, v) => s + (v.preco_venda ?? 0), 0))}</strong>
         </p>
       </div>
 

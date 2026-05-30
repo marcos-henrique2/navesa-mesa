@@ -44,14 +44,14 @@ export function ResumoPorDimensao({ veiculos, lojas }: Props) {
 
     for (const v of veiculos) {
       const key = dimKey(v, dim, lojas);
-      const preco = v.preco_venda ?? 0;
+      const custo = v.valor_aquisicao ?? 0; // custo de fábrica (capital travado)
       const isPrep = classificarPatio(v.patio) === "preparacao";
       const existing = map.get(key) ?? { qt: 0, valor: 0, qtPrep: 0 };
       existing.qt++;
-      existing.valor += preco;
+      existing.valor += custo;
       if (isPrep) existing.qtPrep++;
       map.set(key, existing);
-      totalValor += preco;
+      totalValor += custo;
       totalQt++;
     }
 
@@ -104,7 +104,7 @@ export function ResumoPorDimensao({ veiculos, lojas }: Props) {
                 <th className="px-4 py-2 text-left text-xs font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">{LABELS[dim]}</th>
                 <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">Carros</th>
                 <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">Em Prep.</th>
-                <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">Valor total</th>
+                <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">Custo fábrica</th>
                 <th className="px-4 py-2 text-right text-xs font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400" style={{ width: 140 }}>% do total</th>
               </tr>
             </thead>

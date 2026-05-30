@@ -7,27 +7,31 @@ import { agregarMargem } from "@/lib/analytics/margem";
 import { classificarPatio, type StatusVeiculo } from "@/lib/inventory/status";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
 import { PageHeader } from "./AppShell";
+import { AlertasOperacionais } from "./AlertasOperacionais";
 
 export function DashboardHome() {
   const { meta, veiculos, vendasMeta, vendas, custosPorPlaca, isHydrated } = useInventory();
 
   // Classifica todo veículo em uma de 5 categorias (preparação alinhada com NBS = 354)
-  const status: Record<StatusVeiculo, { qt: number; valor: number }> = {
-    disponivel: { qt: 0, valor: 0 },
-    transito: { qt: 0, valor: 0 },
-    preparacao: { qt: 0, valor: 0 },
-    bloqueado: { qt: 0, valor: 0 },
-    oficina: { qt: 0, valor: 0 },
-    documentacao: { qt: 0, valor: 0 },
-    outro: { qt: 0, valor: 0 },
+  // valor = CUSTO DE FÁBRICA (capital travado, igual NBS "Custo fábrica sem FP")
+  // venda = preço de venda pedido (mostrado como referência secundária)
+  const status: Record<StatusVeiculo, { qt: number; valor: number; venda: number }> = {
+    disponivel: { qt: 0, valor: 0, venda: 0 },
+    transito: { qt: 0, valor: 0, venda: 0 },
+    preparacao: { qt: 0, valor: 0, venda: 0 },
+    bloqueado: { qt: 0, valor: 0, venda: 0 },
+    oficina: { qt: 0, valor: 0, venda: 0 },
+    documentacao: { qt: 0, valor: 0, venda: 0 },
+    outro: { qt: 0, valor: 0, venda: 0 },
   };
   for (const v of veiculos) {
     const s = classificarPatio(v.patio);
     status[s].qt++;
-    status[s].valor += v.preco_venda ?? 0;
+    status[s].valor += v.valor_aquisicao ?? 0; // custo de fábrica
+    status[s].venda += v.preco_venda ?? 0;
   }
   const totalQt = veiculos.length;
-  const totalRs = veiculos.reduce((s, v) => s + (v.preco_venda ?? 0), 0);
+  const totalRs = veiculos.reduce((s, v) => s + (v.valor_aquisicao ?? 0), 0);
   const outrosQt = status.bloqueado.qt + status.oficina.qt + status.documentacao.qt + status.outro.qt;
   const outrosRs = status.bloqueado.valor + status.oficina.valor + status.documentacao.valor + status.outro.valor;
 
@@ -57,34 +61,37 @@ export function DashboardHome() {
           <EmptyState />
         ) : (
           <div className="space-y-6">
+            {/* Alertas operacionais — no topo, sempre que houver algo */}
+            <AlertasOperacionais />
+
             {/* Hero KPIs — Estoque */}
             {isHydrated && veiculos.length > 0 && (
               <section>
-                <SectionHeader title="Estoque atual" link={{ href: "/veiculos", label: "Ver estoque completo" }} />
+                <SectionHeader title="Estoque atual (custo de fábrica)" link={{ href: "/veiculos", label: "Ver estoque completo" }} />
                 <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
                   <BigKpi
                     accent="emerald"
                     label="Disponível pra venda"
                     value={formatBRL(status.disponivel.valor)}
-                    sublabel={`${formatInt(status.disponivel.qt)} em pátio comercial`}
+                    sublabel={`${formatInt(status.disponivel.qt)} carros · venda ${formatBRL(status.disponivel.venda)}`}
                   />
                   <BigKpi
                     accent="amber"
                     label="Em preparação"
                     value={formatBRL(status.preparacao.valor)}
-                    sublabel={`${formatInt(status.preparacao.qt)} carros (alinhado NBS)`}
+                    sublabel={`${formatInt(status.preparacao.qt)} carros · venda ${formatBRL(status.preparacao.venda)}`}
                   />
                   <BigKpi
                     accent="slate"
                     label="Em trânsito"
                     value={formatBRL(status.transito.valor)}
-                    sublabel={`${formatInt(status.transito.qt)} a caminho do pátio`}
+                    sublabel={`${formatInt(status.transito.qt)} carros · venda ${formatBRL(status.transito.venda)}`}
                   />
                   <BigKpi
                     accent="brand"
-                    label="Total geral"
+                    label="Total (custo travado)"
                     value={formatBRL(totalRs)}
-                    sublabel={`${formatInt(totalQt)} em ${formatInt(meta?.total_lojas ?? 0)} lojas`}
+                    sublabel={`${formatInt(totalQt)} carros em ${formatInt(meta?.total_lojas ?? 0)} lojas`}
                   />
                 </div>
                 {outrosQt > 0 && (

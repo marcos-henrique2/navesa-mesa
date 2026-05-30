@@ -15,7 +15,7 @@ export default function VendasPage() {
           </Link>
         }
       />
-      <div className="mx-auto max-w-7xl px-6 py-8">
+      <div className="w-full px-4 py-6">
         <VendasAnalise />
       </div>
     </>

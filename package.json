@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --import tsx --test tests/*.test.ts",
     "parse-test": "tsx scripts/parse-test.ts",
     "parse-vendas-test": "tsx scripts/parse-vendas-test.ts",
     "parse-custos-test": "tsx scripts/parse-custos-test.ts"

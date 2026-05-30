@@ -309,13 +309,13 @@ function EstoqueRiscoCard({ dados }: { dados: ReturnType<typeof estoqueEmRisco> 
         <Kpi
           label="🟢 Modelos rentáveis no estoque"
           value={`${formatInt(dados.qtSeguro)} carros`}
-          sub={formatBRL(dados.valorSeguro)}
+          sub={`${formatBRL(dados.valorSeguro)} em custo`}
           tone="good"
         />
         <Kpi
           label="🔴 Modelos com histórico negativo"
           value={`${formatInt(dados.qtEmRisco)} carros`}
-          sub={formatBRL(dados.valorEmRisco)}
+          sub={`${formatBRL(dados.valorEmRisco)} em custo`}
           tone="bad"
         />
         <Kpi
@@ -369,13 +369,13 @@ function ClassificacaoCard({ dados }: { dados: ReturnType<typeof distribuicaoCla
         <Kpi
           label="🛍️ Show Room (vende direto)"
           value={`${formatInt(dados.totalShowroom.qt)} carros`}
-          sub={formatBRL(dados.totalShowroom.valor)}
+          sub={`${formatBRL(dados.totalShowroom.valor)} em custo`}
           tone="good"
         />
         <Kpi
           label="🤝 Repasse (Auto Avaliar)"
           value={`${formatInt(dados.totalRepasse.qt)} carros`}
-          sub={formatBRL(dados.totalRepasse.valor)}
+          sub={`${formatBRL(dados.totalRepasse.valor)} em custo`}
         />
       </div>
       <div className="grid gap-2 md:grid-cols-5">

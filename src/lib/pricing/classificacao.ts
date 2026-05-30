@@ -22,6 +22,7 @@
  */
 
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
+import type { StatusCautelar } from "@/lib/inventory/cautelar";
 
 export type Classe = "A" | "B" | "C" | "D" | "E";
 export type Canal = "showroom" | "repasse";
@@ -56,6 +57,8 @@ export type ClassificacaoOpts = {
   anoReferencia?: number;
   /** Modelo do veículo → quantos iguais existem no estoque (passar pre-computado por performance). */
   contagemPorModelo?: Map<string, number>;
+  /** Status do laudo cautelar (preenchido manualmente). Sobrepõe a classe automática. */
+  cautelar?: StatusCautelar | null;
 };
 
 export function classificarVeiculo(
@@ -105,6 +108,24 @@ export function classificarVeiculo(
     motivos.push("KM ou ano ausentes — classe sugerida conservadora");
   }
 
+  // ── REGRA 0: cautelar reprovado → Classe E direto / com restrição → desce 1 ──
+  if (opts.cautelar === "reprovado") {
+    classe = "E";
+    motivos.unshift("Laudo cautelar REPROVADO → classe E (regra Auto Avaliar)");
+  } else if (opts.cautelar === "com_restricao") {
+    const ordem: Classe[] = ["A", "B", "C", "D", "E"];
+    const idx = ordem.indexOf(classe);
+    const novaIdx = Math.min(idx + 1, ordem.length - 1);
+    if (novaIdx !== idx) {
+      const antiga = classe;
+      classe = ordem[novaIdx];
+      motivos.unshift(`Cautelar COM RESTRIÇÃO → desceu de ${antiga} para ${classe}`);
+    } else {
+      motivos.unshift("Cautelar com restrição (já está na classe mais baixa)");
+    }
+  }
+  // (cautelar = "aprovado" não muda a classe — segue a regra automática)
+
   // ── CANAL: começa pelo padrão da classe ──
   let canal: Canal = classe === "A" || classe === "B" ? "showroom" : "repasse";
   let rebaixadoPorEstoque = false;
@@ -137,7 +158,9 @@ export function classificarVeiculo(
   }
   alertasManuais.push("Sem modificação documental (GNV, rebaixado)?");
   alertasManuais.push("Carro foi táxi? (se sim, desce 1 classe)");
-  alertasManuais.push("Laudo cautelar aprovado?");
+  if (!opts.cautelar) {
+    alertasManuais.push("⚠️ Laudo cautelar NÃO informado — preencha pra classificação ficar correta");
+  }
 
   return {
     classe,

@@ -12,8 +12,11 @@
 import type { VendaParsed } from "@/lib/parsers/nbs-vendas-xlsx";
 import type { CustoDetalhado } from "@/lib/parsers/nbs-custos-xls";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
+import type { BatchResult } from "@/lib/fipe/batch";
+import { calcularDesvioFipe } from "@/lib/fipe/batch";
 import { calcMargemVenda } from "./margem";
 import { classificarVeiculo } from "@/lib/pricing/classificacao";
+import type { StatusCautelar } from "@/lib/inventory/cautelar";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -475,22 +478,22 @@ export function estoqueEmRisco(
     }
     comHist++;
     const media = h.somaMargem / h.qt;
-    const preco = veh.preco_venda ?? 0;
+    const custo = veh.valor_aquisicao ?? 0; // capital travado = custo de fábrica
     if (media < 0) {
       qtRisco++;
-      valorRisco += preco;
+      valorRisco += custo;
       itens.push({
         placa: veh.placa ?? "—",
         modelo: veh.modelo ?? "—",
         marca: veh.marca ?? null,
-        preco,
+        preco: veh.preco_venda ?? 0, // exibe preço pedido na lista
         margemHistoricaMedia: media,
         vendasHistoricas: h.qt,
         diasNoPatio: veh.dias_patio ?? null,
       });
     } else {
       qtSeguro++;
-      valorSeguro += preco;
+      valorSeguro += custo;
     }
   }
 
@@ -931,7 +934,7 @@ export function estoquePorLoja(veiculos: VeiculoParsed[], lojaNomePorCod: Record
     if (!map.has(nome)) map.set(nome, { qt: 0, valor: 0, diasSoma: 0, diasN: 0, over60: 0 });
     const r = map.get(nome)!;
     r.qt++;
-    r.valor += v.preco_venda ?? 0;
+    r.valor += v.valor_aquisicao ?? 0; // custo de fábrica (capital travado)
     if (v.dias_patio != null) {
       r.diasSoma += v.dias_patio;
       r.diasN++;
@@ -963,7 +966,7 @@ export function estoquePorMarca(veiculos: VeiculoParsed[]): EstoquePorMarca[] {
     if (!map.has(marca)) map.set(marca, { qt: 0, valor: 0, diasSoma: 0, diasN: 0 });
     const r = map.get(marca)!;
     r.qt++;
-    r.valor += v.preco_venda ?? 0;
+    r.valor += v.valor_aquisicao ?? 0; // custo de fábrica (capital travado)
     if (v.dias_patio != null) {
       r.diasSoma += v.dias_patio;
       r.diasN++;
@@ -1016,14 +1019,15 @@ export function distribuicaoClasses(
 
   for (const v of veiculos) {
     const c = classificarVeiculo(v, { contagemPorModelo: contagem });
+    const custo = v.valor_aquisicao ?? 0; // custo de fábrica (capital travado)
     classes[c.classe].qt++;
-    classes[c.classe].valor += v.preco_venda ?? 0;
+    classes[c.classe].valor += custo;
     if (c.canal === "showroom") {
       totalShowroomQt++;
-      totalShowroomRs += v.preco_venda ?? 0;
+      totalShowroomRs += custo;
     } else {
       totalRepasseQt++;
-      totalRepasseRs += v.preco_venda ?? 0;
+      totalRepasseRs += custo;
     }
     if (c.rebaixadoPorEstoque) rebaixados++;
   }
@@ -1040,6 +1044,474 @@ export function distribuicaoClasses(
     totalRepasse: { qt: totalRepasseQt, valor: totalRepasseRs },
     rebaixadosPorEstoque: rebaixados,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// O'') ALERTAS OPERACIONAIS — cards de "ação imediata" pro dashboard
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type SeveridadeAlerta = "critico" | "atencao" | "info";
+
+export type Alerta = {
+  id: string;
+  severidade: SeveridadeAlerta;
+  icone: string;
+  titulo: string;
+  detalhe: string;
+  /** Link opcional pra detalhar (página + query). */
+  link?: { href: string; label: string };
+};
+
+/**
+ * Gera lista de alertas operacionais baseados no estado atual.
+ *
+ * Cada alerta tem severidade:
+ *   - critico: dinheiro sangrando (perda real ou risco grande)
+ *   - atencao: precisa olhar, mas não urgente
+ *   - info: FYI
+ */
+export function gerarAlertas(
+  vendas: VendaParsed[],
+  custosPorPlaca: CustosMap,
+  veiculos: VeiculoParsed[],
+  fipeBatch: BatchResult | null = null,
+  cautelares: Record<string, StatusCautelar> = {},
+): Alerta[] {
+  const alertas: Alerta[] = [];
+  if (vendas.length === 0 && veiculos.length === 0) return alertas;
+
+  // 1) Dependência de Ganhos Indiretos
+  if (vendas.length > 0) {
+    const sumario = sumarioGlobal(vendas, custosPorPlaca);
+    if (sumario.dependeDeBonus) {
+      alertas.push({
+        id: "depende-bonus",
+        severidade: "critico",
+        icone: "🚨",
+        titulo: `Sem bônus de fábrica, operação está no prejuízo`,
+        detalhe: `Margem atual R$ ${fmtBR(sumario.margem)} é menor que os R$ ${fmtBR(sumario.ganhosIndiretos)} em bônus. Sem eles, prejuízo de R$ ${fmtBR(Math.abs(sumario.margemSemBonus))}.`,
+        link: { href: "/insights", label: "Ver detalhes" },
+      });
+    }
+  }
+
+  // 2) Carros parados há mais de 180 dias no estoque
+  if (veiculos.length > 0) {
+    const parados180 = veiculos.filter((v) => (v.dias_patio ?? 0) > 180);
+    if (parados180.length > 0) {
+      const valor = parados180.reduce((s, v) => s + (v.valor_aquisicao ?? 0), 0); // custo travado
+      alertas.push({
+        id: "parados-180d",
+        severidade: "critico",
+        icone: "⏰",
+        titulo: `${parados180.length} carros parados há mais de 180 dias`,
+        detalhe: `R$ ${fmtBR(valor)} em exposição. Histórico mostra que carros nessa faixa fecham com margem média de -20%. Considere leilão/repasse urgente.`,
+        link: { href: "/veiculos", label: "Ver carros" },
+      });
+    }
+  }
+
+  // 3) Estoque atual em modelos com histórico negativo
+  if (vendas.length > 0 && veiculos.length > 0) {
+    const risco = estoqueEmRisco(veiculos, vendas, custosPorPlaca, { topPiores: 0 });
+    if (risco.qtEmRisco > 0 && risco.valorEmRisco > 1000) {
+      alertas.push({
+        id: "estoque-risco",
+        severidade: risco.valorEmRisco > 10_000_000 ? "critico" : "atencao",
+        icone: "🔴",
+        titulo: `${risco.qtEmRisco} carros em modelos com histórico de prejuízo`,
+        detalhe: `R$ ${fmtBR(risco.valorEmRisco)} em estoque ativo. Esses modelos já fecharam vendas com margem negativa nesse período.`,
+        link: { href: "/insights", label: "Ver lista" },
+      });
+    }
+  }
+
+  // 4) Lojas com margem negativa
+  if (vendas.length > 0) {
+    const lojas = margemPorLoja(vendas, custosPorPlaca);
+    for (const l of lojas) {
+      if (l.margem < -50_000 && l.qt >= 20) {
+        alertas.push({
+          id: `loja-neg-${l.loja}`,
+          severidade: l.margem < -200_000 ? "critico" : "atencao",
+          icone: "🏬",
+          titulo: `${l.loja}: ${fmtBR(l.margem)} de prejuízo`,
+          detalhe: `${l.qt} vendas com margem ${l.margemPct.toFixed(2)}%. Investigar precificação.`,
+          link: { href: "/vendas", label: "Ver vendas" },
+        });
+      }
+    }
+  }
+
+  // 5) Vendedores com margem muito negativa
+  if (vendas.length > 0) {
+    const vendedoresPiores = margemPorVendedor(vendas, custosPorPlaca, { minVendas: 10 })
+      .filter((v) => v.margem < -50_000)
+      .slice(-3); // os 3 piores
+    for (const v of vendedoresPiores) {
+      alertas.push({
+        id: `vendedor-neg-${v.vendedor}`,
+        severidade: "atencao",
+        icone: "👤",
+        titulo: `${v.vendedor}: ${v.margemPct.toFixed(2)}% em ${v.qt} vendas`,
+        detalhe: `Vendendo com margem ${v.margemPct.toFixed(2)}% — perda média de R$ ${fmtBR(Math.abs(v.margem / v.qt))} por venda. Investigar política de desconto.`,
+        link: { href: "/vendas", label: "Ver detalhes" },
+      });
+    }
+  }
+
+  // 6) Concentração de modelos no estoque (mesmo modelo em quantidade alta)
+  if (veiculos.length > 0) {
+    const contagem = new Map<string, { qt: number; valor: number; modelo: string }>();
+    for (const v of veiculos) {
+      const k = (v.modelo ?? "").trim().toUpperCase();
+      const c = contagem.get(k) ?? { qt: 0, valor: 0, modelo: v.modelo ?? "—" };
+      c.qt++;
+      c.valor += v.valor_aquisicao ?? 0; // custo travado
+      contagem.set(k, c);
+    }
+    const concentrados = [...contagem.values()].filter((c) => c.qt >= 10).sort((a, b) => b.qt - a.qt).slice(0, 3);
+    for (const c of concentrados) {
+      alertas.push({
+        id: `modelo-concentrado-${c.modelo}`,
+        severidade: "info",
+        icone: "📦",
+        titulo: `${c.qt} unidades de ${c.modelo} no estoque`,
+        detalhe: `R$ ${fmtBR(c.valor)} concentrados. A política Auto Avaliar recomenda repasse pra modelos com ≥5 unidades.`,
+        link: { href: "/veiculos", label: "Ver unidades" },
+      });
+    }
+  }
+
+  // 7) Carros acima da FIPE (>5%) — risco de não vender
+  if (fipeBatch && veiculos.length > 0) {
+    let qtAcima5 = 0, valorAcima5 = 0;
+    let qtAcima10 = 0, valorAcima10 = 0;
+    for (const v of veiculos) {
+      const item = fipeBatch.items[v.chassi];
+      if (!item) continue;
+      const d = calcularDesvioFipe(v.preco_venda, item.precoFipe);
+      if (!d) continue;
+      if (d.pct > 10) {
+        qtAcima10++;
+        valorAcima10 += v.preco_venda ?? 0;
+      } else if (d.pct > 5) {
+        qtAcima5++;
+        valorAcima5 += v.preco_venda ?? 0;
+      }
+    }
+    if (qtAcima10 > 0) {
+      alertas.push({
+        id: "fipe-acima-10",
+        severidade: "critico",
+        icone: "📈",
+        titulo: `${qtAcima10} carros pedindo mais de 10% acima da FIPE`,
+        detalhe: `R$ ${fmtBR(valorAcima10)} em estoque com preço acima do mercado. Risco real de não vender ou ficar muito tempo parado.`,
+        link: { href: "/veiculos", label: "Ver carros" },
+      });
+    }
+    if (qtAcima5 > 0) {
+      alertas.push({
+        id: "fipe-acima-5",
+        severidade: "atencao",
+        icone: "📊",
+        titulo: `${qtAcima5} carros pedindo entre 5% e 10% acima da FIPE`,
+        detalhe: `R$ ${fmtBR(valorAcima5)} levemente acima do mercado. Considere revisar precificação.`,
+        link: { href: "/veiculos", label: "Ver carros" },
+      });
+    }
+  }
+
+  // 8) Cautelar — carros sem laudo informado
+  if (veiculos.length > 0) {
+    const totalCautelares = Object.keys(cautelares).length;
+    const semCautelar = veiculos.length - totalCautelares;
+    let reprovados = 0, comRestricao = 0;
+    for (const v of veiculos) {
+      const c = cautelares[v.chassi];
+      if (c === "reprovado") reprovados++;
+      else if (c === "com_restricao") comRestricao++;
+    }
+    if (reprovados > 0) {
+      alertas.push({
+        id: "cautelar-reprovados",
+        severidade: "critico",
+        icone: "🔴",
+        titulo: `${reprovados} carros com cautelar REPROVADA no estoque`,
+        detalhe: `Esses carros são classe E — só repasse via leilão. Considere remover do show room.`,
+        link: { href: "/veiculos", label: "Ver carros" },
+      });
+    }
+    if (comRestricao > 0) {
+      alertas.push({
+        id: "cautelar-restricao",
+        severidade: "atencao",
+        icone: "⚠️",
+        titulo: `${comRestricao} carros com cautelar COM RESTRIÇÃO`,
+        detalhe: `Carros que precisam de atenção na precificação. Foram rebaixados 1 classe na política Auto Avaliar.`,
+        link: { href: "/veiculos", label: "Ver carros" },
+      });
+    }
+    if (semCautelar > veiculos.length * 0.5 && veiculos.length > 0) {
+      alertas.push({
+        id: "cautelar-faltando",
+        severidade: "info",
+        icone: "📋",
+        titulo: `${semCautelar} carros sem laudo cautelar informado`,
+        detalhe: `${((semCautelar / veiculos.length) * 100).toFixed(0)}% do estoque sem laudo. Preencher melhora a classificação automática.`,
+        link: { href: "/veiculos", label: "Ver estoque" },
+      });
+    }
+  }
+
+  // 9) Cobertura de custos baixa
+  if (vendas.length > 0) {
+    const sumario = sumarioGlobal(vendas, custosPorPlaca);
+    if (sumario.cobertura < 0.95) {
+      alertas.push({
+        id: "cobertura-baixa",
+        severidade: "atencao",
+        icone: "📋",
+        titulo: `Cobertura de custos NBS abaixo de 95%`,
+        detalhe: `Apenas ${(sumario.cobertura * 100).toFixed(1)}% das vendas têm custo oficial cruzado. O resto usa estimativa. Suba o relatório de custos atualizado.`,
+        link: { href: "/upload", label: "Atualizar custos" },
+      });
+    }
+  }
+
+  // Ordenação: críticos primeiro, depois atenção, depois info
+  const ordem = { critico: 0, atencao: 1, info: 2 };
+  return alertas.sort((a, b) => ordem[a.severidade] - ordem[b.severidade]);
+}
+
+function fmtBR(n: number): string {
+  return Math.round(n).toLocaleString("pt-BR");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// O''') ANÁLISES FIPE — desvios, carros acima/abaixo, oportunidades
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type FipeOutlier = {
+  placa: string;
+  modelo: string;
+  marca: string | null;
+  precoVenda: number;
+  precoFipe: number;
+  desvioPct: number;
+  desvioReais: number;
+  diasPatio: number | null;
+  loja: string | null;
+};
+
+export type FipeAnaliseEstoque = {
+  totalAnalisados: number;
+  semFipe: number;
+  acima10Pct: { qt: number; valor: number };
+  acima5a10Pct: { qt: number; valor: number };
+  proximoFipe: { qt: number; valor: number };
+  abaixo5a10Pct: { qt: number; valor: number };
+  abaixo10Pct: { qt: number; valor: number };
+  topAcima: FipeOutlier[];
+  topAbaixo: FipeOutlier[];
+};
+
+export function fipeAnaliseEstoque(
+  veiculos: VeiculoParsed[],
+  fipeBatch: BatchResult | null,
+): FipeAnaliseEstoque | null {
+  if (!fipeBatch || veiculos.length === 0) return null;
+
+  const buckets = {
+    acima10: { qt: 0, valor: 0 },
+    acima5: { qt: 0, valor: 0 },
+    proximo: { qt: 0, valor: 0 },
+    abaixo5: { qt: 0, valor: 0 },
+    abaixo10: { qt: 0, valor: 0 },
+  };
+  const todos: FipeOutlier[] = [];
+  let semFipe = 0;
+
+  for (const v of veiculos) {
+    const item = fipeBatch.items[v.chassi];
+    if (!item) {
+      semFipe++;
+      continue;
+    }
+    const desv = calcularDesvioFipe(v.preco_venda, item.precoFipe);
+    if (!desv) continue;
+    const preco = v.preco_venda ?? 0;
+    if (desv.pct > 10) {
+      buckets.acima10.qt++;
+      buckets.acima10.valor += preco;
+    } else if (desv.pct > 5) {
+      buckets.acima5.qt++;
+      buckets.acima5.valor += preco;
+    } else if (desv.pct < -10) {
+      buckets.abaixo10.qt++;
+      buckets.abaixo10.valor += preco;
+    } else if (desv.pct < -5) {
+      buckets.abaixo5.qt++;
+      buckets.abaixo5.valor += preco;
+    } else {
+      buckets.proximo.qt++;
+      buckets.proximo.valor += preco;
+    }
+    todos.push({
+      placa: v.placa ?? "—",
+      modelo: v.modelo ?? "—",
+      marca: v.marca,
+      precoVenda: preco,
+      precoFipe: item.precoFipe,
+      desvioPct: desv.pct,
+      desvioReais: desv.desvio,
+      diasPatio: v.dias_patio ?? null,
+      loja: null, // se quiser cruzar com lojas[v.cod_empresa]
+    });
+  }
+
+  const sortedDesc = [...todos].sort((a, b) => b.desvioPct - a.desvioPct);
+
+  return {
+    totalAnalisados: veiculos.length - semFipe,
+    semFipe,
+    acima10Pct: buckets.acima10,
+    acima5a10Pct: buckets.acima5,
+    proximoFipe: buckets.proximo,
+    abaixo5a10Pct: buckets.abaixo5,
+    abaixo10Pct: buckets.abaixo10,
+    topAcima: sortedDesc.slice(0, 15),
+    topAbaixo: sortedDesc.slice(-15).reverse(),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// O'''') KM POR MODELO — distribuição de quilometragem por modelo top
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type KmPorModelo = {
+  modelo: string;
+  qtVendas: number;
+  kmMin: number;
+  kmMax: number;
+  kmMediano: number;
+  kmMedio: number;
+  margemMediaPct: number;
+};
+
+export function kmPorModelo(
+  vendas: VendaParsed[],
+  custosPorPlaca: CustosMap,
+  minVendas: number = 5,
+): KmPorModelo[] {
+  const map = new Map<string, { kms: number[]; margens: number[] }>();
+  for (const v of vendas) {
+    if (v.km == null) continue;
+    const k = (v.modelo ?? "—").trim().toUpperCase();
+    if (!map.has(k)) map.set(k, { kms: [], margens: [] });
+    const r = map.get(k)!;
+    r.kms.push(v.km);
+    const m = calcMargemVenda(v, custosPorPlaca);
+    if (m.valor > 0) r.margens.push((m.margem / m.valor) * 100);
+  }
+  return [...map.entries()]
+    .filter(([, r]) => r.kms.length >= minVendas)
+    .map(([modelo, r]) => {
+      const kms = [...r.kms].sort((a, b) => a - b);
+      const mediano = kms[Math.floor(kms.length / 2)];
+      const medio = kms.reduce((s, x) => s + x, 0) / kms.length;
+      const margemMedia = r.margens.length > 0 ? r.margens.reduce((s, x) => s + x, 0) / r.margens.length : 0;
+      return {
+        modelo,
+        qtVendas: r.kms.length,
+        kmMin: kms[0],
+        kmMax: kms[kms.length - 1],
+        kmMediano: mediano,
+        kmMedio: medio,
+        margemMediaPct: margemMedia,
+      };
+    })
+    .sort((a, b) => b.qtVendas - a.qtVendas);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// O''''') CAUTELARES POR LOJA — distribuição do laudo cautelar
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type CautelarPorLoja = {
+  loja: string;
+  total: number;
+  aprovados: number;
+  comRestricao: number;
+  reprovados: number;
+  semCautelar: number;
+};
+
+export function cautelaresPorLoja(
+  veiculos: VeiculoParsed[],
+  cautelares: Record<string, StatusCautelar>,
+): CautelarPorLoja[] {
+  const map = new Map<string, { total: number; ap: number; cr: number; rp: number; sc: number }>();
+  for (const v of veiculos) {
+    const loja = `${v.cod_empresa}`; // a UI resolve nome via lookup
+    if (!map.has(loja)) map.set(loja, { total: 0, ap: 0, cr: 0, rp: 0, sc: 0 });
+    const r = map.get(loja)!;
+    r.total++;
+    const c = cautelares[v.chassi];
+    if (c === "aprovado") r.ap++;
+    else if (c === "com_restricao") r.cr++;
+    else if (c === "reprovado") r.rp++;
+    else r.sc++;
+  }
+  return [...map.entries()]
+    .map(([loja, r]) => ({
+      loja,
+      total: r.total,
+      aprovados: r.ap,
+      comRestricao: r.cr,
+      reprovados: r.rp,
+      semCautelar: r.sc,
+    }))
+    .sort((a, b) => b.total - a.total);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// O'''''') MARGEM POR ANO MODELO — qual idade de carro dá mais margem
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type MargemPorAnoModelo = {
+  ano: number;
+  qt: number;
+  faturamento: number;
+  margem: number;
+  margemPct: number;
+  ticketMedio: number;
+};
+
+export function margemPorAnoModelo(
+  vendas: VendaParsed[],
+  custosPorPlaca: CustosMap,
+): MargemPorAnoModelo[] {
+  const map = new Map<number, { qt: number; valor: number; margem: number }>();
+  for (const v of vendas) {
+    if (v.ano_modelo == null) continue;
+    if (!map.has(v.ano_modelo)) map.set(v.ano_modelo, { qt: 0, valor: 0, margem: 0 });
+    const r = map.get(v.ano_modelo)!;
+    const m = calcMargemVenda(v, custosPorPlaca);
+    r.qt++;
+    r.valor += m.valor;
+    r.margem += m.margem;
+  }
+  return [...map.entries()]
+    .map(([ano, r]) => ({
+      ano,
+      qt: r.qt,
+      faturamento: r.valor,
+      margem: r.margem,
+      margemPct: pctSafe(r.margem, r.valor),
+      ticketMedio: r.qt > 0 ? r.valor / r.qt : 0,
+    }))
+    .sort((a, b) => b.ano - a.ano);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1076,12 +1548,19 @@ export type InsightsBundle = {
   estoquePorLoja: EstoquePorLoja[] | null;
   estoquePorMarca: EstoquePorMarca[] | null;
   classificacao: DistribuicaoClasses | null;
+  // Análises avançadas (opcionais — dependem de fipeBatch/cautelares)
+  fipeAnaliseEstoque: FipeAnaliseEstoque | null;
+  kmPorModelo: KmPorModelo[];
+  cautelaresPorLoja: CautelarPorLoja[];
+  margemPorAnoModelo: MargemPorAnoModelo[];
 };
 
 export function montarBundle(
   vendas: VendaParsed[],
   custosPorPlaca: CustosMap,
   veiculos: VeiculoParsed[],
+  fipeBatch: BatchResult | null = null,
+  cautelares: Record<string, StatusCautelar> = {},
 ): InsightsBundle {
   const modelos = margemPorModelo(vendas, custosPorPlaca, { minVendas: 3 });
   const vendedores = margemPorVendedor(vendas, custosPorPlaca, { minVendas: 5 });
@@ -1118,5 +1597,9 @@ export function montarBundle(
     estoquePorLoja: veiculos.length > 0 ? estoquePorLoja(veiculos, lojaNomePorCod) : null,
     estoquePorMarca: veiculos.length > 0 ? estoquePorMarca(veiculos) : null,
     classificacao: veiculos.length > 0 ? distribuicaoClasses(veiculos) : null,
+    fipeAnaliseEstoque: fipeAnaliseEstoque(veiculos, fipeBatch),
+    kmPorModelo: kmPorModelo(vendas, custosPorPlaca, 5).slice(0, 30),
+    cautelaresPorLoja: veiculos.length > 0 ? cautelaresPorLoja(veiculos, cautelares) : [],
+    margemPorAnoModelo: margemPorAnoModelo(vendas, custosPorPlaca),
   };
 }

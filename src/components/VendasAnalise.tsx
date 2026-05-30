@@ -127,6 +127,7 @@ export function VendasAnalise() {
   }, [filtered, custosPorPlaca]);
 
   const rankingMarcas = useMemo(() => {
+    const MIN_VENDAS = 10; // amostra mínima pra ter relevância estatística
     const map = new Map<string, { qt: number; valor: number; dias: number; comDias: number }>();
     for (const v of filtered) {
       const k = v.marca ?? "(sem marca)";
@@ -136,9 +137,12 @@ export function VendasAnalise() {
       if (v.dias_estoque !== null) { agg.dias += v.dias_estoque; agg.comDias++; }
       map.set(k, agg);
     }
-    return [...map.entries()].map(([nome, agg]) => ({
-      nome, ...agg, diasMedio: agg.comDias > 0 ? agg.dias / agg.comDias : 0,
-    })).sort((a, b) => a.diasMedio - b.diasMedio); // mais rápido primeiro
+    return [...map.entries()]
+      .map(([nome, agg]) => ({
+        nome, ...agg, diasMedio: agg.comDias > 0 ? agg.dias / agg.comDias : 0,
+      }))
+      .filter((m) => m.qt >= MIN_VENDAS) // descarta marcas com 1-9 vendas (estatística irrelevante)
+      .sort((a, b) => a.diasMedio - b.diasMedio); // mais rápido primeiro
   }, [filtered]);
 
   const columns = useMemo<ColumnDef<VendaParsed>[]>(() => [
@@ -292,7 +296,7 @@ export function VendasAnalise() {
           secondary: `${formatBRL(v.valor)} · com. ${formatBRL(v.comissao)}`,
         }))} />
 
-        <RankCard title="Marcas que mais giram" icon={<TrendingUp className="h-4 w-4" />} items={rankingMarcas.slice(0, 6).map((m) => ({
+        <RankCard title="Marcas que mais giram (≥10 vendas)" icon={<TrendingUp className="h-4 w-4" />} items={rankingMarcas.slice(0, 6).map((m) => ({
           label: m.nome,
           primary: `${m.diasMedio.toFixed(0)} dias`,
           secondary: `${m.qt} vendas · ${formatBRL(m.valor)}`,

@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Send, Sparkles, Loader2, AlertCircle, RotateCcw } from "lucide-react";
 import { useInventory } from "@/lib/store/inventory";
+import { useFipeBatch } from "@/lib/fipe/useFipeBatch";
+import { useCautelares } from "@/lib/inventory/cautelar";
 import { montarBundle } from "@/lib/analytics/insights";
 import { cn } from "@/lib/utils";
 
@@ -12,28 +14,71 @@ type ChatMessage = {
   content: string;
 };
 
+const CHAT_KEY = "navesa-mesa:chat-v1";
+
+/** Carrega histórico do chat do localStorage. SSR-safe (retorna [] no servidor). */
+function carregarHistorico(): ChatMessage[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(CHAT_KEY);
+    if (!raw) return [];
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? (arr as ChatMessage[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function salvarHistorico(messages: ChatMessage[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(CHAT_KEY, JSON.stringify(messages));
+  } catch (err) {
+    console.warn("Falha ao salvar histórico do chat:", err);
+  }
+}
+
 const SUGESTOES = [
-  "Qual loja está perdendo mais dinheiro?",
-  "Quais 5 modelos eu não deveria mais aceitar em troca?",
-  "Tem algum HAVAL PHEV parado a mais de 60 dias?",
-  "Quais vendedores precisam de atenção?",
-  "Se a fábrica cortar os bônus, o que acontece?",
-  "Qual marca tem a melhor margem percentual?",
+  // Diagnóstico estratégico
+  "Faça uma análise completa: o que está puxando nosso lucro e o que está nos prejudicando? Quais 3 ações eu deveria tomar essa semana?",
+  "Quais carros estão vendendo MUITO acima da FIPE? E quais estão sendo vendidos muito abaixo?",
+  "Quais 5 modelos eu não deveria mais aceitar em troca e por quê?",
+  // Comparações
+  "Compare as lojas: quem é a melhor, quem é a pior, e o que diferencia uma da outra?",
+  "Como a margem varia por idade do veículo? Em qual faixa de ano eu ganho mais?",
+  // Filtros operacionais
+  "Tem algum HAVAL PHEV parado a mais de 60 dias? Quanto isso está custando?",
+  "Quais carros têm KM muito acima da média do modelo no estoque?",
+  // Performance equipe
+  "Faça um diagnóstico dos vendedores: top 3 e bottom 3, e o que cada um precisa melhorar.",
+  // Risco/finanças
+  "Se a fábrica cortar os bônus, o que acontece? Detalhe por loja.",
+  "Quais modelos do estoque atual têm maior risco de não vender?",
+  // Tendência
+  "Como evoluímos mês a mês? Tem alguma tendência preocupante?",
 ];
 
 export function Chat() {
   const { vendas, veiculos, custosPorPlaca, vendasMeta, isHydrated } = useInventory();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const fipeBatch = useFipeBatch();
+  const cautelares = useCautelares();
+  // Lazy init lê o histórico salvo (só roda no client; conteúdo só renderiza após isHydrated)
+  const [messages, setMessages] = useState<ChatMessage[]>(carregarHistorico);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Persiste o histórico sempre que mudar (sobrevive reload)
+  useEffect(() => {
+    salvarHistorico(messages);
+  }, [messages]);
+
   const bundle = useMemo(() => {
     if (vendas.length === 0) return null;
-    return montarBundle(vendas, custosPorPlaca, veiculos);
-  }, [vendas, veiculos, custosPorPlaca]);
+    return montarBundle(vendas, custosPorPlaca, veiculos, fipeBatch, cautelares);
+  }, [vendas, veiculos, custosPorPlaca, fipeBatch, cautelares]);
 
   const periodo = useMemo(
     () => ({
@@ -108,6 +153,7 @@ export function Chat() {
   }
 
   function reset() {
+    if (messages.length > 0 && !confirm("Limpar toda a conversa? O histórico salvo será apagado.")) return;
     abortRef.current?.abort();
     setMessages([]);
     setError(null);

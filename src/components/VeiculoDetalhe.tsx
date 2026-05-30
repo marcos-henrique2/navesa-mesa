@@ -15,6 +15,14 @@ import {
   CLASSE_COR,
   CANAL_LABEL,
 } from "@/lib/pricing/classificacao";
+import {
+  setCautelar,
+  useCautelares,
+  CAUTELAR_LABEL,
+  CAUTELAR_ICONE,
+  CAUTELAR_COR,
+  type StatusCautelar,
+} from "@/lib/inventory/cautelar";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
 
 export function VeiculoDetalhe({ chassi }: { chassi: string }) {
@@ -28,10 +36,16 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
     [veiculo, vendas, custosPorPlaca, precoFipe],
   );
 
+  const cautelares = useCautelares();
+  const cautelarAtual = veiculo ? cautelares[veiculo.chassi] ?? null : null;
+
   const classificacao = useMemo(() => {
     if (!veiculo) return null;
-    return classificarVeiculo(veiculo, { contagemPorModelo: contarPorModelo(veiculos) });
-  }, [veiculo, veiculos]);
+    return classificarVeiculo(veiculo, {
+      contagemPorModelo: contarPorModelo(veiculos),
+      cautelar: cautelarAtual,
+    });
+  }, [veiculo, veiculos, cautelarAtual]);
 
   if (!isHydrated) return <p className="text-sm text-zinc-500">Carregando…</p>;
 
@@ -100,7 +114,13 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
         </Card>
       </div>
 
-      {classificacao && <ClassificacaoBox classif={classificacao} />}
+      {classificacao && (
+        <ClassificacaoBox
+          classif={classificacao}
+          cautelar={cautelarAtual}
+          onCautelarChange={(s) => setCautelar(veiculo.chassi, s)}
+        />
+      )}
 
       <FipeBox veiculo={veiculo} onValorChange={setPrecoFipe} />
 
@@ -139,7 +159,15 @@ function Row({ label, value, bold, muted, tone }: { label: string; value: string
   );
 }
 
-function ClassificacaoBox({ classif }: { classif: ReturnType<typeof classificarVeiculo> }) {
+function ClassificacaoBox({
+  classif,
+  cautelar,
+  onCautelarChange,
+}: {
+  classif: ReturnType<typeof classificarVeiculo>;
+  cautelar: StatusCautelar | null;
+  onCautelarChange: (s: StatusCautelar | null) => void;
+}) {
   const cor = CLASSE_COR[classif.classe];
   return (
     <div className={cn("rounded-xl border-2 p-5 shadow-[var(--shadow-sm)]", cor.border, cor.bg.replace("bg-", "bg-").replace("100", "50"))}>
@@ -162,6 +190,45 @@ function ClassificacaoBox({ classif }: { classif: ReturnType<typeof classificarV
           → {CANAL_LABEL[classif.canal]}
           {classif.rebaixadoPorEstoque && " (rebaixado)"}
         </span>
+      </div>
+
+      {/* Seletor de Cautelar */}
+      <div className="mt-4 rounded-lg bg-white/70 p-3">
+        <p className="mb-2 text-xs font-semibold text-slate-700">Laudo cautelar</p>
+        <div className="flex flex-wrap gap-2">
+          {(["aprovado", "com_restricao", "reprovado"] as StatusCautelar[]).map((s) => {
+            const ativo = cautelar === s;
+            const ccor = CAUTELAR_COR[s];
+            return (
+              <button
+                key={s}
+                onClick={() => onCautelarChange(ativo ? null : s)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-lg border-2 px-3 py-1.5 text-xs font-medium transition",
+                  ativo
+                    ? `${ccor.bg} ${ccor.text} ${ccor.border}`
+                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
+                )}
+              >
+                <span>{CAUTELAR_ICONE[s]}</span> {CAUTELAR_LABEL[s]}
+              </button>
+            );
+          })}
+          {cautelar && (
+            <button
+              onClick={() => onCautelarChange(null)}
+              className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-[10px] text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+              title="Limpar cautelar"
+            >
+              ✕ limpar
+            </button>
+          )}
+        </div>
+        {!cautelar && (
+          <p className="mt-2 text-[11px] text-amber-700">
+            ⚠️ Sem cautelar informada — preencha pra classificação ficar correta (reprovado força Classe E, restrição desce 1 classe).
+          </p>
+        )}
       </div>
 
       {/* Métricas */}

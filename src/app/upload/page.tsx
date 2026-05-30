@@ -1,5 +1,6 @@
 import { UploadDropzone } from "@/components/UploadDropzone";
 import { PageHeader } from "@/components/AppShell";
+import { BackupRestore } from "@/components/BackupRestore";
 
 export default function UploadPage() {
   return (
@@ -22,6 +23,10 @@ export default function UploadPage() {
             <li><strong className="text-purple-700">Vendas</strong> — &quot;Veículos Vendidos&quot;. Histórico de vendas com cliente, vendedor, dias de giro.</li>
             <li><strong className="text-emerald-700">Custos</strong> — &quot;Relatório de Custos&quot; (.xls). Tem a margem oficial NBS centavo-a-centavo: Nota Fábrica, Forplan, Impostos, Comissões, Ganhos Indiretos (bônus de fábrica). <strong>Sem ele, a margem usa estimativa.</strong></li>
           </ul>
+        </div>
+
+        <div className="mt-6">
+          <BackupRestore />
         </div>
       </div>
     </>
