@@ -90,7 +90,17 @@ export async function marcarParaReprecificar(args: MarcarArgs): Promise<Reprecif
     .select("*")
     .single();
 
-  if (error) throw new Error(`marcarParaReprecificar: ${error.message}`);
+  if (error) {
+    // 23505 = unique_violation no Postgres. Acontece em race (outra tab marcou
+    // primeiro pro mesmo chassi). Mensagem amigável + caller deve recarregar
+    // estado pra refletir o que existe no DB.
+    if ((error as { code?: string }).code === "23505") {
+      throw new Error(
+        "Esse veículo já tem reprecificação aberta. Recarregue a página e tente novamente.",
+      );
+    }
+    throw new Error(`Falha ao marcar pra reprecificar: ${error.message}`);
+  }
   return data as ReprecificacaoRow;
 }
 

@@ -73,7 +73,13 @@ test("período acumulado expande pra cobrir antigo + novo", () => {
 
 function custosResult(custos: ReturnType<typeof custo>[]): CustosParseResult {
   return {
-    meta: { arquivo_nome: "c.xls", periodo: null, data_geracao: new Date(), total_vendas: custos.length },
+    meta: {
+      arquivo_nome: "c.xls",
+      periodo: null,
+      data_geracao: new Date(),
+      total_vendas: custos.length,
+      loja_principal: null,
+    },
     custos,
     warnings: [],
   };

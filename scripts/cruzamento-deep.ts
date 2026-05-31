@@ -2,7 +2,7 @@ import * as fs from "fs";
 import { parseNbsXlsx } from "../src/lib/parsers/nbs-xlsx";
 import { parseNbsVendasXlsx } from "../src/lib/parsers/nbs-vendas-xlsx";
 import { parseNbsCustosXls } from "../src/lib/parsers/nbs-custos-xls";
-import { calcMargemVenda } from "../src/lib/analytics/margem";
+import { calcMargemVenda, type MargemFonte } from "../src/lib/analytics/margem";
 
 const fmt = (n: number) =>
   "R$ " + n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -35,7 +35,7 @@ async function main() {
     margem: number;
     margemPct: number;
     custoOficial: number;
-    fonte: "oficial" | "estimada";
+    fonte: MargemFonte;
     ganhosIndiretos: number;
   };
   const enriched: V[] = vendas.vendas.map((v) => {

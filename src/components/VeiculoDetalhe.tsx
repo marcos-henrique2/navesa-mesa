@@ -1,12 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
-import { ArrowLeft, AlertTriangle, Lightbulb } from "lucide-react";
+import { ArrowLeft, AlertTriangle } from "lucide-react";
 import { useInventory, nomeOuCodigo } from "@/lib/store/inventory";
 import { classificarPatio, STATUS_LABEL } from "@/lib/inventory/status";
-import { FipeBox } from "./FipeBox";
-import { sugerirPreco } from "@/lib/pricing/suggest";
+import { PrecificacaoBlock } from "./veiculos/PrecificacaoBlock";
 import {
   classificarVeiculo,
   contarPorModelo,
@@ -26,15 +25,9 @@ import {
 import { formatBRL, formatInt, cn } from "@/lib/utils";
 
 export function VeiculoDetalhe({ chassi }: { chassi: string }) {
-  const { veiculos, vendas, custosPorPlaca, lojas, isHydrated } = useInventory();
-  const [precoFipe, setPrecoFipe] = useState<number | null>(null);
+  const { veiculos, lojas, isHydrated } = useInventory();
 
   const veiculo = useMemo(() => veiculos.find((v) => v.chassi === chassi), [veiculos, chassi]);
-
-  const sugestao = useMemo(
-    () => (veiculo ? sugerirPreco(veiculo, vendas, custosPorPlaca, precoFipe) : null),
-    [veiculo, vendas, custosPorPlaca, precoFipe],
-  );
 
   const cautelares = useCautelares();
   const cautelarAtual = veiculo ? cautelares[veiculo.chassi] ?? null : null;
@@ -49,7 +42,7 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
 
   if (!isHydrated) return <p className="text-sm text-zinc-500">Carregando…</p>;
 
-  if (!veiculo || !sugestao) {
+  if (!veiculo) {
     return (
       <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-12 text-center dark:border-zinc-700 dark:bg-zinc-900">
         <p className="text-zinc-500">Veículo com chassi <span className="font-mono">{chassi}</span> não encontrado nessa sessão.</p>
@@ -122,9 +115,7 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
         />
       )}
 
-      <FipeBox veiculo={veiculo} onValorChange={setPrecoFipe} />
-
-      <SugestaoBox sugestao={sugestao} precoAtual={veiculo.preco_venda} />
+      <PrecificacaoBlock veiculo={veiculo} />
     </div>
   );
 }
@@ -279,166 +270,3 @@ function ClassificacaoBox({
   );
 }
 
-function SugestaoBox({ sugestao, precoAtual }: { sugestao: ReturnType<typeof sugerirPreco>; precoAtual: number | null }) {
-  const fonteLabel: Record<typeof sugestao.baseUsada, string> = {
-    historico: "📊 Histórico de vendas",
-    fipe: "📋 Tabela FIPE",
-    custo: "💰 Custo + margem mínima",
-  };
-
-  return (
-    <div className="rounded-xl border border-[var(--brand-200)] bg-gradient-to-br from-[var(--brand-50)] to-white p-5 shadow-[var(--shadow-sm)]">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="flex items-center gap-2 text-base font-semibold text-slate-900">
-          <Lightbulb className="h-4 w-4 text-[var(--brand-700)]" />
-          Sugestão de preço
-        </h3>
-        <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-[var(--brand-700)] shadow-[var(--shadow-sm)]">
-          {fonteLabel[sugestao.baseUsada]}
-        </span>
-      </div>
-
-      {/* 3 BANDAS */}
-      <div className="mt-4 grid gap-3 md:grid-cols-3">
-        <BandaCard
-          titulo="🎯 Target"
-          subtitulo="margem & giro equilibrados"
-          banda={sugestao.target}
-          precoAtual={precoAtual}
-          destaque
-        />
-        <BandaCard
-          titulo="⚡ Giro rápido"
-          subtitulo="venda em ≤30 dias"
-          banda={sugestao.giroRapido}
-          precoAtual={precoAtual}
-          tone="amber"
-        />
-        <BandaCard
-          titulo="🚨 Mínimo"
-          subtitulo="piso sem prejuízo"
-          banda={sugestao.minimo}
-          precoAtual={precoAtual}
-          tone="red"
-        />
-      </div>
-
-      {/* JUSTIFICATIVA */}
-      <p className="mt-3 rounded-lg bg-white/80 px-3 py-2 text-xs text-slate-700">
-        💡 {sugestao.justificativa}
-      </p>
-
-      {/* ALERTAS */}
-      {sugestao.alertas.length > 0 && (
-        <ul className="mt-2 space-y-1">
-          {sugestao.alertas.map((a, i) => (
-            <li key={i} className="flex items-start gap-1.5 text-xs text-amber-800">
-              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
-              <span>{a}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {/* COMPARÁVEIS */}
-      {sugestao.comparaveis.length > 0 && (
-        <details className="mt-4">
-          <summary className="cursor-pointer text-xs font-medium text-[var(--brand-700)] hover:text-[var(--brand-900)]">
-            Ver {sugestao.comparaveis.length} comparável{sugestao.comparaveis.length === 1 ? "" : "is"} do histórico
-          </summary>
-          <div className="mt-2 overflow-x-auto rounded-lg border border-[var(--border-soft)] bg-white">
-            <table className="w-full text-xs">
-              <thead className="bg-slate-50 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                <tr>
-                  <th className="px-3 py-2">Placa</th>
-                  <th className="px-3 py-2 text-right">Vendido por</th>
-                  <th className="px-3 py-2 text-right">KM</th>
-                  <th className="px-3 py-2 text-right">Margem</th>
-                  <th className="px-3 py-2 text-right">Dias até venda</th>
-                  <th className="px-3 py-2 text-right">Data</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sugestao.comparaveis.slice(0, 10).map((c) => (
-                  <tr key={c.placa} className="border-t border-[var(--border-soft)]">
-                    <td className="px-3 py-1.5 font-mono">{c.placa}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums">{formatBRL(c.precoVenda)}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">
-                      {c.km != null ? formatInt(c.km) : "—"}
-                    </td>
-                    <td className={cn(
-                      "px-3 py-1.5 text-right tabular-nums",
-                      c.margemReal >= 0 ? "text-emerald-700" : "text-red-700"
-                    )}>
-                      {formatBRL(c.margemReal)}
-                    </td>
-                    <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">
-                      {c.diasAteVenda != null ? `${c.diasAteVenda}d` : "—"}
-                    </td>
-                    <td className="px-3 py-1.5 text-right text-slate-500">
-                      {c.dataVenda ? new Date(c.dataVenda).toLocaleDateString("pt-BR") : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </details>
-      )}
-    </div>
-  );
-}
-
-function BandaCard({
-  titulo,
-  subtitulo,
-  banda,
-  precoAtual,
-  destaque,
-  tone,
-}: {
-  titulo: string;
-  subtitulo: string;
-  banda: { preco: number; margemSobreFaturamento: number };
-  precoAtual: number | null;
-  destaque?: boolean;
-  tone?: "amber" | "red";
-}) {
-  const diff = precoAtual ? banda.preco - precoAtual : 0;
-  const diffPct = precoAtual && precoAtual > 0 ? (diff / precoAtual) * 100 : 0;
-  const margemNeg = banda.margemSobreFaturamento < 0;
-
-  return (
-    <div
-      className={cn(
-        "rounded-lg border bg-white p-3",
-        destaque ? "border-[var(--brand-400)] shadow-[var(--shadow-md)]" : "border-[var(--border-soft)] shadow-[var(--shadow-sm)]",
-        tone === "amber" && "border-amber-200",
-        tone === "red" && "border-red-200",
-      )}
-    >
-      <p className="text-xs font-semibold text-slate-700">{titulo}</p>
-      <p className="text-[10px] text-slate-500">{subtitulo}</p>
-      <p className={cn(
-        "mt-2 text-2xl font-bold tabular-nums",
-        destaque ? "text-[var(--brand-900)]" : tone === "amber" ? "text-amber-700" : tone === "red" ? "text-red-700" : "text-slate-900",
-      )}>
-        {formatBRL(banda.preco)}
-      </p>
-      <p className={cn(
-        "text-[11px] tabular-nums",
-        margemNeg ? "text-red-600" : "text-slate-500",
-      )}>
-        margem {banda.margemSobreFaturamento.toFixed(1)}%
-      </p>
-      {precoAtual != null && precoAtual > 0 && (
-        <p className={cn(
-          "mt-1 text-[10px] tabular-nums",
-          diff > 0 ? "text-emerald-700" : diff < 0 ? "text-amber-700" : "text-slate-500",
-        )}>
-          {diff === 0 ? "= preço atual" : `${diff > 0 ? "+" : ""}${formatBRL(diff)} (${diffPct >= 0 ? "+" : ""}${diffPct.toFixed(1)}%)`}
-        </p>
-      )}
-    </div>
-  );
-}

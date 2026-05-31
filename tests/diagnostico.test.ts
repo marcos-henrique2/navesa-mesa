@@ -226,6 +226,30 @@ test("FIX 3 (MEDIUM): classe inválida (não A-E) → sem_dados sem NaN", () => 
   assert.ok(r.motivos.some((m) => m.toLowerCase().includes("classe inválida")));
 });
 
+test("Fase B: medianaPorHeuristica=true → confianca.kmHeuristica=true + motivo", () => {
+  const r = calcularDiagnostico({
+    veiculo: veiculo({ km: MEDIANA_KM, dias_patio: 20, preco_venda: FIPE }),
+    classe: "B",
+    precoFipe: FIPE,
+    cautelar: "aprovado",
+    medianaKmModeloAno: MEDIANA_KM,
+    medianaPorHeuristica: true,
+  });
+  assert.equal(r.confianca.kmHeuristica, true);
+  assert.ok(r.motivos.some((m) => m.toLowerCase().includes("heurística")));
+});
+
+test("Fase B: medianaPorHeuristica default false → kmHeuristica=false", () => {
+  const r = calcularDiagnostico({
+    veiculo: veiculo({ km: MEDIANA_KM, dias_patio: 20, preco_venda: FIPE }),
+    classe: "B",
+    precoFipe: FIPE,
+    cautelar: "aprovado",
+    medianaKmModeloAno: MEDIANA_KM,
+  });
+  assert.equal(r.confianca.kmHeuristica, false);
+});
+
 test("computarDiagnosticoLista retorna Map com diagnóstico por chassi", () => {
   const v1 = veiculo({
     chassi: "CHASSI11111111111",

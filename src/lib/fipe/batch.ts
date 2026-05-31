@@ -261,6 +261,55 @@ export function clearBatch(): void {
 }
 
 /**
+ * Atualiza/insere um item no batch FIPE em memória + Supabase + dispara evento.
+ *
+ * Usado quando o usuário corrige manualmente o match FIPE de um carro pelo
+ * `FipeReviewDrawer` — precisa propagar pro `useFipeBatch` em tempo real
+ * pra que `usePrecificacao` recalcule o diagnóstico com o novo preço.
+ *
+ * Retorna `true` se a persistência no Supabase teve sucesso, `false` caso contrário.
+ * O cache em memória é sempre atualizado (UI reage instantaneamente), mas o caller
+ * deve checar o retorno pra alertar o usuário se o Supabase falhou — senão o override
+ * existe só na aba atual e se perde no próximo reload.
+ */
+export async function upsertBatchItem(item: BatchFipeItem): Promise<boolean> {
+  const now = Date.now();
+  if (cached) {
+    cached = {
+      ...cached,
+      timestamp: now,
+      items: { ...cached.items, [item.chassi]: item },
+      totalVeiculos: Object.keys(cached.items).includes(item.chassi)
+        ? cached.totalVeiculos
+        : cached.totalVeiculos + 1,
+    };
+  } else {
+    cached = {
+      timestamp: now,
+      items: { [item.chassi]: item },
+      erros: [],
+      totalGrupos: 0,
+      totalVeiculos: 1,
+    };
+  }
+  loaded = true;
+  notify();
+  try {
+    await saveBatchToSupabase({
+      timestamp: now,
+      items: { [item.chassi]: item },
+      erros: [],
+      totalGrupos: 0,
+      totalVeiculos: 1,
+    });
+    return true;
+  } catch (err) {
+    console.error("Falha ao persistir match FIPE manual no Supabase:", err);
+    return false;
+  }
+}
+
+/**
  * Helper pra UI: calcula o desvio % do preço atual vs FIPE de um carro.
  * Positivo = pedindo MAIS que a FIPE (potencial de não vender).
  * Negativo = pedindo MENOS que a FIPE (deixando dinheiro na mesa).

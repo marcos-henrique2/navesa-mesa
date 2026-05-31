@@ -144,6 +144,12 @@ export type CalcularDiagnosticoInput = {
   cautelar: StatusCautelar | null;
   /** Mediana de km do (marca, modelo, ano) ou fallback. null = sem dados confiáveis. */
   medianaKmModeloAno: number | null;
+  /**
+   * Flag opcional: a mediana veio de heurística (km/ano × idade), não de amostras reais.
+   * Quando true, `confianca.kmHeuristica` é setado pra UI sinalizar baixa confiança.
+   * Default: false.
+   */
+  medianaPorHeuristica?: boolean;
   params?: DiagnosticoParams;
 };
 
@@ -169,7 +175,7 @@ export function calcularDiagnostico(input: CalcularDiagnosticoInput): Diagnostic
   const confianca: DiagnosticoConfianca = {
     semFipe: precoFipe == null,
     semCautelar: cautelar == null,
-    kmHeuristica: false, // setado externamente quando mediana veio de heurística
+    kmHeuristica: input.medianaPorHeuristica === true,
     recemEntrado,
     semDiasPatio,
   };
