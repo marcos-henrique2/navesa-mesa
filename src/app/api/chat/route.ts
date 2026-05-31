@@ -1,4 +1,5 @@
 import { anthropic } from "@ai-sdk/anthropic";
+import { deepseek } from "@ai-sdk/deepseek";
 import { google } from "@ai-sdk/google";
 import { groq } from "@ai-sdk/groq";
 import { streamText, type LanguageModel } from "ai";
@@ -162,13 +163,17 @@ type ProvedorConfig = { nome: string; criar: () => LanguageModel };
  * Primeiro da lista que tem API key configurada é tentado primeiro.
  * Se ele falhar com erro de quota/rate-limit/auth, tenta o próximo automaticamente.
  *
- * Ordem (mais generoso/gratuito primeiro):
- *   1. Groq (Llama 3.3 70B) — free tier real, ~6k tokens/min input, 14.4k req/dia
- *   2. Gemini 2.5 Flash — free tier 250k tokens/min mas batiu rápido
- *   3. Anthropic Claude Haiku — pago (fallback se ambos free falharem)
+ * Ordem (mais permissivo p/ bundle grande primeiro):
+ *   1. DeepSeek (V3) — free tier 50 req/dia + 64k context (cabe bundle grande)
+ *   2. Groq (Llama 3.3 70B) — free tier 14.4k req/dia mas só 6k tokens/min input
+ *   3. Gemini 2.5 Flash — free tier 250k tokens/min input mas esgota rápido
+ *   4. Anthropic Claude Haiku — pago (fallback se todos free falharem)
  */
 function listarProvidersDisponiveis(): ProvedorConfig[] {
   const lista: ProvedorConfig[] = [];
+  if (process.env.DEEPSEEK_API_KEY) {
+    lista.push({ nome: "deepseek", criar: () => deepseek("deepseek-chat") });
+  }
   if (process.env.GROQ_API_KEY) {
     lista.push({ nome: "groq", criar: () => groq("llama-3.3-70b-versatile") });
   }
@@ -213,7 +218,7 @@ export async function POST(req: Request) {
       return new Response(
         JSON.stringify({
           error:
-            "Nenhuma API key configurada. Adicione no .env.local: GROQ_API_KEY=gsk_... (gratuito em console.groq.com), GOOGLE_GENERATIVE_AI_API_KEY=... (gratuito em aistudio.google.com/apikey) ou ANTHROPIC_API_KEY=sk-ant-... — e reinicie o servidor.",
+            "Nenhuma API key configurada. Adicione no .env.local: DEEPSEEK_API_KEY=sk-... (gratuito em platform.deepseek.com), GROQ_API_KEY=gsk_... (gratuito em console.groq.com), GOOGLE_GENERATIVE_AI_API_KEY=... ou ANTHROPIC_API_KEY=sk-ant-... — e reinicie o servidor.",
         }),
         { status: 500, headers: { "content-type": "application/json" } },
       );
