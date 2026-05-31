@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Upload } from "lucide-react";
-import { VeiculosTable } from "@/components/VeiculosTable";
+import { VeiculosClient } from "@/components/VeiculosClient";
 import { PageHeader } from "@/components/AppShell";
 
 export default function VeiculosPage() {
@@ -16,7 +16,7 @@ export default function VeiculosPage() {
         }
       />
       <div className="w-full px-4 py-6">
-        <VeiculosTable />
+        <VeiculosClient />
       </div>
     </>
   );

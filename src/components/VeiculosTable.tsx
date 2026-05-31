@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -19,6 +19,8 @@ import { classificarVeiculo, contarPorModelo, CLASSE_COR, type Classe } from "@/
 import { useFipeBatch } from "@/lib/fipe/useFipeBatch";
 import { calcularDesvioFipe } from "@/lib/fipe/batch";
 import { useCautelares, CAUTELAR_ICONE, CAUTELAR_LABEL, type StatusCautelar } from "@/lib/inventory/cautelar";
+import { computarDiagnosticoLista, type DiagnosticoStatus } from "@/lib/pricing/diagnostico";
+import { calcularMedianasKm } from "@/lib/pricing/medianas";
 import { cn, formatBRL, formatInt } from "@/lib/utils";
 import { ResumoPorDimensao } from "./ResumoPorDimensao";
 import { FipeBatchRunner } from "./FipeBatchRunner";
@@ -27,14 +29,37 @@ import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 
 type StatusFiltro = "all" | "real" | "prep";
 
+/**
+ * Filtro vindo do banner de prioridade (Fase C).
+ * Quando setado, restringe a tabela aos veículos das lojas indicadas
+ * com status de diagnóstico que precisa de atenção. O `nonce` força
+ * re-aplicação mesmo se o user já tinha desligado o filtro.
+ */
+export type FiltrosPrioridade = {
+  codsLoja: number[];
+  statusAtencao: true;
+  nonce: number;
+};
+
+const STATUS_ATENCAO_DIAG: ReadonlySet<DiagnosticoStatus> = new Set([
+  "subprecificado",
+  "subprecificado_grave",
+  "negativo",
+]);
+
 function ehPreparacao(v: VeiculoParsed): boolean {
   // Alinhado com NBS: PREPARAÇÃO + BLOQUEADO = "em preparação"
   return classificarPatio(v.patio) === "preparacao";
 }
 
-export function VeiculosTable() {
+export type VeiculosTableProps = {
+  /** Filtro injetado pelo banner de prioridade Ford (Fase C). */
+  filtrosPrioridade?: FiltrosPrioridade | null;
+};
+
+export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
   const router = useRouter();
-  const { veiculos, lojas, isHydrated } = useInventory();
+  const { veiculos, vendas, lojas, isHydrated } = useInventory();
 
   const [statusFiltro, setStatusFiltro] = useState<StatusFiltro>("all");
   const [search, setSearch] = useState("");
@@ -47,6 +72,10 @@ export function VeiculosTable() {
   const [filtroClasse, setFiltroClasse] = useState<"all" | Classe | "showroom" | "repasse">("all");
   const [filtroFipe, setFiltroFipe] = useState<"all" | "acima" | "abaixo" | "sem">("all");
   const [filtroCautelar, setFiltroCautelar] = useState<"all" | StatusCautelar | "sem">("all");
+
+  // Filtro vindo do banner de prioridade Ford (Fase C). Mantemos como state
+  // local pra permitir o user limpá-lo sem depender da prop.
+  const [modoPrioridade, setModoPrioridade] = useState<{ codsLoja: number[] } | null>(null);
 
   const fipeBatch = useFipeBatch();
   const cautelares = useCautelares();
@@ -86,6 +115,54 @@ export function VeiculosTable() {
     return m;
   }, [veiculos, cautelares]);
 
+  // Sincroniza prop filtrosPrioridade → state interno (nonce força reaplicar
+  // mesmo se o user já tinha desligado o filtro e clicou de novo no banner).
+  // Reset implícito quando a prop volta a null.
+  useEffect(() => {
+    if (filtrosPrioridade) {
+      setModoPrioridade({ codsLoja: filtrosPrioridade.codsLoja });
+    } else {
+      setModoPrioridade(null);
+    }
+    // Só dispara quando o nonce muda (ignora identidade do objeto sem mudança real)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtrosPrioridade?.nonce, filtrosPrioridade === null]);
+
+  // Diagnóstico em lote SÓ quando modo prioridade ativo — evita recompute pesado
+  // no caminho normal da tabela. Restringe aos veículos das lojas-alvo.
+  const diagnosticosPrioridade = useMemo(() => {
+    if (!modoPrioridade) return null;
+    const cods = new Set(modoPrioridade.codsLoja);
+    const subset = veiculos.filter((v) => cods.has(v.cod_empresa));
+    if (subset.length === 0) return new Map<string, DiagnosticoStatus>();
+
+    const classesPorChassi = new Map<string, Classe>();
+    for (const v of subset) {
+      const c = classifMap.get(v.chassi)?.classe;
+      if (c) classesPorChassi.set(v.chassi, c);
+    }
+
+    const fipeMap: Record<string, number> = {};
+    if (fipeBatch?.items) {
+      for (const [chassi, item] of Object.entries(fipeBatch.items)) {
+        if (item.precoFipe != null) fipeMap[chassi] = item.precoFipe;
+      }
+    }
+
+    const medianas = calcularMedianasKm(veiculos, vendas);
+    const result = computarDiagnosticoLista({
+      veiculos: subset,
+      classesPorChassi,
+      fipeBatch: fipeMap,
+      cautelaresPorChassi: cautelares,
+      medianasKmPorChave: medianas,
+    });
+
+    const statusMap = new Map<string, DiagnosticoStatus>();
+    for (const [chassi, r] of result) statusMap.set(chassi, r.status);
+    return statusMap;
+  }, [modoPrioridade, veiculos, vendas, classifMap, fipeBatch, cautelares]);
+
   // Filtros aplicados EXCETO status. Usado para KPIs e resumo agregado por status.
   const filteredExceptStatus = useMemo(() => {
     const aMin = num(anoMin), aMax = num(anoMax);
@@ -94,6 +171,13 @@ export function VeiculosTable() {
     const dMin = num(diasMin), dMax = num(diasMax);
 
     return veiculos.filter((v) => {
+      // Modo prioridade Ford: filtra lojas-alvo + status diagnóstico em atenção.
+      // Aplicado antes de qualquer outro filtro pra short-circuit rápido.
+      if (modoPrioridade) {
+        if (!modoPrioridade.codsLoja.includes(v.cod_empresa)) return false;
+        const st = diagnosticosPrioridade?.get(v.chassi);
+        if (!st || !STATUS_ATENCAO_DIAG.has(st)) return false;
+      }
       if (filtroLoja !== "all" && String(v.cod_empresa) !== filtroLoja) return false;
       if (filtroMarca !== "all" && v.marca !== filtroMarca) return false;
       if (filtroCor !== "all" && v.cor_externa !== filtroCor) return false;
@@ -145,7 +229,7 @@ export function VeiculosTable() {
       }
       return true;
     });
-  }, [veiculos, filtroLoja, filtroMarca, filtroCor, filtroComb, filtroSituacao, filtroPatio, filtroClasse, filtroFipe, filtroCautelar, classifMap, fipeBatch, cautelares, anoMin, anoMax, kmMin, kmMax, precoMin, precoMax, diasMin, diasMax, search]);
+  }, [veiculos, filtroLoja, filtroMarca, filtroCor, filtroComb, filtroSituacao, filtroPatio, filtroClasse, filtroFipe, filtroCautelar, classifMap, fipeBatch, cautelares, anoMin, anoMax, kmMin, kmMax, precoMin, precoMax, diasMin, diasMax, search, modoPrioridade, diagnosticosPrioridade]);
 
   // Filtros + status final (a tabela exibe esses)
   const filtered = useMemo(() => {
@@ -289,6 +373,7 @@ export function VeiculosTable() {
     setFiltroCor("all"); setFiltroComb("all"); setFiltroSituacao("all"); setFiltroPatio("all");
     setAnoMin(""); setAnoMax(""); setKmMin(""); setKmMax("");
     setPrecoMin(""); setPrecoMax(""); setDiasMin(""); setDiasMax("");
+    setModoPrioridade(null);
   };
 
   const filtrosAtivos = [
@@ -297,6 +382,7 @@ export function VeiculosTable() {
     filtroLoja !== "all", filtroMarca !== "all", filtroCor !== "all",
     filtroComb !== "all", filtroSituacao !== "all", filtroPatio !== "all",
     !!anoMin, !!anoMax, !!kmMin, !!kmMax, !!precoMin, !!precoMax, !!diasMin, !!diasMax,
+    modoPrioridade !== null,
   ].filter(Boolean).length;
 
   if (!isHydrated) {
@@ -333,6 +419,19 @@ export function VeiculosTable() {
             Só preparação <span className="ml-1 text-xs opacity-70">({formatInt(kpis.prepQt)})</span>
           </SegBtn>
         </div>
+        {modoPrioridade && (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-red-300 bg-red-50 px-2.5 py-1 text-xs font-medium text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+            <AlertTriangle className="h-3 w-3" />
+            Prioridade Ford ativa
+            <button
+              onClick={() => setModoPrioridade(null)}
+              className="ml-0.5 rounded p-0.5 hover:bg-red-200/60 dark:hover:bg-red-900/40"
+              aria-label="Remover filtro de prioridade Ford"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        )}
         {filtrosAtivos > 0 && (
           <button
             onClick={limparFiltros}
