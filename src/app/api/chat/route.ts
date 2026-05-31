@@ -101,44 +101,34 @@ O JSON abaixo é sua fonte da verdade. Aqui está o **mapa de campos** com instr
 • \`classificacao\` — distribuição A-E (política Auto Avaliar) + Show Room vs Repasse
 
 **RANKING POR DIMENSÃO**
-• \`lojas\` — margem por loja (use pra "qual loja?", "rank lojas")
-• \`marcas\` — margem por marca (use pra "qual marca?", "RANGER, JEEP, GWM…")
-• \`modelosPiores\` / \`modelosMelhores\` — top 15 modelos extremos
-• \`vendedoresTop\` / \`vendedoresPiores\` — top 10 e piores 10 vendedores
+• \`lojas\` — margem por loja, top 10 (use pra "qual loja?", "rank lojas")
+• \`marcas\` — margem por marca, top 10 (use pra "qual marca?", "RANGER, JEEP, GWM…")
+• \`modelosPiores\` / \`modelosMelhores\` — top 5 modelos extremos
+• \`vendedoresTop\` / \`vendedoresPiores\` — top 5 e piores 5 vendedores
 
-**CRUZAMENTOS LOJA × X**
-• \`topModelosPorLoja\` — top 7 modelos vendidos DENTRO de cada loja (use pra "qual carro mais sai na loja X?")
-• \`topMarcasPorLoja\` — top 5 marcas por loja
-• \`topVendedoresPorLoja\` — top 5 vendedores de cada loja
-• \`lojasDeCadaModelo\` — pra modelos top, onde vendem mais (use pra "onde a Ranger XLT mais sai?")
-• \`cautelaresPorLoja\` — distribuição de status cautelar (aprovado/restrição/reprovado/sem) por loja
+**CRUZAMENTOS LOJA × X** (limitado às top 10 lojas por volume)
+• \`topModelosPorLoja\` — top 3 modelos vendidos DENTRO das 10 maiores lojas (use pra "qual carro mais sai na loja X?")
+• \`topMarcasPorLoja\` — top 3 marcas das 10 maiores lojas
+• \`topVendedoresPorLoja\` — top 2 vendedores das 10 maiores lojas
+• \`lojasDeCadaModelo\` — pros top 10 modelos, top 3 lojas de cada (use pra "onde a Ranger XLT mais sai?")
+Obs: se a pergunta for sobre uma loja fora do top 10 (ex: Goiânia 5ª venda), use o ranking de \`lojas\` (top 10) ou diga "preciso desses dados, posso ampliar".
 
 **TEMPO E TENDÊNCIA**
 • \`vendasPorMes\` — série mensal (use pra "evolução", "tendência", "mês X vs mês Y")
 • \`giro\` — buckets de dias parado (0-15d, 16-30d, ..., 180+d) — chave pra entender velocidade de venda
 
-**DEMOGRAFIA E PERFIL**
-• \`vendasPorUF\` — geografia dos clientes (GO, MS, DF, SP…)
-• \`pfVsPj\` — pessoa física vs jurídica
-• \`idadeVeiculo\` — buckets de idade (0-2 anos, 3-5, 6-8, 9-12, 13+) com margem
-• \`km\` — buckets de quilometragem (0-20k, 20-50k, 50-100k, 100-150k, 150k+) com margem
-• \`kmPorModelo\` — pra cada modelo top (≥5 vendas): KM mín/máx/mediano + margem média
-
 **ESTOQUE ATUAL** (⚠️ valores em R$ = CUSTO DE FÁBRICA / nota fábrica, NÃO preço de venda — representa capital travado, igual "Custo fábrica sem FP" do NBS)
-• \`estoque\` — carros parados de modelos com histórico negativo (top 15 mais arriscados; valorEmRisco/valorSeguro em custo)
+• \`estoque\` — carros parados de modelos com histórico negativo (top 5 mais arriscados; valorEmRisco/valorSeguro em custo)
 • \`estoquePorLoja\` — quanto cada loja tem parado (qt + custo de fábrica + dias médio + qt >60d)
 • \`estoquePorMarca\` — concentração por marca (valorEmEstoque = custo de fábrica)
-• \`fipeAnaliseEstoque\` — quantos carros acima/abaixo da FIPE + top 15 extremos (aqui sim usa PREÇO DE VENDA pedido vs FIPE de mercado)
-
-**CLIENTES E TROCAS**
-• \`clientesRecorrentes\` — clientes com 2+ compras
-• \`trocas\` — com troca vs sem troca (comparação rápida)
+• \`fipeAnaliseEstoque\` — quantos carros acima/abaixo da FIPE + top 5 extremos (aqui sim usa PREÇO DE VENDA pedido vs FIPE de mercado)
 
 **OUTLIERS**
-• \`outliersLucro\` / \`outliersPrejuizo\` — 10 vendas individuais mais extremas
+• \`outliersLucro\` / \`outliersPrejuizo\` — top 3 vendas individuais mais extremas
 
-**MARGEM POR ANO**
-• \`margemPorAnoModelo\` — margem agregada por ano modelo (saber qual idade dá mais margem)
+**CAMPOS REMOVIDOS PRA CABER EM QUOTA** (não inclusos no JSON pra economizar tokens):
+\`vendasPorUF\`, \`pfVsPj\`, \`idadeVeiculo\`, \`km\`, \`kmPorModelo\`, \`clientesRecorrentes\`, \`trocas\`, \`margemPorAnoModelo\`, \`cautelaresPorLoja\`.
+Se a pergunta exigir um desses, fale honestamente "preciso desses dados, posso adicionar" e siga adiante com o que tem (sugira a melhor resposta possível com os campos disponíveis).
 
 == DADOS (JSON) ==
 ${JSON.stringify(bundle)}

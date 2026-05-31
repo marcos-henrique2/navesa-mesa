@@ -1525,13 +1525,15 @@ export type InsightsBundle = {
   giro: GiroBucket[];
   modelosPiores: MargemPorModelo[];
   modelosMelhores: MargemPorModelo[];
-  trocas: TrocasResumo;
+  /** Opcional — removido na versão compacta (chat) pra caber em quota de provider free. */
+  trocas?: TrocasResumo;
   vendedoresTop: MargemPorVendedor[];
   vendedoresPiores: MargemPorVendedor[];
   outliersLucro: VendaOutlier[];
   outliersPrejuizo: VendaOutlier[];
   estoque: EstoqueRiscoResumo | null;
-  clientesRecorrentes: ClienteRecorrente[];
+  /** Opcional — removido na versão compacta. */
+  clientesRecorrentes?: ClienteRecorrente[];
   // Cross-tabs
   topModelosPorLoja: TopItemPorLoja[];
   topMarcasPorLoja: TopItemPorLoja[];
@@ -1539,20 +1541,23 @@ export type InsightsBundle = {
   lojasDeCadaModelo: LojasPorModelo[];
   // Temporal
   vendasPorMes: VendasPorMes[];
-  // Demografia
-  vendasPorUF: VendasPorUF[];
-  pfVsPj: ResumoPFPJ;
-  idadeVeiculo: IdadeVeiculoBucket[];
-  km: KmBucket[];
+  // Demografia (todos opcionais — removidos na versão compacta)
+  vendasPorUF?: VendasPorUF[];
+  pfVsPj?: ResumoPFPJ;
+  idadeVeiculo?: IdadeVeiculoBucket[];
+  km?: KmBucket[];
   // Estoque
   estoquePorLoja: EstoquePorLoja[] | null;
   estoquePorMarca: EstoquePorMarca[] | null;
   classificacao: DistribuicaoClasses | null;
   // Análises avançadas (opcionais — dependem de fipeBatch/cautelares)
   fipeAnaliseEstoque: FipeAnaliseEstoque | null;
-  kmPorModelo: KmPorModelo[];
-  cautelaresPorLoja: CautelarPorLoja[];
-  margemPorAnoModelo: MargemPorAnoModelo[];
+  /** Opcional — removido na versão compacta. */
+  kmPorModelo?: KmPorModelo[];
+  /** Opcional — removido na versão compacta. */
+  cautelaresPorLoja?: CautelarPorLoja[];
+  /** Opcional — removido na versão compacta. */
+  margemPorAnoModelo?: MargemPorAnoModelo[];
 };
 
 export function montarBundle(
@@ -1601,5 +1606,93 @@ export function montarBundle(
     kmPorModelo: kmPorModelo(vendas, custosPorPlaca, 5).slice(0, 30),
     cautelaresPorLoja: veiculos.length > 0 ? cautelaresPorLoja(veiculos, cautelares) : [],
     margemPorAnoModelo: margemPorAnoModelo(vendas, custosPorPlaca),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Q) BUNDLE COMPACTO — versão reduzida pro chat caber em quota dos providers
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Providers free (DeepSeek/Groq/Gemini) batem limit de tokens por minuto bem
+// rápido com o bundle completo (~30-50k tokens). Esta versão corta drasticamente
+// arrays e remove campos raramente perguntados pra ficar <8k tokens.
+//
+// REGRA: tudo que sai daqui deve poder ser explicado em "preciso desse dado,
+// posso adicionar" — o system prompt do chat avisa o modelo dos campos removidos.
+
+/**
+ * Reduz drasticamente o tamanho do bundle pra uso no chat IA.
+ *
+ * - Mantém: sumario, classificacao, vendasPorMes, giro, estoquePorLoja, estoquePorMarca
+ * - Reduz arrays principais pra top-3 a top-10
+ * - Reduz estruturas aninhadas (top-modelos-por-loja etc) pra 2-3 itens
+ * - Remove campos pesados raramente usados (UF, PF×PJ, idade, km, kmPorModelo,
+ *   clientesRecorrentes, trocas, margemPorAnoModelo, cautelaresPorLoja)
+ *
+ * O `montarBundle` original continua intacto pra outros usos (dashboard, etc).
+ */
+export function compactarBundle(bundle: InsightsBundle): InsightsBundle {
+  return {
+    ...bundle,
+
+    // Rankings — top-5 cada (era 10-15)
+    modelosPiores: bundle.modelosPiores.slice(0, 5),
+    modelosMelhores: bundle.modelosMelhores.slice(0, 5),
+    vendedoresPiores: bundle.vendedoresPiores.slice(0, 5),
+    vendedoresTop: bundle.vendedoresTop.slice(0, 5),
+
+    // Lojas/marcas — top-10 (geralmente já está nesse tamanho ou perto)
+    lojas: bundle.lojas.slice(0, 10),
+    marcas: bundle.marcas.slice(0, 10),
+
+    // Outliers — top-3 (era 10)
+    outliersLucro: bundle.outliersLucro.slice(0, 3),
+    outliersPrejuizo: bundle.outliersPrejuizo.slice(0, 3),
+
+    // Estoque em risco — top-5 carros (era 20)
+    estoque: bundle.estoque
+      ? { ...bundle.estoque, itens: bundle.estoque.itens.slice(0, 5) }
+      : null,
+
+    // Cross-tabs — top 10 lojas + reduz itens por loja
+    // (já vêm ordenados por totalVendasLoja desc no topPorLojaGen)
+    topModelosPorLoja: bundle.topModelosPorLoja.slice(0, 10).map((l) => ({
+      ...l,
+      itens: l.itens.slice(0, 3), // era 7
+    })),
+    topMarcasPorLoja: bundle.topMarcasPorLoja.slice(0, 10).map((l) => ({
+      ...l,
+      itens: l.itens.slice(0, 3), // era 5
+    })),
+    topVendedoresPorLoja: bundle.topVendedoresPorLoja.slice(0, 10).map((l) => ({
+      ...l,
+      itens: l.itens.slice(0, 2), // era 5
+    })),
+
+    // Lojas de cada modelo — mantém top 3 lojas por modelo, top 10 modelos
+    lojasDeCadaModelo: bundle.lojasDeCadaModelo.slice(0, 10).map((m) => ({
+      ...m,
+      lojas: m.lojas.slice(0, 3),
+    })),
+
+    // FIPE — top-5 cada extremo (era 15)
+    fipeAnaliseEstoque: bundle.fipeAnaliseEstoque
+      ? {
+          ...bundle.fipeAnaliseEstoque,
+          topAcima: bundle.fipeAnaliseEstoque.topAcima.slice(0, 5),
+          topAbaixo: bundle.fipeAnaliseEstoque.topAbaixo.slice(0, 5),
+        }
+      : null,
+
+    // Removidos completamente (campos opcionais — JSON.stringify ignora undefined)
+    trocas: undefined,
+    clientesRecorrentes: undefined,
+    vendasPorUF: undefined,
+    pfVsPj: undefined,
+    idadeVeiculo: undefined,
+    km: undefined,
+    kmPorModelo: undefined,
+    cautelaresPorLoja: undefined,
+    margemPorAnoModelo: undefined,
   };
 }

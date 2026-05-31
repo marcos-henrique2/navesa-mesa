@@ -6,7 +6,7 @@ import { Send, Sparkles, Loader2, AlertCircle, RotateCcw } from "lucide-react";
 import { useInventory } from "@/lib/store/inventory";
 import { useFipeBatch } from "@/lib/fipe/useFipeBatch";
 import { useCautelares } from "@/lib/inventory/cautelar";
-import { montarBundle } from "@/lib/analytics/insights";
+import { montarBundle, compactarBundle } from "@/lib/analytics/insights";
 import {
   listChatMessages,
   inserirMensagem,
@@ -73,6 +73,11 @@ export function Chat() {
     return montarBundle(vendas, custosPorPlaca, veiculos, fipeBatch, cautelares);
   }, [vendas, veiculos, custosPorPlaca, fipeBatch, cautelares]);
 
+  // Versão compacta enviada pro chat IA — bundle completo estoura quota dos
+  // providers free (Groq 6k tok/min, Gemini 250k tok/min mas esgota rápido,
+  // DeepSeek 64k context). A compacta fica ~8k tokens.
+  const bundleCompacto = useMemo(() => (bundle ? compactarBundle(bundle) : null), [bundle]);
+
   const periodo = useMemo(
     () => ({
       inicio: vendasMeta?.periodo_inicio ? new Date(vendasMeta.periodo_inicio).toLocaleDateString("pt-BR") : null,
@@ -123,7 +128,7 @@ export function Chat() {
         method: "POST",
         headers: { "content-type": "application/json" },
         signal: ac.signal,
-        body: JSON.stringify({ messages: payloadMessages, bundle, periodo }),
+        body: JSON.stringify({ messages: payloadMessages, bundle: bundleCompacto, periodo }),
       });
 
       if (!resp.ok) {
