@@ -80,9 +80,23 @@ export async function definirPrecoAlvo(args: DefinirPrecoAlvoArgs): Promise<Prec
         "Esse veículo já tem preço-alvo ativo. Recarregue a página e tente novamente.",
       );
     }
+    if (tabelaNaoExiste(error)) {
+      throw new Error(
+        "Tabela preco_alvo ainda não existe — rode a migration 004_preco_alvo.sql no Supabase antes de definir preço-alvo.",
+      );
+    }
     throw new Error(`Falha ao definir preço-alvo: ${error.message}`);
   }
   return data as PrecoAlvoRow;
+}
+
+/**
+ * Tabela ainda não foi criada no Supabase (migration 004 pendente)?
+ * Detecta o erro do PostgREST e degrada silenciosamente sem quebrar a UI.
+ */
+function tabelaNaoExiste(error: { code?: string; message?: string } | null): boolean {
+  if (!error) return false;
+  return error.code === "PGRST205" || /could not find the table.*preco_alvo/i.test(error.message ?? "");
 }
 
 /** Busca o preço-alvo ativo (status='definido') do chassi. Null se não houver. */
@@ -96,7 +110,13 @@ export async function buscarPrecoAlvoAtivo(chassi: string): Promise<PrecoAlvoRow
     .order("criado_em", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (error) throw new Error(`buscarPrecoAlvoAtivo: ${error.message}`);
+  if (error) {
+    if (tabelaNaoExiste(error)) {
+      console.warn("Tabela preco_alvo ainda não existe — rode migration 004_preco_alvo.sql no Supabase.");
+      return null;
+    }
+    throw new Error(`buscarPrecoAlvoAtivo: ${error.message}`);
+  }
   return (data as PrecoAlvoRow | null) ?? null;
 }
 
@@ -114,7 +134,13 @@ export async function revogarPrecoAlvo(chassi: string): Promise<void> {
     .order("criado_em", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (error) throw new Error(`revogarPrecoAlvo (select): ${error.message}`);
+  if (error) {
+    if (tabelaNaoExiste(error)) {
+      console.warn("Tabela preco_alvo ainda não existe — revogar é no-op.");
+      return;
+    }
+    throw new Error(`revogarPrecoAlvo (select): ${error.message}`);
+  }
   if (!data) return;
   const { error: updErr } = await sb
     .from("preco_alvo")

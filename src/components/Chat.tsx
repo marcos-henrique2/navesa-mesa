@@ -257,7 +257,7 @@ export function Chat() {
         ) : (
           <div className="mx-auto max-w-3xl space-y-4">
             {messages.map((m, i) => (
-              <MessageBubble key={m.id ?? i} role={m.role} content={m.content} streaming={streaming && i === messages.length - 1 && m.role === "assistant"} />
+              <MessageBubble key={m.id != null ? `db-${m.id}` : `local-${i}`} role={m.role} content={m.content} streaming={streaming && i === messages.length - 1 && m.role === "assistant"} />
             ))}
             {streaming && messages[messages.length - 1]?.role === "user" && (
               <div className="flex items-center gap-2 text-xs text-slate-500">
