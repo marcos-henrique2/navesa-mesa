@@ -186,22 +186,6 @@ function listarProvidersDisponiveis(): ProvedorConfig[] {
   return lista;
 }
 
-/** Detecta erros de quota/rate-limit/auth que justificam fallback pro próximo provider. */
-function ehErroDeQuotaOuAuth(err: unknown): boolean {
-  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
-  return (
-    msg.includes("quota") ||
-    msg.includes("rate limit") ||
-    msg.includes("rate_limit") ||
-    msg.includes("429") ||
-    msg.includes("exceeded") ||
-    msg.includes("authentication") ||
-    msg.includes("unauthorized") ||
-    msg.includes("401") ||
-    msg.includes("403")
-  );
-}
-
 function extrairRetryAfter(err: unknown): number | null {
   const msg = err instanceof Error ? err.message : String(err);
   const match = msg.match(/retry in ([0-9.]+)\s*s/i) ?? msg.match(/([0-9]+)\s*seconds?/i);
@@ -226,27 +210,40 @@ export async function POST(req: Request) {
 
     const system = buildSystemPrompt(body.bundle, body.periodo ?? null);
 
-    // Tenta cada provider em sequência. Se um falha por quota/auth, tenta o próximo.
-    // A primeira chunk do stream precisa chegar pra confirmar que o provider está OK —
-    // por isso fazemos await na primeira leitura antes de decidir.
+    // Tenta cada provider em sequência. SEMPRE tenta o próximo se o atual falhar
+    // por qualquer motivo — quota, auth, stream vazio, timeout, etc.
+    // Só usa o break quando todos foram tentados (loop natural).
     let ultimoErro: unknown = null;
     let ultimoProvider: string | null = null;
+    const errosDetalhados: { provider: string; erro: string }[] = [];
 
     for (const provider of providers) {
       try {
+        // Captura erro assíncrono do streamText via callback (alguns providers
+        // retornam stream vazio em vez de exception — onError pega o motivo real).
+        let erroAssincrono: unknown = null;
         const result = streamText({
           model: provider.criar(),
           system,
           messages: body.messages,
           temperature: 0.3,
+          onError({ error }) {
+            erroAssincrono = error;
+            console.error(`[chat] streamText onError (${provider.nome}):`, error);
+          },
         });
 
-        // Força a primeira leitura do stream pra capturar erros imediatos (quota, auth).
-        // Se rolar, ainda dá tempo de tentar o próximo provider.
+        // Força a primeira leitura do stream pra capturar erros imediatos.
+        // Se vier vazio + onError disparou, propaga o erro real.
         const reader = result.textStream.getReader();
         const primeira = await reader.read();
         if (primeira.done) {
-          throw new Error(`Provider ${provider.nome} retornou stream vazio`);
+          const motivo = erroAssincrono
+            ? erroAssincrono instanceof Error
+              ? erroAssincrono.message
+              : String(erroAssincrono)
+            : `stream vazio (provider retornou sem conteúdo nem erro)`;
+          throw new Error(`Provider ${provider.nome}: ${motivo}`);
         }
 
         // Sucesso — reconstrói um stream que começa com a chunk já lida + o restante.
@@ -276,6 +273,7 @@ export async function POST(req: Request) {
           }),
         );
 
+        console.log(`[chat] sucesso com provider ${provider.nome}`);
         return new Response(transformer, {
           headers: {
             "content-type": "text/plain; charset=utf-8",
@@ -285,12 +283,10 @@ export async function POST(req: Request) {
       } catch (err) {
         ultimoErro = err;
         ultimoProvider = provider.nome;
+        const msg = err instanceof Error ? err.message : String(err);
+        errosDetalhados.push({ provider: provider.nome, erro: msg });
         console.error(`[chat] provider ${provider.nome} falhou:`, err);
-        if (!ehErroDeQuotaOuAuth(err)) {
-          // Erro que não é de quota/auth (bug de código, timeout, etc.) — não tenta fallback
-          break;
-        }
-        // Erro de quota/auth — continua pro próximo provider
+        // SEMPRE tenta o próximo provider. Loop natural termina quando acabar a lista.
       }
     }
 
@@ -302,6 +298,7 @@ export async function POST(req: Request) {
         error: `Todos os providers de IA falharam. Último (${ultimoProvider}): ${msgErro}`,
         retryAfter: retrySeg,
         providers_tentados: providers.map((p) => p.nome),
+        erros_detalhados: errosDetalhados,
       }),
       { status: 503, headers: { "content-type": "application/json" } },
     );
