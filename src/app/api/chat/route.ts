@@ -98,7 +98,9 @@ function listarProvidersDisponiveis(): ProvedorConfig[] {
     lista.push({ nome: "deepseek", criar: () => deepseek("deepseek-chat") });
   }
   if (process.env.GROQ_API_KEY) {
-    lista.push({ nome: "groq", criar: () => groq("llama-3.3-70b-versatile") });
+    // Llama 3.1 8B instant: free tier 30k tokens/min input (vs 6k do 70B).
+    // Menos "inteligente" mas suficiente pra análise + cabe folgado no bundle.
+    lista.push({ nome: "groq", criar: () => groq("llama-3.1-8b-instant") });
   }
   if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
     lista.push({ nome: "gemini", criar: () => google("gemini-2.5-flash") });
