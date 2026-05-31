@@ -101,33 +101,27 @@ O JSON abaixo é sua fonte da verdade. Aqui está o **mapa de campos** com instr
 • \`classificacao\` — distribuição A-E (política Auto Avaliar) + Show Room vs Repasse
 
 **RANKING POR DIMENSÃO**
-• \`lojas\` — margem por loja, top 10 (use pra "qual loja?", "rank lojas")
-• \`marcas\` — margem por marca, top 10 (use pra "qual marca?", "RANGER, JEEP, GWM…")
-• \`modelosPiores\` / \`modelosMelhores\` — top 5 modelos extremos
-• \`vendedoresTop\` / \`vendedoresPiores\` — top 5 e piores 5 vendedores
-
-**CRUZAMENTOS LOJA × X** (limitado às top 10 lojas por volume)
-• \`topModelosPorLoja\` — top 3 modelos vendidos DENTRO das 10 maiores lojas (use pra "qual carro mais sai na loja X?")
-• \`topMarcasPorLoja\` — top 3 marcas das 10 maiores lojas
-• \`topVendedoresPorLoja\` — top 2 vendedores das 10 maiores lojas
-• \`lojasDeCadaModelo\` — pros top 10 modelos, top 3 lojas de cada (use pra "onde a Ranger XLT mais sai?")
-Obs: se a pergunta for sobre uma loja fora do top 10 (ex: Goiânia 5ª venda), use o ranking de \`lojas\` (top 10) ou diga "preciso desses dados, posso ampliar".
+• \`lojas\` — margem por loja, top 5 (use pra "qual loja?", "rank lojas")
+• \`marcas\` — margem por marca, top 5 (use pra "qual marca?", "RANGER, JEEP, GWM…")
+• \`modelosPiores\` / \`modelosMelhores\` — top 3 modelos extremos
+• \`vendedoresTop\` / \`vendedoresPiores\` — top 3 e piores 3 vendedores
 
 **TEMPO E TENDÊNCIA**
-• \`vendasPorMes\` — série mensal (use pra "evolução", "tendência", "mês X vs mês Y")
+• \`vendasPorMes\` — últimos 6 meses (use pra "evolução", "tendência", "mês X vs mês Y")
 • \`giro\` — buckets de dias parado (0-15d, 16-30d, ..., 180+d) — chave pra entender velocidade de venda
 
 **ESTOQUE ATUAL** (⚠️ valores em R$ = CUSTO DE FÁBRICA / nota fábrica, NÃO preço de venda — representa capital travado, igual "Custo fábrica sem FP" do NBS)
-• \`estoque\` — carros parados de modelos com histórico negativo (top 5 mais arriscados; valorEmRisco/valorSeguro em custo)
+• \`estoque\` — carros parados de modelos com histórico negativo (top 3 mais arriscados; valorEmRisco/valorSeguro em custo)
 • \`estoquePorLoja\` — quanto cada loja tem parado (qt + custo de fábrica + dias médio + qt >60d)
 • \`estoquePorMarca\` — concentração por marca (valorEmEstoque = custo de fábrica)
-• \`fipeAnaliseEstoque\` — quantos carros acima/abaixo da FIPE + top 5 extremos (aqui sim usa PREÇO DE VENDA pedido vs FIPE de mercado)
+• \`fipeAnaliseEstoque\` — quantos carros acima/abaixo da FIPE + top 3 extremos (aqui sim usa PREÇO DE VENDA pedido vs FIPE de mercado)
 
 **OUTLIERS**
-• \`outliersLucro\` / \`outliersPrejuizo\` — top 3 vendas individuais mais extremas
+• \`outliersLucro\` / \`outliersPrejuizo\` — top 2 vendas individuais mais extremas
 
-**CAMPOS REMOVIDOS PRA CABER EM QUOTA** (não inclusos no JSON pra economizar tokens):
-\`vendasPorUF\`, \`pfVsPj\`, \`idadeVeiculo\`, \`km\`, \`kmPorModelo\`, \`clientesRecorrentes\`, \`trocas\`, \`margemPorAnoModelo\`, \`cautelaresPorLoja\`.
+**CAMPOS NÃO INCLUSOS NO JSON (pra caber em quota dos providers free):**
+• Cruzamentos por loja: \`topModelosPorLoja\`, \`topMarcasPorLoja\`, \`topVendedoresPorLoja\`, \`lojasDeCadaModelo\` (vazios) — pra perguntas tipo "qual carro mais sai na loja X?" diga "preciso desses dados, posso adicionar".
+• Demografia/perfil: \`vendasPorUF\`, \`pfVsPj\`, \`idadeVeiculo\`, \`km\`, \`kmPorModelo\`, \`clientesRecorrentes\`, \`trocas\`, \`margemPorAnoModelo\`, \`cautelaresPorLoja\` — mesma orientação.
 Se a pergunta exigir um desses, fale honestamente "preciso desses dados, posso adicionar" e siga adiante com o que tem (sugira a melhor resposta possível com os campos disponíveis).
 
 == DADOS (JSON) ==

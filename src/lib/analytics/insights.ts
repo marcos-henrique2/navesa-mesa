@@ -1635,54 +1635,44 @@ export function compactarBundle(bundle: InsightsBundle): InsightsBundle {
   return {
     ...bundle,
 
-    // Rankings — top-5 cada (era 10-15)
-    modelosPiores: bundle.modelosPiores.slice(0, 5),
-    modelosMelhores: bundle.modelosMelhores.slice(0, 5),
-    vendedoresPiores: bundle.vendedoresPiores.slice(0, 5),
-    vendedoresTop: bundle.vendedoresTop.slice(0, 5),
+    // Rankings — top-3 cada (era 10-15, depois 5, agora 3 pra caber em Groq 6k/min)
+    modelosPiores: bundle.modelosPiores.slice(0, 3),
+    modelosMelhores: bundle.modelosMelhores.slice(0, 3),
+    vendedoresPiores: bundle.vendedoresPiores.slice(0, 3),
+    vendedoresTop: bundle.vendedoresTop.slice(0, 3),
 
-    // Lojas/marcas — top-10 (geralmente já está nesse tamanho ou perto)
-    lojas: bundle.lojas.slice(0, 10),
-    marcas: bundle.marcas.slice(0, 10),
+    // Lojas/marcas — top-5 (era 10)
+    lojas: bundle.lojas.slice(0, 5),
+    marcas: bundle.marcas.slice(0, 5),
 
-    // Outliers — top-3 (era 10)
-    outliersLucro: bundle.outliersLucro.slice(0, 3),
-    outliersPrejuizo: bundle.outliersPrejuizo.slice(0, 3),
+    // Outliers — top-2 (era 3)
+    outliersLucro: bundle.outliersLucro.slice(0, 2),
+    outliersPrejuizo: bundle.outliersPrejuizo.slice(0, 2),
 
-    // Estoque em risco — top-5 carros (era 20)
+    // Estoque em risco — top-3 carros (era 5)
     estoque: bundle.estoque
-      ? { ...bundle.estoque, itens: bundle.estoque.itens.slice(0, 5) }
+      ? { ...bundle.estoque, itens: bundle.estoque.itens.slice(0, 3) }
       : null,
 
-    // Cross-tabs — top 10 lojas + reduz itens por loja
-    // (já vêm ordenados por totalVendasLoja desc no topPorLojaGen)
-    topModelosPorLoja: bundle.topModelosPorLoja.slice(0, 10).map((l) => ({
-      ...l,
-      itens: l.itens.slice(0, 3), // era 7
-    })),
-    topMarcasPorLoja: bundle.topMarcasPorLoja.slice(0, 10).map((l) => ({
-      ...l,
-      itens: l.itens.slice(0, 3), // era 5
-    })),
-    topVendedoresPorLoja: bundle.topVendedoresPorLoja.slice(0, 10).map((l) => ({
-      ...l,
-      itens: l.itens.slice(0, 2), // era 5
-    })),
+    // Cross-tabs REMOVIDOS — consumiam ~50% do bundle (16 lojas × N itens cada).
+    // Se Marcos perguntar "qual carro mais sai na loja X", o sistema diz
+    // "preciso desses dados, posso adicionar" e a gente pondera reativar.
+    topModelosPorLoja: [],
+    topMarcasPorLoja: [],
+    topVendedoresPorLoja: [],
+    lojasDeCadaModelo: [],
 
-    // Lojas de cada modelo — mantém top 3 lojas por modelo, top 10 modelos
-    lojasDeCadaModelo: bundle.lojasDeCadaModelo.slice(0, 10).map((m) => ({
-      ...m,
-      lojas: m.lojas.slice(0, 3),
-    })),
-
-    // FIPE — top-5 cada extremo (era 15)
+    // FIPE — top-3 cada extremo (era 5)
     fipeAnaliseEstoque: bundle.fipeAnaliseEstoque
       ? {
           ...bundle.fipeAnaliseEstoque,
-          topAcima: bundle.fipeAnaliseEstoque.topAcima.slice(0, 5),
-          topAbaixo: bundle.fipeAnaliseEstoque.topAbaixo.slice(0, 5),
+          topAcima: bundle.fipeAnaliseEstoque.topAcima.slice(0, 3),
+          topAbaixo: bundle.fipeAnaliseEstoque.topAbaixo.slice(0, 3),
         }
       : null,
+
+    // vendasPorMes — últimos 6 meses (era full, 12-24 meses)
+    vendasPorMes: bundle.vendasPorMes.slice(-6),
 
     // Removidos completamente (campos opcionais — JSON.stringify ignora undefined)
     trocas: undefined,
