@@ -1,10 +1,11 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import { google } from "@ai-sdk/google";
+import { groq } from "@ai-sdk/groq";
 import { streamText, type LanguageModel } from "ai";
 import type { InsightsBundle } from "@/lib/analytics/insights";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 90;
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -154,46 +155,151 @@ ${JSON.stringify(bundle)}
 10. **Voz ativa**: "a Aeroporto perdeu R$ 87k", não "foram perdidos R$ 87k pela Aeroporto"`;
 }
 
+type ProvedorConfig = { nome: string; criar: () => LanguageModel };
+
 /**
- * Seleção do provider/modelo:
- * - Prioriza GOOGLE_GENERATIVE_AI_API_KEY (Gemini Flash — free tier generoso, 1500 req/dia)
- * - Fallback pra ANTHROPIC_API_KEY (Claude Haiku — pago após créditos iniciais)
+ * Lista de providers em ordem de prioridade.
+ * Primeiro da lista que tem API key configurada é tentado primeiro.
+ * Se ele falhar com erro de quota/rate-limit/auth, tenta o próximo automaticamente.
+ *
+ * Ordem (mais generoso/gratuito primeiro):
+ *   1. Groq (Llama 3.3 70B) — free tier real, ~6k tokens/min input, 14.4k req/dia
+ *   2. Gemini 2.5 Flash — free tier 250k tokens/min mas batiu rápido
+ *   3. Anthropic Claude Haiku — pago (fallback se ambos free falharem)
  */
-function pickModel(): { model: LanguageModel; provedor: string } | { error: string } {
+function listarProvidersDisponiveis(): ProvedorConfig[] {
+  const lista: ProvedorConfig[] = [];
+  if (process.env.GROQ_API_KEY) {
+    lista.push({ nome: "groq", criar: () => groq("llama-3.3-70b-versatile") });
+  }
   if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
-    return { model: google("gemini-2.5-flash"), provedor: "gemini" };
+    lista.push({ nome: "gemini", criar: () => google("gemini-2.5-flash") });
   }
   if (process.env.ANTHROPIC_API_KEY) {
-    return { model: anthropic("claude-haiku-4-5-20251001"), provedor: "anthropic" };
+    lista.push({ nome: "anthropic", criar: () => anthropic("claude-haiku-4-5-20251001") });
   }
-  return {
-    error:
-      "Nenhuma API key configurada. Crie .env.local na raiz com GOOGLE_GENERATIVE_AI_API_KEY=... (gratuito em aistudio.google.com/apikey) ou ANTHROPIC_API_KEY=sk-ant-... e reinicie o servidor.",
-  };
+  return lista;
+}
+
+/** Detecta erros de quota/rate-limit/auth que justificam fallback pro próximo provider. */
+function ehErroDeQuotaOuAuth(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    msg.includes("quota") ||
+    msg.includes("rate limit") ||
+    msg.includes("rate_limit") ||
+    msg.includes("429") ||
+    msg.includes("exceeded") ||
+    msg.includes("authentication") ||
+    msg.includes("unauthorized") ||
+    msg.includes("401") ||
+    msg.includes("403")
+  );
+}
+
+function extrairRetryAfter(err: unknown): number | null {
+  const msg = err instanceof Error ? err.message : String(err);
+  const match = msg.match(/retry in ([0-9.]+)\s*s/i) ?? msg.match(/([0-9]+)\s*seconds?/i);
+  if (match) return Math.ceil(Number(match[1]));
+  return null;
 }
 
 export async function POST(req: Request) {
   try {
     const body = (await req.json()) as RequestBody;
+    const providers = listarProvidersDisponiveis();
 
-    const picked = pickModel();
-    if ("error" in picked) {
-      return new Response(JSON.stringify({ error: picked.error }), {
-        status: 500,
-        headers: { "content-type": "application/json" },
-      });
+    if (providers.length === 0) {
+      return new Response(
+        JSON.stringify({
+          error:
+            "Nenhuma API key configurada. Adicione no .env.local: GROQ_API_KEY=gsk_... (gratuito em console.groq.com), GOOGLE_GENERATIVE_AI_API_KEY=... (gratuito em aistudio.google.com/apikey) ou ANTHROPIC_API_KEY=sk-ant-... — e reinicie o servidor.",
+        }),
+        { status: 500, headers: { "content-type": "application/json" } },
+      );
     }
 
     const system = buildSystemPrompt(body.bundle, body.periodo ?? null);
 
-    const result = streamText({
-      model: picked.model,
-      system,
-      messages: body.messages,
-      temperature: 0.3,
-    });
+    // Tenta cada provider em sequência. Se um falha por quota/auth, tenta o próximo.
+    // A primeira chunk do stream precisa chegar pra confirmar que o provider está OK —
+    // por isso fazemos await na primeira leitura antes de decidir.
+    let ultimoErro: unknown = null;
+    let ultimoProvider: string | null = null;
 
-    return result.toTextStreamResponse();
+    for (const provider of providers) {
+      try {
+        const result = streamText({
+          model: provider.criar(),
+          system,
+          messages: body.messages,
+          temperature: 0.3,
+        });
+
+        // Força a primeira leitura do stream pra capturar erros imediatos (quota, auth).
+        // Se rolar, ainda dá tempo de tentar o próximo provider.
+        const reader = result.textStream.getReader();
+        const primeira = await reader.read();
+        if (primeira.done) {
+          throw new Error(`Provider ${provider.nome} retornou stream vazio`);
+        }
+
+        // Sucesso — reconstrói um stream que começa com a chunk já lida + o restante.
+        const stream = new ReadableStream<string>({
+          async start(controller) {
+            controller.enqueue(primeira.value);
+            try {
+              while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                controller.enqueue(value);
+              }
+              controller.close();
+            } catch (err) {
+              console.error(`[chat] erro durante streaming (${provider.nome}):`, err);
+              controller.error(err);
+            }
+          },
+        });
+
+        const encoder = new TextEncoder();
+        const transformer = stream.pipeThrough(
+          new TransformStream<string, Uint8Array>({
+            transform(chunk, controller) {
+              controller.enqueue(encoder.encode(chunk));
+            },
+          }),
+        );
+
+        return new Response(transformer, {
+          headers: {
+            "content-type": "text/plain; charset=utf-8",
+            "x-provider-usado": provider.nome,
+          },
+        });
+      } catch (err) {
+        ultimoErro = err;
+        ultimoProvider = provider.nome;
+        console.error(`[chat] provider ${provider.nome} falhou:`, err);
+        if (!ehErroDeQuotaOuAuth(err)) {
+          // Erro que não é de quota/auth (bug de código, timeout, etc.) — não tenta fallback
+          break;
+        }
+        // Erro de quota/auth — continua pro próximo provider
+      }
+    }
+
+    // Todos os providers falharam
+    const retrySeg = extrairRetryAfter(ultimoErro);
+    const msgErro = ultimoErro instanceof Error ? ultimoErro.message : String(ultimoErro);
+    return new Response(
+      JSON.stringify({
+        error: `Todos os providers de IA falharam. Último (${ultimoProvider}): ${msgErro}`,
+        retryAfter: retrySeg,
+        providers_tentados: providers.map((p) => p.nome),
+      }),
+      { status: 503, headers: { "content-type": "application/json" } },
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return new Response(JSON.stringify({ error: msg }), {

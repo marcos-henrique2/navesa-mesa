@@ -129,8 +129,13 @@ export function Chat() {
       if (!resp.ok) {
         let errMsg = `HTTP ${resp.status}`;
         try {
-          const j = (await resp.json()) as { error?: string };
+          const j = (await resp.json()) as { error?: string; retryAfter?: number | null; providers_tentados?: string[] };
           if (j.error) errMsg = j.error;
+          if (resp.status === 503 && j.retryAfter) {
+            errMsg = `Todos os modelos de IA atingiram limite temporário. Tente de novo em ~${j.retryAfter} segundos. (${j.providers_tentados?.join(" → ") ?? ""})`;
+          } else if (resp.status === 503) {
+            errMsg = `Modelos de IA indisponíveis no momento. Aguarde 1-2 minutos e tente de novo.${j.providers_tentados ? ` Tentados: ${j.providers_tentados.join(" → ")}` : ""}`;
+          }
         } catch {
           /* ignore */
         }
