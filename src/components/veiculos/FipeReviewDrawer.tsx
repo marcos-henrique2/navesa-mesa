@@ -149,9 +149,14 @@ export function FipeReviewDrawer({ veiculo, open, onClose }: Props) {
       }
 
       const falhas = resultados.filter((r) => !r).length;
-      if (falhas > 0) {
+      // B.2b-F13: ramifica copy — falha total vs parcial cobrem cenários distintos.
+      if (falhas === targets.length) {
         alert(
-          `${falhas} de ${targets.length} match${targets.length === 1 ? "" : "es"} FIPE não foram salvos no Supabase (problema de conexão). ` +
+          "Nenhum match foi salvo no servidor. Reabra a revisão FIPE quando a conexão voltar.",
+        );
+      } else if (falhas > 0) {
+        alert(
+          `${falhas} de ${targets.length} match${targets.length === 1 ? "" : "es"} FIPE não foram salvos no servidor. ` +
             `A correção aparece nessa sessão, mas pode se perder no próximo reload. Tente novamente.`,
         );
       }

@@ -26,6 +26,12 @@ type Props = {
   estrategias: EstrategiaItem[];
   selecionadaId: EstrategiaId;
   onChange: (id: EstrategiaId) => void;
+  /**
+   * B.2b-F14: quando true, sinaliza visualmente que o usuário escolheu manualmente
+   * (ring + microcopy mobile). Sem isso, o operador não percebe que a escolha
+   * "fixa" pra esse veículo e some duvidando do estado.
+   */
+  userOverride?: boolean;
 };
 
 const FONTE_LABEL: Record<FonteEstrategia, string> = {
@@ -34,15 +40,21 @@ const FONTE_LABEL: Record<FonteEstrategia, string> = {
   custo: "💰 Custo",
 };
 
-export function StrategySelector({ estrategias, selecionadaId, onChange }: Props) {
+export function StrategySelector({
+  estrategias,
+  selecionadaId,
+  onChange,
+  userOverride = false,
+}: Props) {
   if (estrategias.length === 0) return null;
 
   return (
-    <div
-      role="radiogroup"
-      aria-label="Escolha a estratégia de preço"
-      className="grid grid-cols-1 gap-2 sm:grid-cols-3"
-    >
+    <div>
+      <div
+        role="radiogroup"
+        aria-label="Escolha a estratégia de preço"
+        className="grid grid-cols-1 gap-2 sm:grid-cols-3"
+      >
       {estrategias.map((e) => {
         const ativo = e.id === selecionadaId;
         return (
@@ -58,6 +70,8 @@ export function StrategySelector({ estrategias, selecionadaId, onChange }: Props
               ativo
                 ? "border-[var(--brand-700)] bg-white shadow-[var(--shadow-md)]"
                 : "border-current/15 bg-white/60 hover:border-current/30 hover:bg-white/90",
+              // B.2b-F14: ring extra quando a escolha foi manual (sticky).
+              ativo && userOverride && "ring-2 ring-emerald-400",
             )}
           >
             <div className="flex items-center justify-between gap-2">
@@ -98,6 +112,13 @@ export function StrategySelector({ estrategias, selecionadaId, onChange }: Props
           </button>
         );
       })}
+      </div>
+      {/* B.2b-F14: microcopy só mobile, só quando o usuário escolheu manual. */}
+      {userOverride && (
+        <p className="mt-1.5 text-[11px] text-emerald-700 sm:hidden">
+          ✓ Estratégia escolhida pra esse carro
+        </p>
+      )}
     </div>
   );
 }

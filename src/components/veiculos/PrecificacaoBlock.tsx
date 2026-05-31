@@ -22,7 +22,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ClipboardCopy } from "lucide-react";
+import { AlertTriangle, ClipboardCopy, Target, WifiOff } from "lucide-react";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import type { DiagnosticoResult } from "@/lib/pricing/diagnostico";
 import type { PrecoSuggestion } from "@/lib/pricing/suggest";
@@ -33,6 +33,13 @@ import {
   desmarcarReprecificacao,
   type ReprecificacaoRow,
 } from "@/lib/data/reprecificacao";
+import {
+  definirPrecoAlvo,
+  buscarPrecoAlvoAtivo,
+  revogarPrecoAlvo,
+  type PrecoAlvoRow,
+} from "@/lib/data/preco-alvo";
+import { useFipeDirty } from "@/lib/fipe/useFipeDirty";
 import { formatBRL, cn } from "@/lib/utils";
 import { usePrecificacao } from "./usePrecificacao";
 import { ConfidenceChip, type ConfidenceChipType } from "./ConfidenceChip";
@@ -40,6 +47,12 @@ import { StrategySelector, type EstrategiaId, type EstrategiaItem } from "./Stra
 import { DetailsAccordion } from "./DetailsAccordion";
 import { FipeReviewDrawer } from "./FipeReviewDrawer";
 import { BreakdownAjustes, FipeSecao, ComparaveisSecao } from "./PrecificacaoDetails";
+import {
+  Numero,
+  DiferencaCard,
+  MarcarButton,
+  PrecoAlvoIndicador,
+} from "./PrecificacaoBlockSubcomponents";
 import {
   APARENCIA,
   TITULO_POR_STATUS,
@@ -197,27 +210,102 @@ function PrecificacaoView({
   // ─ Drawer FIPE ─
   const [drawerOpen, setDrawerOpen] = useState(false);
 
+  // ─ B.2b-F12: badge "FIPE local não sincronizado" ─
+  const fipeDirty = useFipeDirty(veiculo.chassi);
+
+  // ─ Preço-alvo (B.2b-2) ─
+  const [precoAlvoAtivo, setPrecoAlvoAtivo] = useState<PrecoAlvoRow | null>(null);
+  const [carregandoAlvo, setCarregandoAlvo] = useState(true);
+  const [salvandoAlvo, setSalvandoAlvo] = useState(false);
+
+  useEffect(() => {
+    let ativo = true;
+    setCarregandoAlvo(true);
+    setPrecoAlvoAtivo(null);
+    buscarPrecoAlvoAtivo(veiculo.chassi)
+      .then((row) => {
+        if (!ativo) return;
+        setPrecoAlvoAtivo(row);
+      })
+      .catch((err) => {
+        console.error("PrecificacaoBlock: falha ao buscar preço-alvo:", err);
+      })
+      .finally(() => {
+        if (ativo) setCarregandoAlvo(false);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [veiculo.chassi]);
+
   // ─ Toast/feedback de copia ─
   const [copiado, setCopiado] = useState(false);
-  async function handleCopiar() {
+
+  async function copiarParaClipboard(valor: number): Promise<void> {
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(String(valor));
+      return;
+    }
+    // fallback bem simples
+    const ta = document.createElement("textarea");
+    ta.value = String(valor);
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    ta.remove();
+  }
+
+  /**
+   * CTA primário: define preço-alvo no Supabase + copia pra clipboard.
+   * Falha do Supabase NÃO bloqueia o copy (operador ainda precisa do número
+   * pra colar no DMS — só o registro de alvo é que não vai pro histórico).
+   */
+  async function handleDefinirPrecoAlvo() {
+    if (salvandoAlvo) return;
     const valor = estrategiaSelecionada.valor;
+    setSalvandoAlvo(true);
+    let salvouAlvo = false;
     try {
-      if (navigator.clipboard) {
-        await navigator.clipboard.writeText(String(valor));
-      } else {
-        // fallback bem simples
-        const ta = document.createElement("textarea");
-        ta.value = String(valor);
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        ta.remove();
-      }
+      const row = await definirPrecoAlvo({
+        chassi: veiculo.chassi,
+        precoAlvo: valor,
+        estrategia: estrategiaSelecionada.id,
+        precoAtualSnapshot: veiculo.preco_venda,
+        margemPctSnapshot: estrategiaSelecionada.margemPct,
+        fonte: estrategiaSelecionada.fonte,
+        versaoFormula: diagnostico.versao,
+      });
+      setPrecoAlvoAtivo(row);
+      salvouAlvo = true;
+    } catch (err) {
+      console.error("Falha ao definir preço-alvo:", err);
+      alert(err instanceof Error ? err.message : "Não foi possível salvar preço-alvo.");
+    } finally {
+      setSalvandoAlvo(false);
+    }
+    try {
+      await copiarParaClipboard(valor);
       setCopiado(true);
       setTimeout(() => setCopiado(false), 1800);
     } catch (err) {
       console.warn("Falha ao copiar:", err);
-      alert(`Valor: R$ ${valor.toLocaleString("pt-BR")}`);
+      if (!salvouAlvo) alert(`Valor: R$ ${valor.toLocaleString("pt-BR")}`);
+    }
+  }
+
+  async function handleRevogarPrecoAlvo() {
+    if (salvandoAlvo || !precoAlvoAtivo) return;
+    const previo = precoAlvoAtivo;
+    setSalvandoAlvo(true);
+    setPrecoAlvoAtivo(null);
+    try {
+      await revogarPrecoAlvo(veiculo.chassi);
+    } catch (err) {
+      console.error("Falha ao revogar preço-alvo:", err);
+      setPrecoAlvoAtivo(previo);
+      alert(err instanceof Error ? err.message : "Não foi possível revogar preço-alvo.");
+    } finally {
+      setSalvandoAlvo(false);
     }
   }
 
@@ -320,6 +408,16 @@ function PrecificacaoView({
                 ⚠ PERDA SIGNIFICATIVA
               </span>
             )}
+            {fipeDirty && (
+              <span
+                className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold tracking-wide text-amber-800"
+                role="status"
+                title="O override FIPE em memória ainda não foi confirmado no servidor. Pode se perder no próximo reload."
+              >
+                <WifiOff className="h-3 w-3" aria-hidden="true" />
+                FIPE local não sincronizado — recarregue pra confirmar
+              </span>
+            )}
             {chips.map((c, i) => (
               <ConfidenceChip key={`${c.type}-${i}`} type={c.type} diasPatio={c.diasPatio} />
             ))}
@@ -349,6 +447,7 @@ function PrecificacaoView({
               estrategias={estrategias}
               selecionadaId={estrategiaId}
               onChange={handleSelecionarEstrategia}
+              userOverride={userOverride}
             />
           )}
 
@@ -357,18 +456,31 @@ function PrecificacaoView({
             {diagnostico.status !== "sem_dados" && (
               <button
                 type="button"
-                onClick={handleCopiar}
-                aria-label={`Copiar valor ${formatBRL(estrategiaSelecionada.valor)} pra área de transferência`}
+                onClick={handleDefinirPrecoAlvo}
+                disabled={salvandoAlvo}
+                aria-label={`Definir ${formatBRL(estrategiaSelecionada.valor)} como preço-alvo e copiar pra área de transferência`}
                 className={cn(
                   "inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition",
                   aparencia.ctaBg,
                   aparencia.ctaText,
                   aparencia.ctaHover,
                   "focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-current/40",
+                  "disabled:cursor-not-allowed disabled:opacity-60",
                 )}
               >
-                <ClipboardCopy className="h-4 w-4" aria-hidden="true" />
-                {copiado ? "Copiado!" : `Copiar ${formatBRL(estrategiaSelecionada.valor)}`}
+                {copiado ? (
+                  <>
+                    <ClipboardCopy className="h-4 w-4" aria-hidden="true" />
+                    Preço-alvo definido + copiado!
+                  </>
+                ) : (
+                  <>
+                    <Target className="h-4 w-4" aria-hidden="true" />
+                    {salvandoAlvo
+                      ? "Salvando…"
+                      : `Definir preço-alvo ${formatBRL(estrategiaSelecionada.valor)}`}
+                  </>
+                )}
               </button>
             )}
             <MarcarButton
@@ -381,6 +493,15 @@ function PrecificacaoView({
               veiculoLabel={`${veiculo.marca ?? ""} ${veiculo.modelo}`.trim()}
             />
           </div>
+
+          {/* Indicador de preço-alvo ativo */}
+          {!carregandoAlvo && precoAlvoAtivo && (
+            <PrecoAlvoIndicador
+              row={precoAlvoAtivo}
+              onRevogar={handleRevogarPrecoAlvo}
+              salvando={salvandoAlvo}
+            />
+          )}
 
           {/* Linha de fechamento — sempre visível, contextual */}
           {fechamento && (
@@ -464,111 +585,4 @@ function PrecificacaoView({
   );
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-// SUBCOMPONENTES
-// ═════════════════════════════════════════════════════════════════════════════
-
-function Numero({
-  label,
-  valor,
-  destaque,
-}: {
-  label: string;
-  valor: string;
-  destaque: boolean;
-}) {
-  return (
-    <div className="rounded-lg bg-white/70 px-3 py-2">
-      <p className="text-[10px] uppercase tracking-wider opacity-70">{label}</p>
-      <p className={cn("tabular-nums", destaque ? "text-xl font-bold" : "text-base font-semibold")}>
-        {valor}
-      </p>
-    </div>
-  );
-}
-
-function DiferencaCard({ diagnostico }: { diagnostico: DiagnosticoResult }) {
-  if (diagnostico.precoAtual == null || diagnostico.precoEsperado <= 0) {
-    return <Numero label="Diferença" valor="—" destaque={false} />;
-  }
-  const pct = diagnostico.desvioPct * 100;
-  const reais = diagnostico.desvioReais;
-  const negativo = reais < 0;
-  const positivo = reais > 0;
-  const toneClasse = negativo
-    ? "text-red-700"
-    : positivo
-      ? "text-emerald-700"
-      : "text-slate-600";
-  const icone = negativo ? "⚠" : positivo ? "↑" : "=";
-  return (
-    <div className="rounded-lg bg-white/70 px-3 py-2">
-      <p className="text-[10px] uppercase tracking-wider opacity-70">Diferença</p>
-      <p className={cn("text-xl font-bold tabular-nums", toneClasse)}>
-        {pct >= 0 ? "+" : ""}
-        {pct.toFixed(1)}% <span className="text-base" aria-hidden="true">{icone}</span>
-      </p>
-      <p className={cn("text-[11px] tabular-nums", toneClasse)}>
-        {reais >= 0 ? "+" : ""}
-        {formatBRL(reais)}
-      </p>
-    </div>
-  );
-}
-
-function MarcarButton({
-  pendente,
-  carregando,
-  salvando,
-  desabilitado,
-  onMarcar,
-  onDesmarcar,
-  veiculoLabel,
-}: {
-  pendente: ReprecificacaoRow | null;
-  carregando: boolean;
-  salvando: boolean;
-  desabilitado: boolean;
-  onMarcar: () => void;
-  onDesmarcar: () => void;
-  veiculoLabel: string;
-}) {
-  if (carregando) {
-    return <span className="text-xs text-current/60">Carregando status…</span>;
-  }
-  if (pendente) {
-    const quando = new Date(pendente.criado_em).toLocaleDateString("pt-BR");
-    return (
-      <div className="inline-flex items-center gap-2 text-xs">
-        <span className="rounded-full bg-white/80 px-3 py-1 font-medium">
-          ✓ Marcado em {quando}
-        </span>
-        <button
-          type="button"
-          onClick={onDesmarcar}
-          disabled={salvando}
-          className="text-current underline hover:opacity-80 disabled:opacity-50"
-          aria-label={`Desfazer marcação de reprecificação${veiculoLabel ? ` de ${veiculoLabel}` : ""}`}
-        >
-          Desfazer
-        </button>
-      </div>
-    );
-  }
-  return (
-    <button
-      type="button"
-      onClick={onMarcar}
-      disabled={salvando || desabilitado}
-      className={cn(
-        "inline-flex items-center gap-2 rounded-lg border border-current/30 bg-white/70 px-3 py-2 text-xs font-medium",
-        "hover:bg-white disabled:cursor-not-allowed disabled:opacity-50",
-      )}
-      aria-label={`Marcar ${veiculoLabel || "veículo"} pra reprecificar`}
-      title={desabilitado ? "Sem preço esperado — não dá pra marcar reprecificação" : undefined}
-    >
-      {salvando ? "Salvando…" : "Marcar pra reprecificar"}
-    </button>
-  );
-}
 

@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   ArrowRightLeft,
   CheckCircle,
+  Clock,
   HelpCircle,
   TrendingDown,
 } from "lucide-react";
@@ -111,6 +112,32 @@ export const APARENCIA: Record<DiagnosticoStatus, Aparencia> = {
     Icon: HelpCircle,
     badgeLabel: "SEM DADOS",
   },
+  parado: {
+    bg: "bg-amber-50",
+    text: "text-amber-900",
+    border: "border-amber-300",
+    borderWidth: "border",
+    badgeBg: "bg-amber-100",
+    badgeText: "text-amber-800",
+    ctaBg: "bg-amber-600",
+    ctaText: "text-white",
+    ctaHover: "hover:bg-amber-700",
+    Icon: Clock,
+    badgeLabel: "PARADO",
+  },
+  negativo: {
+    bg: "bg-red-50",
+    text: "text-red-800",
+    border: "border-red-300",
+    borderWidth: "border",
+    badgeBg: "bg-red-100",
+    badgeText: "text-red-800",
+    ctaBg: "bg-red-700",
+    ctaText: "text-white",
+    ctaHover: "hover:bg-red-800",
+    Icon: TrendingDown,
+    badgeLabel: "PREÇO ABAIXO DO CUSTO",
+  },
 };
 
 export const TITULO_POR_STATUS: Record<DiagnosticoStatus, string> = {
@@ -120,6 +147,8 @@ export const TITULO_POR_STATUS: Record<DiagnosticoStatus, string> = {
   acima_mercado: "Preço pode estar travando o giro",
   repasse: "Por que classe E → repasse",
   sem_dados: "Não dá pra avaliar preço",
+  parado: "Preço pode estar OK, mas o tempo de venda passou da meta",
+  negativo: "Vender por esse valor dá prejuízo — repasse é a saída",
 };
 
 export const PRESELECAO_POR_STATUS: Record<DiagnosticoStatus, EstrategiaId | null> = {
@@ -129,6 +158,8 @@ export const PRESELECAO_POR_STATUS: Record<DiagnosticoStatus, EstrategiaId | nul
   acima_mercado: "giro",
   repasse: "minimo",
   sem_dados: null,
+  parado: "giro",
+  negativo: "minimo",
 };
 
 // ─── Funções de copy contextual ─────────────────────────────────────────────
@@ -173,6 +204,24 @@ export function renderMetricaLateral(
         texto: "Classe E · Não otimizar pra show room",
         classe: "text-xs opacity-80",
       };
+    case "parado": {
+      // Sempre tem dias_patio (o status só dispara com dias_patio > limite),
+      // mas guarda redundante por segurança.
+      if (v.dias_patio == null) return null;
+      return {
+        texto: `${v.dias_patio} dias no pátio · meta 60`,
+        classe: classeBase,
+      };
+    }
+    case "negativo": {
+      // d.precoAtual e v.custo_total garantidos pelo decisor (status só dispara com ambos).
+      if (v.custo_total == null || d.precoAtual == null) return null;
+      const prejuizo = v.custo_total - d.precoAtual;
+      return {
+        texto: `Prejuízo: -${formatBRL(prejuizo)}`,
+        classe: cn(classeBase, "text-red-700"),
+      };
+    }
     case "sem_dados":
       return null;
     default:
@@ -192,6 +241,10 @@ export function renderFechamento(d: DiagnosticoResult): string | null {
       return "Preço acima do esperado pode estar segurando o carro no pátio. Considere baixar.";
     case "repasse":
       return "Veículos classe E (fora do perfil show room) não devem entrar no fluxo de otimização de preço — encaminhar pra repasse.";
+    case "parado":
+      return "Diagnóstico técnico está OK, mas o carro travou no pátio. Problema é canal/exposição — considere giro rápido.";
+    case "negativo":
+      return "Preço atual está abaixo do custo total. Vender assim dá prejuízo — encaminhar pra repasse.";
     case "sem_dados":
       return d.motivos[0] ?? null;
     default:

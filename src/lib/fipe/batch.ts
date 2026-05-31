@@ -26,6 +26,8 @@ import {
 const BATCH_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 dias (FIPE muda mensalmente, mas estoque diariamente)
 const DELAY_BETWEEN_CALLS_MS = 100; // 10 req/s — confortável pra API gratuita
 const EVT = "navesa-mesa:fipe-batch-updated";
+/** B.2b-F12: dispara quando o set de chassis com FIPE local "dirty" muda. */
+const EVT_DIRTY = "navesa-mesa:fipe-dirty-updated";
 
 export type BatchFipeItem = {
   chassi: string;
@@ -63,9 +65,34 @@ let cached: BatchResult | null = null;
 let loaded = false;
 let loadingPromise: Promise<BatchResult | null> | null = null;
 
+/**
+ * B.2b-F12: set de chassis cujo cache em memória DIVERGE do Supabase
+ * (`upsertBatchItem` atualizou o cache mas a persistência falhou). UI usa
+ * `isFipeDirty(chassi)` pra mostrar badge "FIPE local não sincronizado" e
+ * alertar que decisão de precificação está sobre dado fantasma.
+ */
+const chassisDirty = new Set<string>();
+
 function notify() {
   if (typeof window !== "undefined") window.dispatchEvent(new Event(EVT));
 }
+
+function notifyDirty() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(EVT_DIRTY));
+}
+
+/** Retorna `true` se o chassi tem override FIPE em memória que ainda não foi persistido. */
+export function isFipeDirty(chassi: string): boolean {
+  return chassisDirty.has(chassi);
+}
+
+/** Snapshot do set de chassis dirty (cópia — não muta o set interno). */
+export function getFipeDirtyChassis(): string[] {
+  return Array.from(chassisDirty);
+}
+
+/** Nome do evento DOM disparado quando o set dirty muda. UI escuta via `useEffect`. */
+export const FIPE_DIRTY_EVENT = EVT_DIRTY;
 
 /**
  * Carrega o batch do Supabase pro cache. Usado pelo hook na primeira renderização.
@@ -294,6 +321,12 @@ export async function upsertBatchItem(item: BatchFipeItem): Promise<boolean> {
   }
   loaded = true;
   notify();
+
+  // B.2b-F12: marca como dirty ANTES do await — cobre o caso do await rejeitar.
+  // Só remove quando o Supabase confirmar persistência.
+  chassisDirty.add(item.chassi);
+  notifyDirty();
+
   try {
     await saveBatchToSupabase({
       timestamp: now,
@@ -302,9 +335,12 @@ export async function upsertBatchItem(item: BatchFipeItem): Promise<boolean> {
       totalGrupos: 0,
       totalVeiculos: 1,
     });
+    chassisDirty.delete(item.chassi);
+    notifyDirty();
     return true;
   } catch (err) {
     console.error("Falha ao persistir match FIPE manual no Supabase:", err);
+    // Mantém dirty — UI vai mostrar badge persistente até o usuário recarregar.
     return false;
   }
 }

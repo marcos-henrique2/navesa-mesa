@@ -29,7 +29,9 @@ export type DiagnosticoStatus =
   | "subprecificado_grave"
   | "acima_mercado"
   | "sem_dados"
-  | "repasse"; // classe E — não cabe diagnóstico padrão de showroom
+  | "repasse" // classe E — não cabe diagnóstico padrão de showroom
+  | "parado" // V2: dias_patio > limite (preço pode estar OK mas o carro trava no pátio)
+  | "negativo"; // V2: preco_venda < custo_total (venda dá prejuízo)
 
 export type AjusteDiagnostico = {
   /** Código estável (não muda em UI). Ex: 'base_classe', 'cautelar', 'dias_patio', 'km_vs_mediana'. */
@@ -135,7 +137,35 @@ export const DIAGNOSTICO_PARAMS_V1 = {
   } as const,
 } as const;
 
-export type DiagnosticoParams = typeof DIAGNOSTICO_PARAMS_V1;
+// ═══════════════════════════════════════════════════════════════════════════
+// PARÂMETROS — DIAGNOSTICO V2 (default a partir de Fase B.2b)
+// ═══════════════════════════════════════════════════════════════════════════
+// Diferencial vs V1:
+//   - paradoDiasLimite: override 'parado' quando dias_patio > 60 (operação trava,
+//     preço pode estar OK mas o canal/exposição é o gargalo).
+//   - decisor de status checa override 'negativo' (preco_venda < custo_total)
+//     antes de tudo — vender abaixo do custo é mais grave que qualquer desvio.
+//   - bump versao → 'diagnostico_v2' (sugestões antigas continuam com snapshot v1).
+
+export const DIAGNOSTICO_PARAMS_V2 = {
+  ...DIAGNOSTICO_PARAMS_V1,
+  versao: "diagnostico_v2" as const,
+  /**
+   * Override PARADO: quando dias_patio > limite, dispara status 'parado'
+   * INDEPENDENTE do desvio (mesmo se o preço está coerente). Único parâmetro
+   * novo da V2 — todos os outros vêm da V1.
+   */
+  paradoDiasLimite: 60,
+} as const;
+
+/**
+ * União de params V1 + V2. As props comuns são lidas como union do TS;
+ * `paradoDiasLimite` é opcional (só existe em V2) — calcularDiagnostico
+ * trata `undefined` como "não aplica override PARADO" (V1 fica intocado).
+ */
+export type DiagnosticoParams =
+  | typeof DIAGNOSTICO_PARAMS_V1
+  | typeof DIAGNOSTICO_PARAMS_V2;
 
 export type CalcularDiagnosticoInput = {
   veiculo: VeiculoParsed;
@@ -163,7 +193,9 @@ const PROXY_CUSTO_MARKUP = 1.18;
 const RECEM_ENTRADO_DIAS = 7;
 
 export function calcularDiagnostico(input: CalcularDiagnosticoInput): DiagnosticoResult {
-  const params = input.params ?? DIAGNOSTICO_PARAMS_V1;
+  // V2 default a partir de Fase B.2b. Caller pode passar DIAGNOSTICO_PARAMS_V1
+  // explicitamente pra reproduzir snapshots antigos (compat de migrações).
+  const params = input.params ?? DIAGNOSTICO_PARAMS_V2;
   const { veiculo, classe, precoFipe, cautelar, medianaKmModeloAno } = input;
 
   const precoAtual = veiculo.preco_venda;
@@ -307,11 +339,35 @@ export function calcularDiagnostico(input: CalcularDiagnosticoInput): Diagnostic
   if (confianca.semDiasPatio) motivos.push("Dias de pátio não informados — ajuste de permanência não aplicado");
 
   // ── STATUS ──
+  // Ordem de avaliação (V2):
+  //   1. sem_dados (precoAtual null) — já tratado parcialmente acima
+  //   2. NEGATIVO (preco_venda < custo_total) — override total (mais grave que tudo)
+  //   3. repasse (classe E)
+  //   4. PARADO (dias_patio > limite) — override antes dos thresholds
+  //   5. recém-entrado < 7 dias suprime subprec
+  //   6. thresholds normais
   let status: DiagnosticoStatus;
-  if (classe === "E") {
-    status = "repasse";
-  } else if (precoAtual == null) {
+  // V2 expõe `paradoDiasLimite`; V1 não. Detectamos por presença do campo.
+  const paradoDiasLimite =
+    "paradoDiasLimite" in params
+      ? (params as typeof DIAGNOSTICO_PARAMS_V2).paradoDiasLimite
+      : null;
+
+  if (precoAtual == null) {
     status = "sem_dados";
+  } else if (
+    paradoDiasLimite != null &&
+    veiculo.custo_total != null &&
+    veiculo.custo_total > 0 &&
+    precoAtual < veiculo.custo_total
+  ) {
+    // V2: vendendo abaixo do custo → repasse imediato (override mais grave).
+    status = "negativo";
+  } else if (classe === "E") {
+    status = "repasse";
+  } else if (paradoDiasLimite != null && diasPatio != null && diasPatio > paradoDiasLimite) {
+    // V2: passou da meta de giro → 'parado' INDEPENDENTE do desvio.
+    status = "parado";
   } else {
     const t = params.thresholds;
     if (desvioPct >= t.acimaMercadoPct) {
@@ -413,6 +469,8 @@ export const DIAGNOSTICO_LABEL: Record<DiagnosticoStatus, string> = {
   acima_mercado: "Acima do mercado",
   sem_dados: "Sem dados",
   repasse: "Repasse (Classe E)",
+  parado: "Parado",
+  negativo: "Preço abaixo do custo",
 };
 
 export const DIAGNOSTICO_COR: Record<
@@ -425,4 +483,6 @@ export const DIAGNOSTICO_COR: Record<
   acima_mercado: { bg: "bg-red-100", text: "text-red-800", border: "border-red-300" },
   sem_dados: { bg: "bg-slate-100", text: "text-slate-700", border: "border-slate-300" },
   repasse: { bg: "bg-purple-100", text: "text-purple-800", border: "border-purple-300" },
+  parado: { bg: "bg-amber-100", text: "text-amber-800", border: "border-amber-300" },
+  negativo: { bg: "bg-red-50", text: "text-red-800", border: "border-red-300" },
 };

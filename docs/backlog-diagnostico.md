@@ -170,97 +170,23 @@ Itens menores identificados pelo Quinn no review B.2a — detalhamento pendente:
 - **F11:** `userOverride` em `PrecificacaoBlock` poderia persistir no `sessionStorage` por chassi
   pra sobreviver a re-mount (ex: navegar fora e voltar).
 
-### B.2b-F12. Badge "FIPE local não sincronizado" (HIGH)
+## Concluído na Fase B.2b (implementado)
 
-Identificado pelo Quinn no review B.2a.2.
-
-Quando `upsertBatchItem` falha em persistir no Supabase, o cache em memória diverge do
-servidor. A UI mostra o preço FIPE corrigido e o usuário toma decisão com base nele —
-mas no reload o FIPE volta ao valor antigo silenciosamente, sem qualquer sinal visual.
-Risco operacional: decisão de precificação tomada sobre dado fantasma.
-
-**Fix sugerido:**
-- Manter um `Set<string>` de chassis "dirty" (pendentes de sync) em
-  [`src/lib/fipe/batch.ts`](../src/lib/fipe/batch.ts).
-- Adicionar ao set quando `upsertBatchItem` falha em `saveBatchToSupabase`.
-- Remover do set quando `saveBatchToSupabase` resolve OK pra aquele chassi
-  (incluir retry automático em background).
-- Expor via `isDirty(chassi)` ou hook `useBatchSyncStatus(chassi)`.
-- `PrecificacaoBlock` lê esse status e mostra badge persistente no header:
-  "⚠ FIPE local não sincronizado — recarregue quando a conexão voltar"
-  enquanto o chassi atual está dirty.
-
-> Casa com **F1** (race condition) — o mesmo set pode ser reusado pra preservar override
-> em `runFipeBatch`.
-
-### B.2b-F13. Copy do alert agregado não diferencia falha total de parcial (LOW)
-
-Identificado pelo Quinn no review B.2a.2.
-
-[`FipeReviewDrawer.tsx:151-157`](../src/components/veiculos/FipeReviewDrawer.tsx#L151) —
-copy genérica "N de M match(es) FIPE não foram salvos…" não cobre o caso onde
-**TODOS** os matches falharam (ex: conexão totalmente offline). Usuário acha que
-foi parcial mas perdeu tudo.
-
-**Fix sugerido:** ramificar copy no alert:
-- Se `falhas === targets.length` → "Nenhum match foi salvo no servidor. Reabra a
-  revisão FIPE quando a conexão voltar."
-- Senão → mantém "N de M match(es) FIPE não foram salvos…"
-
-### B.2b-F14. Feedback visual mobile do chip de estratégia (LOW)
-
-Identificado pelo Quinn no review B.2a.2.
-
-Strategy Selector no mobile não tem haptic feedback nem toast quando o usuário
-seleciona um chip — a "fixação" da escolha (sticky via `userOverride`) é invisível.
-Usuário pode não perceber que sua escolha vai persistir e duvidar do estado.
-
-**Fix sugerido:**
-- Ring visual + checkmark no chip ativo quando `userOverride === true`.
-- Microcopy curta abaixo dos chips: "Estratégia escolhida pra esse carro"
-  (só aparece quando `userOverride === true`).
-- Opcional: `navigator.vibrate(10)` em mobile no click do chip (haptic curto).
-
-### B.2b-1. `diagnostico_v2` — estados PARADO + NEGATIVO
-
-Hoje os 6 estados (`coerente | subprecificado | subprecificado_grave | acima_mercado | repasse | sem_dados`)
-não cobrem dois cenários operacionalmente críticos:
-
-- **PARADO:** carro com `dias_patio > 60` mesmo com preço coerente — sinaliza que o
-  diagnóstico técnico tá OK mas a operação trava (problema é canal/exposição, não preço).
-- **NEGATIVO:** `preco_venda < custo_total` — venda perde dinheiro mesmo no melhor cenário.
-  Hoje o `BandaCard.minimo` mostra margem negativa, mas sem badge dedicado o operador
-  pode passar batido.
-
-Implementação proposta:
-
-1. Adicionar `DIAGNOSTICO_PARAMS_V2` em `src/lib/pricing/diagnostico.ts` (bump versao_formula).
-2. Branch novo no decisor de status (após `acima_mercado`, antes de `coerente`):
-   - se `precoAtual < custoTotal` → `negativo`
-   - se `diasPatio > 60 && status_seria_coerente` → `parado`
-3. Aparência + copy nos arquivos `precificacao-copy.ts` (APARENCIA, TITULO_POR_STATUS,
-   PRESELECAO_POR_STATUS) — incluir as 2 entradas novas.
-4. Atualizar `DiagnosticoStatus` no DB (CHECK constraint da `reprecificacao_sugerida`).
-5. Testes em `tests/diagnostico.test.ts` (4 casos: negativo + parado + transição parado→subprec).
-
-### B.2b-2. `preco_alvo_interno` — CTA "Definir preço-alvo" persiste
-
-Hoje o CTA "Copiar R$ X" só copia pra clipboard — não registra a decisão de preço-alvo.
-Fluxo desejado:
-
-1. Schema (delegar pra Dara):
-   - Coluna nova em `veiculos_estoque_atual`: `preco_alvo_interno NUMERIC(10,2) NULL`,
-     `preco_alvo_definido_em TIMESTAMPTZ NULL`, `preco_alvo_origem VARCHAR(20) NULL`
-     (`target | giro | minimo | manual`).
-   - OU tabela dedicada `preco_alvo_historico` (chassi, valor, origem, criado_em).
-2. Server action / data fn em `src/lib/data/preco-alvo.ts`.
-3. CTA primário do `PrecificacaoBlock` vira split-button:
-   - "Copiar R$ X" (ação atual)
-   - "Definir como alvo" (persiste no Supabase + toast)
-4. Indicador visual no header: badge "Alvo R$ X definido em DD/MM" quando houver registro.
-
-> Casa com **Fase B.2b-1**: o decisor de estado pode usar `preco_alvo_interno` como base
-> alternativa quando ele existe (ao invés do `precoEsperado` calculado).
+- **B.2b-1. `diagnostico_v2` — estados PARADO + NEGATIVO** ✓
+  Adicionados `DIAGNOSTICO_PARAMS_V2` (com `paradoDiasLimite: 60`) e 2 novos status
+  (`parado` + `negativo`). V2 é o default; V1 fica preservado pra compat. Aparência
+  + copy + pré-seleção atualizados em `precificacao-copy.ts`. +5 testes.
+- **B.2b-2. `preco_alvo_interno`** ✓
+  Migration `004_preco_alvo.sql` (tabela dedicada com unique parcial por chassi ativo).
+  Data layer `src/lib/data/preco-alvo.ts`. CTA primário virou "Definir preço-alvo R$ X"
+  + indicador "✓ Preço-alvo: R$ X (em DD/MM)" + botão Revogar.
+- **B.2b-F12. Badge "FIPE local não sincronizado"** ✓
+  Set `chassisDirty` em `batch.ts` + hook `useFipeDirty` + badge no header do bloco.
+- **B.2b-F13. Copy ramificado do alert FIPE Drawer** ✓
+  Diferencia falha total ("Nenhum match foi salvo…") de parcial.
+- **B.2b-F14. Feedback visual mobile do chip de estratégia** ✓
+  Ring emerald + microcopy "✓ Estratégia escolhida pra esse carro" só mobile
+  quando `userOverride=true`.
 
 ---
 
