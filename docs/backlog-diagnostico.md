@@ -190,6 +190,52 @@ Itens menores identificados pelo Quinn no review B.2a — detalhamento pendente:
 
 ---
 
+## Backlog — Export Excel
+
+> Itens LOW identificados pelo Quinn no review do `excel-consolidado.ts`. F1 + F5
+> foram aplicados nesse ciclo (verdict CONCERNS → PASS pendente re-review). Os
+> demais ficam aqui pra serem encaixados quando alguém passar pelo arquivo.
+
+### F2. Extrair `precomputarDiagnostico(input)` (perf ~50%)
+[`src/lib/export/excel-consolidado.ts`](../src/lib/export/excel-consolidado.ts)
+— `montarResumo` e `montarEstoque` duplicam o mesmo pipeline de
+pré-computação (contagem por modelo, classificação, medianas, `fipeRecord`,
+`computarDiagnosticoLista`). Pra estoque com 400+ carros, é trabalho dobrado.
+
+**Sugestão:** extrair `precomputarDiagnostico(input): PrecomputedDiag` que retorna
+`{ contagem, classesPorChassi, classifsPorChassi, medianas, fipeRecord, diagMap }`
+e chamar 1× no topo de `gerarExcelConsolidado`, passando o resultado pras duas
+funções. Reduz tempo de geração em ~50%.
+
+### F3. Acessibilidade do botão de export (`aria-busy`, `aria-label`, `role="alert"`)
+No componente que chama `gerarExcelConsolidado` (procurar usuários do export):
+
+- `aria-busy={gerando}` no botão enquanto o blob é montado.
+- `aria-label` dinâmico — ex: `gerando ? "Gerando relatório Excel…" : "Exportar Excel consolidado"`.
+- `role="alert"` + `aria-live="assertive"` no container de erro de export
+  pra screen reader anunciar falha imediatamente.
+
+### F4. Filtrar `coerente` / `sem_dados` da tabela "Carros em Atenção"
+[`src/lib/export/excel-consolidado.ts:185-199`](../src/lib/export/excel-consolidado.ts#L185)
+— a seção chama-se "Carros em Atenção" mas inclui `coerente` (carros ok!) e
+`sem_dados` (não tem como diagnosticar). Confunde quem só bate o olho na aba Resumo.
+
+**Sugestão:** ou (a) **filtrar** esses dois da tabela e mover pra um sumário
+separado tipo "Carros sem indicação de ação", ou (b) **renomear** a seção pra
+"Diagnóstico por Status" (descritivo, não prescritivo).
+
+### F6. Watermark + futuro toggle "anonimizar clientes"
+- **Watermark:** topo da aba Resumo com `"Gerado por: <user> em DD/MM/AAAA HH:mm"`.
+  Útil pra rastreabilidade quando contador/sócio recebe versões em datas
+  diferentes (qual é a mais recente?).
+- **Anonimizar clientes (futuro):** flag opcional em `ExportInput` tipo
+  `anonimizarClientes?: boolean` — se `true`, na aba Vendas substitui
+  `cliente_nome` por hash curto (ex: `Cliente #A4F2`) e zera `cliente_cidade` /
+  `cliente_uf` / `cliente_tipo`. Use-case: compartilhar com gestor regional sem
+  expor base de clientes da loja.
+
+---
+
 ## Notas
 
 - Tudo aqui é **tech-debt da Fase A**, identificado durante o QA. Nada bloqueia o release atual.

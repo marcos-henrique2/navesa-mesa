@@ -2,6 +2,7 @@ import { UploadDropzone } from "@/components/UploadDropzone";
 import { PageHeader } from "@/components/AppShell";
 import { BackupRestore } from "@/components/BackupRestore";
 import { MigrarParaSupabase } from "@/components/MigrarParaSupabase";
+import { ExportExcelButton } from "@/components/ExportExcelButton";
 
 export default function UploadPage() {
   return (
@@ -11,6 +12,9 @@ export default function UploadPage() {
         subtitle="Exporte do NBS e arraste aqui — processamento 100% local no navegador"
       />
       <div className="mx-auto max-w-7xl px-6 py-8">
+        <div className="mb-6">
+          <ExportExcelButton />
+        </div>
         <div className="grid gap-6 lg:grid-cols-3">
           <UploadDropzone modo="estoque" />
           <UploadDropzone modo="vendas" />
