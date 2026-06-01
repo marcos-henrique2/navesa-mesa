@@ -524,7 +524,13 @@ export async function gerarAnaliseNavesa({
       totValorVenda += valorVenda;
     }
 
-    // O — Valor FIPE (vazio, Marcos preenche manualmente)
+    // O — Valor FIPE (input manual — célula vazia mas com formato R$ pré-aplicado;
+    // quando Marcos digitar um número, já formata como "R$ X.XXX,XX" automaticamente)
+    {
+      const cell = row.getCell(COL.O_VALOR_FIPE);
+      cell.numFmt = FMT_MONEY;
+      cell.alignment = { horizontal: "right" };
+    }
 
     // P — Venda x FIPE % (FÓRMULA = IFERROR(N/O,""))
     {
