@@ -352,7 +352,79 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
       sortUndefined: "last",
     },
     { accessorKey: "valor_aquisicao", header: "Aquisição", cell: (info) => <span className="tabular-nums text-zinc-600">{formatBRL(info.getValue<number | null>())}</span> },
-    { accessorKey: "custo_total", header: "Custo Total", cell: (info) => <span className="tabular-nums text-zinc-600">{formatBRL(info.getValue<number | null>())}</span> },
+    {
+      id: "gasto_pos_entrada",
+      header: "Gasto pós-entrada",
+      accessorFn: (v) => {
+        if (v.custo_total == null || v.valor_aquisicao == null) return null;
+        return v.custo_total - v.valor_aquisicao;
+      },
+      cell: ({ getValue }) => {
+        const diff = getValue<number | null>();
+        if (diff == null || diff === 0) return <span className="tabular-nums text-zinc-300">—</span>;
+        if (diff < 0) {
+          return (
+            <span
+              className="tabular-nums text-red-700 dark:text-red-400"
+              title="atenção: custo inferior à aquisição"
+            >
+              {formatBRL(diff)}
+            </span>
+          );
+        }
+        return <span className="tabular-nums text-zinc-600">{formatBRL(diff)}</span>;
+      },
+      sortUndefined: "last",
+    },
+    { accessorKey: "custo_total", header: "Custo total", cell: (info) => <span className="tabular-nums text-zinc-600">{formatBRL(info.getValue<number | null>())}</span> },
+    {
+      id: "margem_teorica_pct",
+      header: "Margem teórica %",
+      accessorFn: (v) => {
+        if (v.preco_venda == null || v.custo_total == null || v.preco_venda === 0) return null;
+        const pct = ((v.preco_venda - v.custo_total) / v.preco_venda) * 100;
+        return Number.isFinite(pct) ? pct : null;
+      },
+      cell: ({ getValue }) => {
+        const pct = getValue<number | null>();
+        if (pct == null) return <span className="tabular-nums text-xs text-zinc-300">—</span>;
+        const tone = pct >= 5
+          ? "text-emerald-700 dark:text-emerald-400"
+          : pct >= 0
+            ? "text-amber-700 dark:text-amber-400"
+            : "text-red-700 dark:text-red-400";
+        const marker = pct >= 5 ? "✓" : pct >= 0 ? "⚠" : "✗";
+        const titleText = pct >= 5 ? "margem saudável" : pct >= 0 ? "atenção" : "prejuízo";
+        const formatted = pct.toLocaleString("pt-BR", {
+          minimumFractionDigits: 1,
+          maximumFractionDigits: 1,
+          signDisplay: "exceptZero",
+        });
+        return (
+          <span className={cn("tabular-nums text-xs font-medium", tone)} title={titleText}>
+            {marker} {formatted}%
+          </span>
+        );
+      },
+      size: 90,
+      sortUndefined: "last",
+    },
+    {
+      id: "custo_por_dia",
+      header: "Custo/dia (R$)",
+      accessorFn: (v) => {
+        if (v.custo_total == null || v.valor_aquisicao == null || v.dias_patio == null) return null;
+        const gasto = v.custo_total - v.valor_aquisicao;
+        if (gasto <= 0 || v.dias_patio <= 0) return null;
+        return gasto / v.dias_patio;
+      },
+      cell: ({ getValue }) => {
+        const v = getValue<number | null>();
+        if (v == null) return <span className="tabular-nums text-zinc-300">—</span>;
+        return <span className="tabular-nums text-zinc-600">{formatBRL(v)}</span>;
+      },
+      sortUndefined: "last",
+    },
     { accessorKey: "dias_patio", header: "Dias", cell: (info) => <span className="tabular-nums">{info.getValue<number | null>() ?? "—"}</span> },
   ], [lojas, classifMap, fipeBatch, cautelares]);
 

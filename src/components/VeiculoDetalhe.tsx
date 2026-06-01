@@ -58,6 +58,16 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
     ? ((veiculo.preco_venda - veiculo.custo_total) / veiculo.custo_total) * 100
     : null;
 
+  const gastoPosEntrada =
+    veiculo.custo_total !== null && veiculo.valor_aquisicao !== null
+      ? veiculo.custo_total - veiculo.valor_aquisicao
+      : null;
+
+  const custoPorDia =
+    gastoPosEntrada !== null && gastoPosEntrada > 0 && veiculo.dias_patio !== null && veiculo.dias_patio > 0
+      ? gastoPosEntrada / veiculo.dias_patio
+      : null;
+
   return (
     <div className="space-y-6">
       <div>
@@ -100,7 +110,18 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
         <Card title="📊 Financeiro atual">
           <Row label="Preço de venda" value={formatBRL(veiculo.preco_venda)} bold />
           <Row label="Aquisição" value={formatBRL(veiculo.valor_aquisicao)} muted />
+          <Row
+            label="Gasto pós-entrada"
+            value={gastoPosEntrada === null || gastoPosEntrada === 0 ? "—" : formatBRL(gastoPosEntrada)}
+            muted
+            tone={gastoPosEntrada !== null && gastoPosEntrada < 0 ? "bad" : undefined}
+          />
           <Row label="Custo total" value={formatBRL(veiculo.custo_total)} muted />
+          <Row
+            label="Custo/dia"
+            value={custoPorDia === null ? "—" : formatBRL(custoPorDia)}
+            muted
+          />
           <Row label="Margem bruta" value={margemAtual === null ? "—" : `${margemAtual.toFixed(1)}%`} bold tone={margemAtual !== null ? (margemAtual >= 7 ? "good" : margemAtual >= 3 ? "warn" : "bad") : undefined} />
           <Row label="Dias de pátio" value={formatInt(veiculo.dias_patio)} />
           <Row label="Data entrada" value={veiculo.data_entrada ? new Date(veiculo.data_entrada).toLocaleDateString("pt-BR") : "—"} />
