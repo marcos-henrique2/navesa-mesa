@@ -33,6 +33,13 @@ export type AnaliseNavesaInput = {
   /** Todas as vendas do dataset (não filtradas) — usadas pra contar recorrência. */
   todasVendas: VendaParsed[];
   custosPorPlaca: Record<string, CustoDetalhado>;
+  /**
+   * Map opcional chassi → valor FIPE em R$. Quando presente e o chassi tem valor,
+   * preenche a coluna O (VALOR FIPE) automaticamente — fórmulas P (% Venda/FIPE)
+   * e Q (% Custo/FIPE) passam a calcular. Chassis ausentes ficam com célula vazia
+   * pra digitação manual.
+   */
+  fipePorChassi?: Map<string, number>;
   /** Nome da loja filtrada na tela (ou "TODAS" se filtro = all). */
   empresa: string;
   /** Data inicial do filtro (yyyy-mm-dd) — "" se sem filtro. */
@@ -310,6 +317,7 @@ export async function gerarAnaliseNavesa({
   vendas,
   todasVendas,
   custosPorPlaca,
+  fipePorChassi,
   empresa,
   dataDe,
   dataAte,
@@ -524,10 +532,15 @@ export async function gerarAnaliseNavesa({
       totValorVenda += valorVenda;
     }
 
-    // O — Valor FIPE (input manual — célula vazia mas com formato R$ pré-aplicado;
-    // quando Marcos digitar um número, já formata como "R$ X.XXX,XX" automaticamente)
+    // O — Valor FIPE
+    // Se fipePorChassi tem valor pro chassi: célula preenchida (P e Q calculam auto).
+    // Senão: célula vazia com formato R$ pré-aplicado (digitação manual mantém UX).
     {
       const cell = row.getCell(COL.O_VALOR_FIPE);
+      const fipeValor = fipePorChassi?.get(v.chassi);
+      if (fipeValor != null && fipeValor > 0) {
+        cell.value = fipeValor;
+      }
       cell.numFmt = FMT_MONEY;
       cell.alignment = { horizontal: "right" };
     }

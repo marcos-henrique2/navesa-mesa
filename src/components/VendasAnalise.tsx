@@ -1,11 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useReactTable, getCoreRowModel, getFilteredRowModel, getSortedRowModel, getPaginationRowModel,
   flexRender, type ColumnDef, type SortingState,
 } from "@tanstack/react-table";
-import { ArrowUpDown, ArrowUp, ArrowDown, Search, Trophy, TrendingDown, TrendingUp, AlertCircle, Download } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, Search, Trophy, TrendingDown, TrendingUp, AlertCircle, Download, RefreshCw, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useInventory } from "@/lib/store/inventory";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
@@ -13,13 +13,51 @@ import { ComposicaoCustos } from "./ComposicaoCustos";
 import { indexarClientes, chaveCliente, tierRecorrencia } from "@/lib/analytics/clientes";
 import { agregarMargem, calcMargemVenda } from "@/lib/analytics/margem";
 import { baixarAnaliseNavesa } from "@/lib/export/analise-navesa";
+import { runFipeBatch, type BatchProgress } from "@/lib/fipe/batch";
+import { useFipeBatch } from "@/lib/fipe/useFipeBatch";
 import type { VendaParsed } from "@/lib/parsers/nbs-vendas-xlsx";
+import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
+
+function inferirCombustivel(modelo: string | null): string | null {
+  if (!modelo) return null;
+  const m = modelo.toUpperCase();
+  if (/\bDIESEL\b/.test(m)) return "Diesel";
+  if (/\bFLEX\b/.test(m)) return "Flex";
+  if (/\bGASOLINA\b/.test(m)) return "Gasolina";
+  if (/\b(HÍBRIDO|HIBRIDO|HYBRID)\b/.test(m)) return "Híbrido";
+  if (/\b(EL[ÉE]TRICO|ELECTRIC|EV)\b/.test(m)) return "Elétrico";
+  if (/\bETANOL\b/.test(m)) return "Álcool";
+  return null;
+}
 
 export function VendasAnalise() {
   const router = useRouter();
   const { vendas, vendasMeta, custosPorPlaca, isHydrated } = useInventory();
+  const fipeBatch = useFipeBatch();
 
   const [search, setSearch] = useState("");
+  const [exportando, setExportando] = useState(false);
+  const [rodandoFipe, setRodandoFipe] = useState(false);
+  const [progressoFipe, setProgressoFipe] = useState<BatchProgress | null>(null);
+  const [fipeMsg, setFipeMsg] = useState<string | null>(null);
+  const fipeMsgTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Auto-dismiss do toast FIPE após 8s; reseta o timer se a msg mudar
+  useEffect(() => {
+    if (fipeMsgTimerRef.current) {
+      clearTimeout(fipeMsgTimerRef.current);
+      fipeMsgTimerRef.current = null;
+    }
+    if (fipeMsg) {
+      fipeMsgTimerRef.current = setTimeout(() => setFipeMsg(null), 8000);
+    }
+    return () => {
+      if (fipeMsgTimerRef.current) {
+        clearTimeout(fipeMsgTimerRef.current);
+        fipeMsgTimerRef.current = null;
+      }
+    };
+  }, [fipeMsg]);
   const [filtroLoja, setFiltroLoja] = useState("all");
   const [filtroVendedor, setFiltroVendedor] = useState("all");
   const [filtroMarca, setFiltroMarca] = useState("all");
@@ -342,23 +380,110 @@ export function VendasAnalise() {
         <button
           type="button"
           onClick={async () => {
-            await baixarAnaliseNavesa({
-              vendas: filtered,
-              todasVendas: vendas,
-              custosPorPlaca,
-              empresa: filtroLoja === "all" ? "TODAS" : filtroLoja,
-              dataDe,
-              dataAte,
-            });
+            if (rodandoFipe) return;
+            setRodandoFipe(true);
+            setFipeMsg(null);
+            setProgressoFipe(null);
+            try {
+              const veiculos: VeiculoParsed[] = filtered.map((v) => ({
+                cod_empresa: v.cod_empresa,
+                chassi: v.chassi,
+                placa: v.placa,
+                marca: v.marca,
+                modelo: v.modelo,
+                ano_fabricacao: v.ano_fabricacao,
+                ano_modelo: v.ano_modelo,
+                cor_externa: v.cor_externa,
+                combustivel: inferirCombustivel(v.modelo),
+                km: v.km,
+                patio: v.patio ?? "",
+                descricao_situacao: null,
+                preco_venda: v.valor_venda,
+                valor_aquisicao: null,
+                custo_total: null,
+                dias_patio: v.dias_estoque,
+                data_entrada: null,
+                vendedor_recebeu: v.vendedor_recebeu,
+              }));
+              const r = await runFipeBatch(veiculos, (p) => setProgressoFipe(p));
+              const matches = Object.keys(r.items).length;
+              setFipeMsg(`FIPE atualizado para ${matches} carro${matches === 1 ? "" : "s"}${r.erros.length > 0 ? ` · ${r.erros.length} sem match` : ""}.`);
+            } catch (err) {
+              setFipeMsg(`Erro ao buscar FIPE: ${err instanceof Error ? err.message : String(err)}`);
+            } finally {
+              setRodandoFipe(false);
+            }
           }}
-          disabled={filtered.length === 0}
-          title="Gera planilha no formato USADOS ANALISE NAVESA respeitando os filtros aplicados"
+          disabled={filtered.length === 0 || rodandoFipe || exportando}
+          title="Busca preço FIPE pros carros filtrados que ainda não estão no cache"
+          className="inline-flex items-center gap-1.5 rounded-md border border-amber-500 bg-amber-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-300 disabled:text-zinc-500 dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-500"
+        >
+          {rodandoFipe ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          {rodandoFipe ? "Buscando FIPE…" : "Buscar FIPE agora"}
+        </button>
+
+        <button
+          type="button"
+          onClick={async () => {
+            if (exportando) return;
+            setExportando(true);
+            try {
+              const mapaFipe = new Map<string, number>();
+              if (fipeBatch?.items) {
+                const itemsByChassi = fipeBatch.items;
+                for (const v of filtered) {
+                  const item = itemsByChassi[v.chassi];
+                  if (item && item.precoFipe > 0) {
+                    mapaFipe.set(v.chassi, item.precoFipe);
+                  }
+                }
+              }
+              await baixarAnaliseNavesa({
+                vendas: filtered,
+                todasVendas: vendas,
+                custosPorPlaca,
+                fipePorChassi: mapaFipe,
+                empresa: filtroLoja === "all" ? "TODAS" : filtroLoja,
+                dataDe,
+                dataAte,
+              });
+            } finally {
+              setExportando(false);
+            }
+          }}
+          disabled={filtered.length === 0 || exportando || rodandoFipe}
+          title="Gera planilha no formato USADOS ANALISE NAVESA respeitando os filtros aplicados (FIPE preenchida automaticamente onde houver cache)"
           className="inline-flex items-center gap-1.5 rounded-md border border-purple-600 bg-purple-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-300 disabled:text-zinc-500 dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-500"
         >
-          <Download className="h-4 w-4" />
-          Exportar análise Navesa
+          {exportando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          {exportando ? "Exportando…" : "Exportar análise Navesa"}
         </button>
       </div>
+
+      {/* Progresso/feedback do batch FIPE */}
+      {rodandoFipe && progressoFipe && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-950/30">
+          <div className="flex items-center gap-2 text-xs font-medium text-amber-900 dark:text-amber-200">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            {progressoFipe.mensagem}
+          </div>
+          <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-amber-200 dark:bg-amber-900">
+            <div
+              className="h-full bg-amber-500 transition-all"
+              style={{ width: `${progressoFipe.total > 0 ? (progressoFipe.atual / progressoFipe.total) * 100 : 0}%` }}
+            />
+          </div>
+          <p className="mt-1 text-[11px] tabular-nums text-amber-700 dark:text-amber-300">
+            {progressoFipe.atual}/{progressoFipe.total} · {progressoFipe.matchesAteAgora} matches
+            {progressoFipe.errosAteAgora > 0 && ` · ${progressoFipe.errosAteAgora} sem match`}
+          </p>
+        </div>
+      )}
+      {!rodandoFipe && fipeMsg && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
+          {fipeMsg}
+        </div>
+      )}
 
       {/* Rankings */}
       <div className="grid gap-4 lg:grid-cols-3">
