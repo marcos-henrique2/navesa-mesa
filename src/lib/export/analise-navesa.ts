@@ -259,11 +259,21 @@ const TERMOS_LOJISTA = [
   "MULTIMARCAS",
 ] as const;
 
-function detectarLojista(v: VendaParsed, qtCompras: number): "SIM" | "" {
-  if (v.cliente_tipo === "PJ" && qtCompras >= 4) return "SIM";
+type LojistaFlag = "SIM" | "Não" | "Pessoa Física";
+
+function detectarLojista(v: VendaParsed, qtCompras: number): LojistaFlag {
   const nome = (v.cliente_nome ?? "").toUpperCase();
-  if (TERMOS_LOJISTA.some((t) => nome.includes(t))) return "SIM";
-  return "";
+  const nomeIndicaRevenda = TERMOS_LOJISTA.some((t) => nome.includes(t));
+
+  // SIM: lojista real (PJ recorrente OU nome típico de revenda)
+  if (nomeIndicaRevenda) return "SIM";
+  if (v.cliente_tipo === "PJ" && qtCompras >= 4) return "SIM";
+
+  // "Não": PF com perfil de revendedor informal (compra muito mas não é PJ)
+  if (v.cliente_tipo === "PF" && qtCompras >= 4) return "Não";
+
+  // Pessoa Física: consumidor comum (default)
+  return "Pessoa Física";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -378,6 +388,25 @@ export async function gerarAnaliseNavesa({
 
   // Acumuladores de "sim/não"
   let qtTrade = 0;
+
+  // V5: acumuladores p/ rodapé profissional
+  let qtLojistaSim = 0;
+  let qtLojistaNao = 0;
+  let qtPessoaFisica = 0;
+  let qtPJ = 0;
+  let qtPF = 0;
+  let qtMargemLiqNegativa = 0;
+  let qtComCustoDetalhado = 0;
+  const diasEstoqueArr: number[] = [];
+  let qtDias60Plus = 0;
+  let qtDias90Plus = 0;
+  // Faturamento por loja/marca + contagem por loja/vendedor/marca/modelo
+  const fatPorLoja = new Map<string, number>();
+  const qtPorLoja = new Map<string, number>();
+  const qtPorVendedor = new Map<string, number>();
+  const fatPorMarca = new Map<string, number>();
+  const qtPorMarca = new Map<string, number>();
+  const qtPorModelo = new Map<string, number>();
 
   vendas.forEach((v, idx) => {
     const c = custosPorPlaca[v.placa];
@@ -660,15 +689,15 @@ export async function gerarAnaliseNavesa({
     row.getCell(COL.AH_CLIENTE).value = v.cliente_nome;
     row.getCell(COL.AH_CLIENTE).alignment = { horizontal: "left" };
 
-    // AI — Lojista (auto-detectado)
+    // AI — Lojista (auto-detectado, 3 valores: "SIM" | "Não" | "Pessoa Física")
     const chaveCli = chaveCliente(v);
     const cli = clientesIndex.get(chaveCli);
     const totalCompras = cli?.totalCompras ?? 1;
     const lojistaFlag = detectarLojista(v, totalCompras);
-    if (lojistaFlag) {
-      const aiCell = row.getCell(COL.AI_LOJISTA);
-      aiCell.value = lojistaFlag;
-      aiCell.alignment = { horizontal: "center" };
+    const aiCell = row.getCell(COL.AI_LOJISTA);
+    aiCell.value = lojistaFlag;
+    aiCell.alignment = { horizontal: "center" };
+    if (lojistaFlag === "SIM") {
       aiCell.font = { bold: true };
     }
 
@@ -688,8 +717,8 @@ export async function gerarAnaliseNavesa({
     row.getCell(COL.AL_LOJA).value = v.empresa_nome ?? "";
     row.getCell(COL.AL_LOJA).alignment = { horizontal: "left" };
 
-    // AM — Obs Extra (lojista + ano da venda)
-    if (lojistaFlag && v.data_venda) {
+    // AM — Obs Extra (só pra lojista real "SIM"; "Não" e "Pessoa Física" ficam vazios)
+    if (lojistaFlag === "SIM" && v.data_venda) {
       const ano = v.data_venda.getFullYear();
       const nAno = comprasPorAno.get(chaveCli)?.get(ano) ?? 0;
       if (nAno > 0) {
@@ -699,6 +728,55 @@ export async function gerarAnaliseNavesa({
         amCell.font = { italic: true, size: 10 };
       }
     }
+
+    // V5: acumular dados pro rodapé profissional
+    if (lojistaFlag === "SIM") qtLojistaSim++;
+    else if (lojistaFlag === "Não") qtLojistaNao++;
+    else qtPessoaFisica++;
+
+    if (v.cliente_tipo === "PJ") qtPJ++;
+    else if (v.cliente_tipo === "PF") qtPF++;
+
+    if (c) qtComCustoDetalhado++;
+
+    if (v.dias_estoque != null) {
+      diasEstoqueArr.push(v.dias_estoque);
+      if (v.dias_estoque > 60) qtDias60Plus++;
+      if (v.dias_estoque > 90) qtDias90Plus++;
+    }
+
+    // Margem líquida negativa: só conta se conseguimos calcular margemLiq
+    const ofic = c?.despesas_oficina ?? 0;
+    const frp = c?.forplan ?? 0;
+    const imp = c?.impostos ?? 0;
+    const cmsn = comissao ?? 0;
+    const temCustoCalc = c != null || comissao != null;
+    if (
+      temCustoCalc &&
+      valorVenda != null &&
+      valorVenda > 0 &&
+      valorAq != null &&
+      margemBruta != null
+    ) {
+      const margemLiqLocal = margemBruta - (ofic + frp + imp + cmsn);
+      if (margemLiqLocal < 0) qtMargemLiqNegativa++;
+    }
+
+    // Top performers
+    const lojaNome = v.empresa_nome ?? "—";
+    qtPorLoja.set(lojaNome, (qtPorLoja.get(lojaNome) ?? 0) + 1);
+    if (valorVenda != null && valorVenda > 0) {
+      fatPorLoja.set(lojaNome, (fatPorLoja.get(lojaNome) ?? 0) + valorVenda);
+    }
+    const vendedorNome = v.vendedor_nome ?? "—";
+    qtPorVendedor.set(vendedorNome, (qtPorVendedor.get(vendedorNome) ?? 0) + 1);
+    const marcaNome = v.marca ?? "—";
+    qtPorMarca.set(marcaNome, (qtPorMarca.get(marcaNome) ?? 0) + 1);
+    if (valorVenda != null && valorVenda > 0) {
+      fatPorMarca.set(marcaNome, (fatPorMarca.get(marcaNome) ?? 0) + valorVenda);
+    }
+    const modeloNome = v.modelo ?? "—";
+    qtPorModelo.set(modeloNome, (qtPorModelo.get(modeloNome) ?? 0) + 1);
 
     // Bordas em todas as células de dados (B..AM)
     for (let c = COL.B_SEQ; c <= COL.AM_OBS_EXTRA; c++) {
@@ -800,91 +878,321 @@ export async function gerarAnaliseNavesa({
   }
 
   // ═══════════════════════════════════════════════════════════════════
-  // BLOCO DE KPIs (pula 2 linhas)
+  // V5: KPIs DA MESA — 6 blocos temáticos em layout 2 colunas
+  //   ESQUERDA  (B..G): 1) Totais Gerais  2) Indicadores Médios  3) Dias de Pátio
+  //   DIREITA   (I..N): 4) Perfil Clientes  5) Top Performers  6) Alertas
   // ═══════════════════════════════════════════════════════════════════
-  let kpiRow = QT_ROW + 3;
+  const KPI_START = QT_ROW + 3; // pula 2 linhas (QT_ROW+1 vazia, QT_ROW+2 vazia, começa em +3)
 
-  // Título do bloco
-  const titCell = ws.getRow(kpiRow).getCell(COL.B_SEQ);
-  titCell.value = "KPIs DA MESA";
-  titCell.font = { bold: true, size: 12 };
-  titCell.fill = {
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: COLOR.grayHeader },
-  };
-  kpiRow++;
+  // Colunas dos blocos
+  const L_LABEL_A = COL.B_SEQ;   // B
+  const L_LABEL_B = COL.C_VEICULO; // C
+  const L_VALOR = COL.D_MARCA;    // D
+  const L_EXTRA = COL.E_PLACA;    // E
+  const L_HEADER_END = COL.F_ANOMODELO; // F (header merged B..F)
 
-  // Helpers locais
-  const setKpiLine = (label: string, val: number | string | null, pct: number | null = null, isMoney = true) => {
-    const r = ws.getRow(kpiRow);
-    r.getCell(COL.B_SEQ).value = label;
-    r.getCell(COL.B_SEQ).font = { bold: false };
-    r.getCell(COL.B_SEQ).alignment = { horizontal: "left" };
-    if (val != null) {
-      const valCell = r.getCell(COL.E_PLACA);
-      valCell.value = val;
-      if (typeof val === "number") {
-        valCell.numFmt = isMoney ? FMT_MONEY : FMT_INT;
+  const R_LABEL_A = COL.J_DIAS_PATIO;  // J
+  const R_LABEL_B = COL.K_CAUTELAR;    // K
+  const R_VALOR = COL.L_VALORIZA;      // L
+  const R_EXTRA = COL.M_CUSTO_FIPE_PCT; // M
+  const R_HEADER_END = COL.N_CUSTO_REAL; // N (header merged J..N)
+
+  type KpiLine =
+    | { kind: "header"; label: string }
+    | {
+        kind: "line";
+        label: string;
+        value: number | string | null;
+        valueFmt?: "money" | "int";
+        extra?: string | null;
       }
-      valCell.alignment = { horizontal: "right" };
-      valCell.font = { bold: true };
+    | { kind: "blank" };
+
+  // Helpers de cálculo
+  const totalVendas = vendas.length;
+  const pct = (n: number, d: number): number => (d > 0 ? n / d : 0);
+  const fmtPctStr = (n: number, d: number): string =>
+    d > 0 ? `${((n / d) * 100).toFixed(1)}%` : "0.0%";
+
+  // Custo total acumulado: Σ custo_total dos custos_detalhados quando disponível,
+  // senão soma valor_aquisicao. Como o loop não somou explicitamente, recalculamos:
+  let totCustoAcumulado = 0;
+  for (const v of vendas) {
+    const cd = custosPorPlaca[v.placa];
+    if (cd) totCustoAcumulado += cd.custo_total;
+    else {
+      const vAq = getValorAquisicao(v, undefined);
+      if (vAq != null) totCustoAcumulado += vAq;
     }
-    if (pct != null) {
-      const pctCell = r.getCell(COL.H_COR);
-      pctCell.value = pct;
-      pctCell.numFmt = FMT_PERCENT;
-      pctCell.alignment = { horizontal: "right" };
-      pctCell.font = { bold: true };
+  }
+
+  const totDespOperacionais = totDespOficina + totForplan + totImpostos + totComissao;
+  const ticketMedio = totalVendas > 0 ? totValorVenda / totalVendas : 0;
+  const margemBrutaMedia = totalVendas > 0 ? totMargemBruta / totalVendas : 0;
+  const margemLiqMedia = totalVendas > 0 ? totMargemLiq / totalVendas : 0;
+  const comissaoMedia = totalVendas > 0 ? totComissao / totalVendas : 0;
+  const pctBrutaPond = pct(totMargemBruta, totValorVenda);
+  const pctLiqPond = pct(totMargemLiq, totValorVenda);
+
+  const diasMedio =
+    diasEstoqueArr.length > 0
+      ? diasEstoqueArr.reduce((s, n) => s + n, 0) / diasEstoqueArr.length
+      : 0;
+  const diasMin = diasEstoqueArr.length > 0 ? Math.min(...diasEstoqueArr) : 0;
+  const diasMax = diasEstoqueArr.length > 0 ? Math.max(...diasEstoqueArr) : 0;
+  const totDias = diasEstoqueArr.reduce((s, n) => s + n, 0);
+
+  // Top performers — pega chave com maior contagem
+  const topBy = (m: Map<string, number>): { nome: string; qt: number } | null => {
+    let best: { nome: string; qt: number } | null = null;
+    for (const [k, v] of m) {
+      if (!best || v > best.qt) best = { nome: k, qt: v };
     }
-    kpiRow++;
+    return best;
+  };
+  const topLoja = topBy(qtPorLoja);
+  const topVendedor = topBy(qtPorVendedor);
+  const topMarca = topBy(qtPorMarca);
+  const topModelo = topBy(qtPorModelo);
+  const fatTopLoja = topLoja ? (fatPorLoja.get(topLoja.nome) ?? 0) : 0;
+  const fatTopMarca = topMarca ? (fatPorMarca.get(topMarca.nome) ?? 0) : 0;
+
+  // ─── Bloco 1: TOTAIS GERAIS ───
+  const bloco1: KpiLine[] = [
+    { kind: "header", label: "📊 TOTAIS GERAIS" },
+    { kind: "line", label: "Total de vendas", value: totalVendas, valueFmt: "int" },
+    { kind: "line", label: "Faturamento total", value: totValorVenda, valueFmt: "money" },
+    { kind: "line", label: "Custo total acumulado", value: totCustoAcumulado, valueFmt: "money" },
+    { kind: "line", label: "Margem bruta total", value: totMargemBruta, valueFmt: "money" },
+    { kind: "line", label: "Margem líquida total", value: totMargemLiq, valueFmt: "money" },
+    { kind: "line", label: "Ganhos indiretos total", value: totGanhosIndiretos, valueFmt: "money" },
+    { kind: "line", label: "Despesas operacionais total", value: totDespOperacionais, valueFmt: "money" },
+    { kind: "blank" },
+  ];
+
+  // ─── Bloco 2: INDICADORES MÉDIOS ───
+  const bloco2: KpiLine[] = [
+    { kind: "header", label: "📈 INDICADORES MÉDIOS" },
+    { kind: "line", label: "Ticket médio", value: ticketMedio, valueFmt: "money" },
+    { kind: "line", label: "Margem bruta média (R$)", value: margemBrutaMedia, valueFmt: "money" },
+    { kind: "line", label: "Margem líquida média (R$)", value: margemLiqMedia, valueFmt: "money" },
+    { kind: "line", label: "% Margem bruta (ponderada)", value: `${(pctBrutaPond * 100).toFixed(2)}%` },
+    { kind: "line", label: "% Margem líquida (ponderada)", value: `${(pctLiqPond * 100).toFixed(2)}%` },
+    { kind: "line", label: "Comissão média", value: comissaoMedia, valueFmt: "money" },
+    { kind: "blank" },
+  ];
+
+  // ─── Bloco 3: DIAS DE PÁTIO ───
+  const bloco3: KpiLine[] = [
+    { kind: "header", label: "⏱️ DIAS DE PÁTIO" },
+    { kind: "line", label: "Total de dias acumulado", value: totDias, valueFmt: "int", extra: "dias" },
+    { kind: "line", label: "Dias médio", value: Number(diasMedio.toFixed(1)), valueFmt: "int" },
+    { kind: "line", label: "Mínimo / Máximo", value: `${diasMin} / ${diasMax}` },
+    {
+      kind: "line",
+      label: "Vendas com mais de 60 dias",
+      value: qtDias60Plus,
+      valueFmt: "int",
+      extra: fmtPctStr(qtDias60Plus, totalVendas),
+    },
+    {
+      kind: "line",
+      label: "Vendas com mais de 90 dias",
+      value: qtDias90Plus,
+      valueFmt: "int",
+      extra: fmtPctStr(qtDias90Plus, totalVendas),
+    },
+    { kind: "blank" },
+  ];
+
+  // ─── Bloco 4: PERFIL DOS CLIENTES ───
+  const bloco4: KpiLine[] = [
+    { kind: "header", label: "👥 PERFIL DOS CLIENTES" },
+    {
+      kind: "line",
+      label: "Vendas a Lojistas (SIM)",
+      value: qtLojistaSim,
+      valueFmt: "int",
+      extra: fmtPctStr(qtLojistaSim, totalVendas),
+    },
+    {
+      kind: "line",
+      label: "PF com perfil de revenda (Não)",
+      value: qtLojistaNao,
+      valueFmt: "int",
+      extra: fmtPctStr(qtLojistaNao, totalVendas),
+    },
+    {
+      kind: "line",
+      label: "Pessoa Física comum",
+      value: qtPessoaFisica,
+      valueFmt: "int",
+      extra: fmtPctStr(qtPessoaFisica, totalVendas),
+    },
+    {
+      kind: "line",
+      label: "Vendas com Trade-in",
+      value: qtTrade,
+      valueFmt: "int",
+      extra: fmtPctStr(qtTrade, totalVendas),
+    },
+    {
+      kind: "line",
+      label: "Vendas PJ",
+      value: qtPJ,
+      valueFmt: "int",
+      extra: fmtPctStr(qtPJ, totalVendas),
+    },
+    {
+      kind: "line",
+      label: "Vendas PF",
+      value: qtPF,
+      valueFmt: "int",
+      extra: fmtPctStr(qtPF, totalVendas),
+    },
+    { kind: "blank" },
+  ];
+
+  // ─── Bloco 5: TOP PERFORMERS ───
+  const bloco5: KpiLine[] = [
+    { kind: "header", label: "🏆 TOP PERFORMERS" },
+    {
+      kind: "line",
+      label: "Loja com mais vendas",
+      value: topLoja ? `${topLoja.nome} (${topLoja.qt})` : "—",
+      extra: topLoja ? `R$ ${fatTopLoja.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : null,
+    },
+    {
+      kind: "line",
+      label: "Vendedor com mais vendas",
+      value: topVendedor ? `${topVendedor.nome} (${topVendedor.qt})` : "—",
+    },
+    {
+      kind: "line",
+      label: "Marca com mais vendas",
+      value: topMarca ? `${topMarca.nome} (${topMarca.qt})` : "—",
+      extra: topMarca ? `R$ ${fatTopMarca.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : null,
+    },
+    {
+      kind: "line",
+      label: "Modelo mais vendido",
+      value: topModelo ? `${topModelo.nome} (${topModelo.qt})` : "—",
+    },
+    { kind: "blank" },
+  ];
+
+  // ─── Bloco 6: ALERTAS ───
+  const bloco6: KpiLine[] = [
+    { kind: "header", label: "⚠️ ALERTAS" },
+    {
+      kind: "line",
+      label: "Vendas com margem líquida negativa",
+      value: qtMargemLiqNegativa,
+      valueFmt: "int",
+      extra: fmtPctStr(qtMargemLiqNegativa, totalVendas),
+    },
+    {
+      kind: "line",
+      label: "Vendas com mais de 90 dias de pátio",
+      value: qtDias90Plus,
+      valueFmt: "int",
+      extra: fmtPctStr(qtDias90Plus, totalVendas),
+    },
+    {
+      kind: "line",
+      label: "Cobertura de custos detalhados",
+      value: fmtPctStr(qtComCustoDetalhado, totalVendas),
+    },
+    { kind: "blank" },
+  ];
+
+  const colunaEsq: KpiLine[] = [...bloco1, ...bloco2, ...bloco3];
+  const colunaDir: KpiLine[] = [...bloco4, ...bloco5, ...bloco6];
+  const maxLinhas = Math.max(colunaEsq.length, colunaDir.length);
+
+  const renderKpiLine = (
+    rowIdx: number,
+    line: KpiLine,
+    cols: {
+      labelA: number;
+      labelB: number;
+      valor: number;
+      extra: number;
+      headerEnd: number;
+    },
+  ): void => {
+    if (line.kind === "blank") return;
+    const r = ws.getRow(rowIdx);
+    if (line.kind === "header") {
+      ws.mergeCells(rowIdx, cols.labelA, rowIdx, cols.headerEnd);
+      const cell = r.getCell(cols.labelA);
+      cell.value = line.label;
+      cell.font = { bold: true, size: 12, color: { argb: "FF000000" } };
+      cell.alignment = { horizontal: "left", vertical: "middle" };
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFD1D5DB" },
+      };
+      cell.border = thinBorder();
+      // Aplica border nas células mergeadas
+      for (let cc = cols.labelA + 1; cc <= cols.headerEnd; cc++) {
+        r.getCell(cc).border = thinBorder();
+        r.getCell(cc).fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFD1D5DB" },
+        };
+      }
+      r.height = 20;
+      return;
+    }
+    // kind === "line"
+    ws.mergeCells(rowIdx, cols.labelA, rowIdx, cols.labelB);
+    const labelCell = r.getCell(cols.labelA);
+    labelCell.value = line.label;
+    labelCell.alignment = { horizontal: "left", vertical: "middle" };
+    labelCell.font = { size: 10 };
+
+    const valorCell = r.getCell(cols.valor);
+    if (line.value != null) {
+      valorCell.value = line.value;
+      if (typeof line.value === "number") {
+        valorCell.numFmt = line.valueFmt === "int" ? FMT_INT : FMT_MONEY;
+      }
+      valorCell.alignment = { horizontal: "right", vertical: "middle" };
+      valorCell.font = { bold: true, size: 10 };
+    }
+
+    if (line.extra != null) {
+      const extraCell = r.getCell(cols.extra);
+      extraCell.value = line.extra;
+      extraCell.alignment = { horizontal: "left", vertical: "middle" };
+      extraCell.font = { italic: true, size: 9, color: { argb: "FF6B7280" } };
+    }
   };
 
-  setKpiLine("Total faturamento", totValorVenda);
-  setKpiLine(
-    "Total margem bruta",
-    totMargemBruta,
-    totValorVenda > 0 ? totMargemBruta / totValorVenda : 0,
-  );
-  setKpiLine(
-    "Total margem líquida",
-    totMargemLiq,
-    totValorVenda > 0 ? totMargemLiq / totValorVenda : 0,
-  );
-  setKpiLine("Total ganhos indiretos", totGanhosIndiretos);
-  setKpiLine(
-    "Total despesas operac.",
-    totDespOficina + totForplan + totImpostos + totComissao,
-  );
-
-  // ─── Linhas de FIPE (PREPARADAS, COMENTADAS) ─────────────────────────────
-  // TODO(fipe-integration): reabilitar quando integração FIPE estiver completa.
-  // Quando integração FIPE estiver completa (cache de valor R$ por chassi/modelo),
-  // descomente as 3 linhas abaixo. Hoje só temos o match FIPE (descrição), não o R$.
-  //
-  // const totFipe = somaFipeProjetada(vendas);  // 88% do valor FIPE
-  // setKpiLine("Projetado 88% FIPE", totFipe);
-  // setKpiLine("Atual (venda real)", totValorVenda);
-  // const dif = totValorVenda - totFipe;
-  // setKpiLine("Diferença vs projetado", dif, totFipe > 0 ? dif / totFipe : 0);
-
-  // ─── % Trade-in (qt com troca / qt total) ───
-  setKpiLine(
-    "% Trade-in",
-    null,
-    vendas.length > 0 ? qtTrade / vendas.length : 0,
-  );
-  // Linhas manuais (preenchimento posterior)
-  const manualLine = (label: string) => {
-    const r = ws.getRow(kpiRow);
-    r.getCell(COL.B_SEQ).value = label;
-    r.getCell(COL.E_PLACA).value = "manual";
-    r.getCell(COL.E_PLACA).font = { italic: true, color: { argb: "FF6B7280" } };
-    r.getCell(COL.E_PLACA).alignment = { horizontal: "right" };
-    kpiRow++;
-  };
-  manualLine("% Financiou");
-  manualLine("% Cortesia documento");
+  for (let i = 0; i < maxLinhas; i++) {
+    const rowIdx = KPI_START + i;
+    if (i < colunaEsq.length) {
+      renderKpiLine(rowIdx, colunaEsq[i], {
+        labelA: L_LABEL_A,
+        labelB: L_LABEL_B,
+        valor: L_VALOR,
+        extra: L_EXTRA,
+        headerEnd: L_HEADER_END,
+      });
+    }
+    if (i < colunaDir.length) {
+      renderKpiLine(rowIdx, colunaDir[i], {
+        labelA: R_LABEL_A,
+        labelB: R_LABEL_B,
+        valor: R_VALOR,
+        extra: R_EXTRA,
+        headerEnd: R_HEADER_END,
+      });
+    }
+  }
 
   // ═══════════════════════════════════════════════════════════════════
   // Gera Blob (writeBuffer é async)
@@ -913,7 +1221,7 @@ export async function gerarAnaliseNavesa({
 // HELPERS DE ESTILO
 // ═══════════════════════════════════════════════════════════════════════════
 
-function thinBorder(): ExcelJS.Borders {
+function thinBorder(): Partial<ExcelJS.Borders> {
   const side: Partial<ExcelJS.Border> = { style: "thin", color: { argb: "FFD1D5DB" } };
   // exceljs tipa Borders com diagonal{Up,Down} também — só preenchemos os 4 lados.
   return {
@@ -922,7 +1230,7 @@ function thinBorder(): ExcelJS.Borders {
     left: side,
     right: side,
     diagonal: { up: false, down: false },
-  } as ExcelJS.Borders;
+  };
 }
 
 function avg(nums: number[]): number {
