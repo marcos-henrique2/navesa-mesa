@@ -5,13 +5,14 @@ import {
   useReactTable, getCoreRowModel, getFilteredRowModel, getSortedRowModel, getPaginationRowModel,
   flexRender, type ColumnDef, type SortingState,
 } from "@tanstack/react-table";
-import { ArrowUpDown, ArrowUp, ArrowDown, Search, Trophy, TrendingDown, TrendingUp, AlertCircle } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, Search, Trophy, TrendingDown, TrendingUp, AlertCircle, Download } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useInventory } from "@/lib/store/inventory";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
 import { ComposicaoCustos } from "./ComposicaoCustos";
 import { indexarClientes, chaveCliente, tierRecorrencia } from "@/lib/analytics/clientes";
 import { agregarMargem, calcMargemVenda } from "@/lib/analytics/margem";
+import { baixarAnaliseNavesa } from "@/lib/export/analise-navesa";
 import type { VendaParsed } from "@/lib/parsers/nbs-vendas-xlsx";
 
 export function VendasAnalise() {
@@ -25,7 +26,14 @@ export function VendasAnalise() {
   const [filtroUf, setFiltroUf] = useState("all");
   const [filtroTipoCli, setFiltroTipoCli] = useState<"all" | "PF" | "PJ" | "troca">("all");
   const [filtroRecorrencia, setFiltroRecorrencia] = useState<"all" | "unica" | "2-3" | "4mais">("all");
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const [dataDe, setDataDe] = useState("");
+  const [dataAte, setDataAte] = useState("");
+  const [sorting, setSorting] = useState<SortingState>([{ id: "data_venda", desc: true }]);
+
+  const hojeISO = useMemo(() => {
+    const h = new Date();
+    return `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, "0")}-${String(h.getDate()).padStart(2, "0")}`;
+  }, []);
 
   // Index de clientes sobre TODAS as vendas (independente do filtro), para detectar recorrência total
   const clientesIndex = useMemo(() => indexarClientes(vendas), [vendas]);
@@ -36,6 +44,18 @@ export function VendasAnalise() {
   const vendedores = useMemo(() => [...new Set(vendas.map((v) => v.vendedor_nome).filter((x): x is string => !!x))].sort(), [vendas]);
   const marcas = useMemo(() => [...new Set(vendas.map((v) => v.marca).filter((m): m is string => !!m))].sort(), [vendas]);
   const ufs = useMemo(() => [...new Set(vendas.map((v) => v.cliente_uf).filter((u): u is string => !!u))].sort(), [vendas]);
+
+  const dataDeMs = useMemo(() => {
+    if (!dataDe) return null;
+    const [y, m, d] = dataDe.split("-").map(Number);
+    return new Date(y, m - 1, d, 0, 0, 0, 0).getTime();
+  }, [dataDe]);
+
+  const dataAteMs = useMemo(() => {
+    if (!dataAte) return new Date().setHours(23, 59, 59, 999);
+    const [y, m, d] = dataAte.split("-").map(Number);
+    return new Date(y, m - 1, d, 23, 59, 59, 999).getTime();
+  }, [dataAte]);
 
   const filtered = useMemo(() => {
     return vendas.filter((v) => {
@@ -53,6 +73,12 @@ export function VendasAnalise() {
         if (filtroRecorrencia === "2-3" && (n < 2 || n > 3)) return false;
         if (filtroRecorrencia === "4mais" && n < 4) return false;
       }
+      if (dataDeMs !== null || dataAte) {
+        if (!v.data_venda) return false;
+        const ts = v.data_venda.getTime();
+        if (dataDeMs !== null && ts < dataDeMs) return false;
+        if (ts > dataAteMs) return false;
+      }
       if (search) {
         const q = search.toLowerCase();
         const hay = `${v.placa} ${v.chassi} ${v.modelo} ${v.cliente_nome} ${v.vendedor_nome ?? ""}`.toLowerCase();
@@ -60,7 +86,7 @@ export function VendasAnalise() {
       }
       return true;
     });
-  }, [vendas, filtroLoja, filtroVendedor, filtroMarca, filtroUf, filtroTipoCli, filtroRecorrencia, clientesIndex, search]);
+  }, [vendas, filtroLoja, filtroVendedor, filtroMarca, filtroUf, filtroTipoCli, filtroRecorrencia, clientesIndex, search, dataDeMs, dataAteMs, dataAte]);
 
   const kpis = useMemo(() => {
     // Usa fórmula oficial NBS (lib/analytics/margem.ts)
@@ -270,6 +296,39 @@ export function VendasAnalise() {
         />
         <Select label="Recorrência" value={filtroRecorrencia} onChange={(v) => setFiltroRecorrencia(v as typeof filtroRecorrencia)} options={[["all", "Todas"], ["unica", "1 compra"], ["2-3", "2 a 3"], ["4mais", "4+ (suspeito)"]]} />
 
+        <label className="flex items-center gap-1.5 text-sm">
+          <span className="text-zinc-500">De:</span>
+          <input
+            type="date"
+            value={dataDe}
+            max={dataAte || hojeISO}
+            onChange={(e) => setDataDe(e.target.value)}
+            aria-label="Data inicial"
+            className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          />
+        </label>
+        <label className="flex items-center gap-1.5 text-sm">
+          <span className="text-zinc-500">Até:</span>
+          <input
+            type="date"
+            value={dataAte}
+            min={dataDe || undefined}
+            max={hojeISO}
+            onChange={(e) => setDataAte(e.target.value)}
+            aria-label="Data final"
+            className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          />
+        </label>
+        {(dataDe || dataAte) && (
+          <button
+            type="button"
+            onClick={() => { setDataDe(""); setDataAte(""); }}
+            className="rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          >
+            × limpar
+          </button>
+        )}
+
         <div className="relative ml-auto">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-zinc-400" />
           <input
@@ -279,6 +338,26 @@ export function VendasAnalise() {
             className="w-64 rounded-md border border-zinc-300 bg-white pl-8 pr-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
           />
         </div>
+
+        <button
+          type="button"
+          onClick={async () => {
+            await baixarAnaliseNavesa({
+              vendas: filtered,
+              todasVendas: vendas,
+              custosPorPlaca,
+              empresa: filtroLoja === "all" ? "TODAS" : filtroLoja,
+              dataDe,
+              dataAte,
+            });
+          }}
+          disabled={filtered.length === 0}
+          title="Gera planilha no formato USADOS ANALISE NAVESA respeitando os filtros aplicados"
+          className="inline-flex items-center gap-1.5 rounded-md border border-purple-600 bg-purple-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-300 disabled:text-zinc-500 dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-500"
+        >
+          <Download className="h-4 w-4" />
+          Exportar análise Navesa
+        </button>
       </div>
 
       {/* Rankings */}
