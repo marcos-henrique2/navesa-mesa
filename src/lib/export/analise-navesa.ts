@@ -273,21 +273,18 @@ const TERMOS_LOJISTA = [
   "MULTIMARCAS",
 ] as const;
 
-type LojistaFlag = "SIM" | "Não" | "Pessoa Física";
+type LojistaFlag = "SIM" | "NÃO";
 
 function detectarLojista(v: VendaParsed, qtCompras: number): LojistaFlag {
   const nome = (v.cliente_nome ?? "").toUpperCase();
   const nomeIndicaRevenda = TERMOS_LOJISTA.some((t) => nome.includes(t));
 
-  // SIM: lojista real (PJ recorrente OU nome típico de revenda)
+  // SIM: lojista real (nome típico de revenda OU PJ recorrente)
   if (nomeIndicaRevenda) return "SIM";
   if (v.cliente_tipo === "PJ" && qtCompras >= 4) return "SIM";
 
-  // "Não": PF com perfil de revendedor informal (compra muito mas não é PJ)
-  if (v.cliente_tipo === "PF" && qtCompras >= 4) return "Não";
-
-  // Pessoa Física: consumidor comum (default)
-  return "Pessoa Física";
+  // NÃO: tudo o mais (consumidor comum, PF — independentemente da recorrência)
+  return "NÃO";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -406,7 +403,6 @@ export async function gerarAnaliseNavesa({
 
   // V5: acumuladores p/ rodapé profissional
   let qtLojistaSim = 0;
-  let qtLojistaNao = 0;
   let qtPessoaFisica = 0;
   let qtPJ = 0;
   let qtPF = 0;
@@ -767,7 +763,7 @@ export async function gerarAnaliseNavesa({
     row.getCell(COL.AH_CLIENTE).value = v.cliente_nome;
     row.getCell(COL.AH_CLIENTE).alignment = { horizontal: "left" };
 
-    // AI — Lojista (auto-detectado, 3 valores: "SIM" | "Não" | "Pessoa Física")
+    // AI — Lojista (auto-detectado, binário: "SIM" | "NÃO")
     const chaveCli = chaveCliente(v);
     const cli = clientesIndex.get(chaveCli);
     const totalCompras = cli?.totalCompras ?? 1;
@@ -795,21 +791,24 @@ export async function gerarAnaliseNavesa({
     row.getCell(COL.AL_LOJA).value = v.empresa_nome ?? "";
     row.getCell(COL.AL_LOJA).alignment = { horizontal: "left" };
 
-    // AM — Obs Extra (só pra lojista real "SIM"; "Não" e "Pessoa Física" ficam vazios)
-    if (lojistaFlag === "SIM" && v.data_venda) {
-      const ano = v.data_venda.getFullYear();
-      const nAno = comprasPorAno.get(chaveCli)?.get(ano) ?? 0;
-      if (nAno > 0) {
-        const amCell = row.getCell(COL.AM_OBS_EXTRA);
-        amCell.value = `LOJISTA - COMPROU ${nAno} CARROS ${ano}`;
-        amCell.alignment = { horizontal: "left" };
-        amCell.font = { italic: true, size: 10 };
+    // AM — Obs Extra: lojista mostra "LOJISTA - COMPROU N CARROS YYYY"; não-lojista mostra "Pessoa Física"
+    {
+      const amCell = row.getCell(COL.AM_OBS_EXTRA);
+      if (lojistaFlag === "SIM" && v.data_venda) {
+        const ano = v.data_venda.getFullYear();
+        const nAno = comprasPorAno.get(chaveCli)?.get(ano) ?? 0;
+        if (nAno > 0) {
+          amCell.value = `LOJISTA - COMPROU ${nAno} CARROS ${ano}`;
+        }
+      } else if (lojistaFlag === "NÃO") {
+        amCell.value = "Pessoa Física";
       }
+      amCell.alignment = { horizontal: "left" };
+      amCell.font = { italic: true, size: 10 };
     }
 
     // V5: acumular dados pro rodapé profissional
     if (lojistaFlag === "SIM") qtLojistaSim++;
-    else if (lojistaFlag === "Não") qtLojistaNao++;
     else qtPessoaFisica++;
 
     if (v.cliente_tipo === "PJ") qtPJ++;
@@ -1098,14 +1097,7 @@ export async function gerarAnaliseNavesa({
     },
     {
       kind: "line",
-      label: "PF com perfil de revenda (Não)",
-      value: qtLojistaNao,
-      valueFmt: "int",
-      extra: fmtPctStr(qtLojistaNao, totalVendas),
-    },
-    {
-      kind: "line",
-      label: "Pessoa Física comum",
+      label: "Vendas a Pessoa Física (NÃO)",
       value: qtPessoaFisica,
       valueFmt: "int",
       extra: fmtPctStr(qtPessoaFisica, totalVendas),
