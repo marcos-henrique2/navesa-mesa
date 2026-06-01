@@ -81,7 +81,14 @@ const FMT_INT = "#,##0";
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Layout: A vazio. Dados começam na coluna B. Última coluna agora é AM (39).
-// Colunas chave:
+// V6: ordem lógica (valor antes do cálculo). Bloco M..S reordenado:
+//   M = CUSTO REAL (entrada - valoriza)        ← era N
+//   N = VALOR FIPE                              ← era R
+//   O = CUSTO REAL X FIPE %                     ← era M
+//   P = VALOR NF VENDA                          ← era O
+//   Q = MARGEM BRUTA                            ← era P
+//   R = % MARGEM BRUTA                          ← era Q
+//   S = VENDA X FIPE %                          (mantém posição)
 const COL = {
   A: 1,
   B_SEQ: 2,
@@ -95,12 +102,12 @@ const COL = {
   J_DIAS_PATIO: 10,
   K_CAUTELAR: 11,
   L_VALORIZA: 12,
-  M_CUSTO_FIPE_PCT: 13,
-  N_CUSTO_REAL: 14,
-  O_VALOR_VENDA: 15,
-  P_MARGEM_BRUTA: 16,
-  Q_PCT_BRUTA: 17,
-  R_FIPE: 18,
+  M_CUSTO_REAL: 13,
+  N_FIPE: 14,
+  O_CUSTO_FIPE_PCT: 15,
+  P_VALOR_VENDA: 16,
+  Q_MARGEM_BRUTA: 17,
+  R_PCT_BRUTA: 18,
   S_PCT_FIPE: 19,
   T_OFICINA: 20,
   U_PCT_OFICINA: 21,
@@ -142,12 +149,12 @@ const HEADERS: Record<number, string> = {
   [COL.J_DIAS_PATIO]: "DIAS PÁTIO",
   [COL.K_CAUTELAR]: "CAUTELAR",
   [COL.L_VALORIZA]: "VALORIZA (ganhos indiretos)",
-  [COL.M_CUSTO_FIPE_PCT]: "CUSTO REAL X FIPE %",
-  [COL.N_CUSTO_REAL]: "CUSTO REAL (entrada - valoriza)",
-  [COL.O_VALOR_VENDA]: "VALOR NF VENDA",
-  [COL.P_MARGEM_BRUTA]: "MARGEM BRUTA (venda - custo real)",
-  [COL.Q_PCT_BRUTA]: "% MARGEM BRUTA",
-  [COL.R_FIPE]: "VALOR FIPE",
+  [COL.M_CUSTO_REAL]: "CUSTO REAL (entrada - valoriza)",
+  [COL.N_FIPE]: "VALOR FIPE",
+  [COL.O_CUSTO_FIPE_PCT]: "CUSTO REAL X FIPE %",
+  [COL.P_VALOR_VENDA]: "VALOR NF VENDA",
+  [COL.Q_MARGEM_BRUTA]: "MARGEM BRUTA (venda - custo real)",
+  [COL.R_PCT_BRUTA]: "% MARGEM BRUTA",
   [COL.S_PCT_FIPE]: "VENDA X FIPE %",
   [COL.T_OFICINA]: "DESPESA GERAL (oficina)",
   [COL.U_PCT_OFICINA]: "% DESPESAS",
@@ -185,12 +192,12 @@ const COL_WIDTHS: Record<number, number> = {
   [COL.J_DIAS_PATIO]: 7,
   [COL.K_CAUTELAR]: 14,
   [COL.L_VALORIZA]: 12,
-  [COL.M_CUSTO_FIPE_PCT]: 10,
-  [COL.N_CUSTO_REAL]: 14,
-  [COL.O_VALOR_VENDA]: 14,
-  [COL.P_MARGEM_BRUTA]: 14,
-  [COL.Q_PCT_BRUTA]: 8,
-  [COL.R_FIPE]: 14,
+  [COL.M_CUSTO_REAL]: 14,
+  [COL.N_FIPE]: 14,
+  [COL.O_CUSTO_FIPE_PCT]: 10,
+  [COL.P_VALOR_VENDA]: 14,
+  [COL.Q_MARGEM_BRUTA]: 14,
+  [COL.R_PCT_BRUTA]: 8,
   [COL.S_PCT_FIPE]: 10,
   [COL.T_OFICINA]: 14,
   [COL.U_PCT_OFICINA]: 8,
@@ -491,37 +498,56 @@ export async function gerarAnaliseNavesa({
       totGanhosIndiretos += c.ganhos_indiretos;
     }
 
-    // M — Custo real x FIPE (vazio, sem FIPE)
-
-    // N — Custo Real
+    // M — Custo Real (FÓRMULA = I - L; result cacheado)
+    // Só escreve a fórmula quando há valor de aquisição — evita exibir custo negativo
+    // (-L) e divergência entre soma de células e linha TOTAL.
     if (valorAq != null) {
-      const ganhosIndiretosN = c?.ganhos_indiretos ?? 0;
-      const custoReal = valorAq - ganhosIndiretosN;
-      const cell = row.getCell(COL.N_CUSTO_REAL);
-      cell.value = custoReal;
+      const ganhosIndiretosM = c?.ganhos_indiretos ?? 0;
+      const custoRealCache = valorAq - ganhosIndiretosM;
+      const cell = row.getCell(COL.M_CUSTO_REAL);
+      cell.value = {
+        formula: `I${dataRowIdx}-L${dataRowIdx}`,
+        result: custoRealCache,
+      };
       cell.numFmt = FMT_MONEY;
       cell.alignment = { horizontal: "right" };
-      totCustoReal += custoReal;
+      totCustoReal += custoRealCache;
     }
 
-    // O — Valor NF Venda
+    // N — Valor FIPE (vazio, Marcos preenche manualmente)
+
+    // O — Custo Real x FIPE % (FÓRMULA = IFERROR(M/N,""))
+    {
+      const cell = row.getCell(COL.O_CUSTO_FIPE_PCT);
+      cell.value = {
+        formula: `IFERROR(M${dataRowIdx}/N${dataRowIdx},"")`,
+        result: undefined,
+      };
+      cell.numFmt = FMT_PERCENT;
+      cell.alignment = { horizontal: "right" };
+    }
+
+    // P — Valor NF Venda (INPUT — valor direto)
     const valorVenda = v.valor_venda;
     if (valorVenda != null && valorVenda > 0) {
-      const cell = row.getCell(COL.O_VALOR_VENDA);
+      const cell = row.getCell(COL.P_VALOR_VENDA);
       cell.value = valorVenda;
       cell.numFmt = FMT_MONEY;
       cell.alignment = { horizontal: "right" };
       totValorVenda += valorVenda;
     }
 
-    // P — Margem Bruta + cor condicional (negativa = vermelho)
+    // Q — Margem Bruta (FÓRMULA = P - M); cor condicional se negativa
     let margemBruta: number | null = null;
     if (valorVenda != null && valorVenda > 0 && valorAq != null) {
-      const ganhosIndiretosP = c?.ganhos_indiretos ?? 0;
-      const custoReal = valorAq - ganhosIndiretosP;
+      const ganhosIndiretosQ = c?.ganhos_indiretos ?? 0;
+      const custoReal = valorAq - ganhosIndiretosQ;
       margemBruta = valorVenda - custoReal;
-      const cell = row.getCell(COL.P_MARGEM_BRUTA);
-      cell.value = margemBruta;
+      const cell = row.getCell(COL.Q_MARGEM_BRUTA);
+      cell.value = {
+        formula: `P${dataRowIdx}-M${dataRowIdx}`,
+        result: margemBruta,
+      };
       cell.numFmt = FMT_MONEY;
       cell.alignment = { horizontal: "right" };
       if (margemBruta < 0) {
@@ -534,16 +560,28 @@ export async function gerarAnaliseNavesa({
       }
       totMargemBruta += margemBruta;
 
-      // Q — % margem bruta
+      // R — % margem bruta (FÓRMULA = IFERROR(Q/P,""))
       const pct = margemBruta / valorVenda;
-      const qCell = row.getCell(COL.Q_PCT_BRUTA);
-      qCell.value = pct;
-      qCell.numFmt = FMT_PERCENT;
-      qCell.alignment = { horizontal: "right" };
+      const rCell = row.getCell(COL.R_PCT_BRUTA);
+      rCell.value = {
+        formula: `IFERROR(Q${dataRowIdx}/P${dataRowIdx},"")`,
+        result: pct,
+      };
+      rCell.numFmt = FMT_PERCENT;
+      rCell.alignment = { horizontal: "right" };
       pctBrutas.push(pct);
     }
 
-    // R / S — FIPE (vazio)
+    // S — Venda x FIPE % (FÓRMULA = IFERROR(P/N,""))
+    {
+      const cell = row.getCell(COL.S_PCT_FIPE);
+      cell.value = {
+        formula: `IFERROR(P${dataRowIdx}/N${dataRowIdx},"")`,
+        result: undefined,
+      };
+      cell.numFmt = FMT_PERCENT;
+      cell.alignment = { horizontal: "right" };
+    }
 
     // T — Despesa oficina
     if (c) {
@@ -557,7 +595,10 @@ export async function gerarAnaliseNavesa({
       if (valorVenda != null && valorVenda > 0) {
         const pct = c.despesas_oficina / valorVenda;
         const uCell = row.getCell(COL.U_PCT_OFICINA);
-        uCell.value = pct;
+        uCell.value = {
+          formula: `IFERROR(T${dataRowIdx}/P${dataRowIdx},"")`,
+          result: pct,
+        };
         uCell.numFmt = FMT_PERCENT;
         uCell.alignment = { horizontal: "right" };
         pctOficina.push(pct);
@@ -574,7 +615,10 @@ export async function gerarAnaliseNavesa({
       if (valorVenda != null && valorVenda > 0) {
         const pct = c.forplan / valorVenda;
         const wCell = row.getCell(COL.W_PCT_FORPLAN);
-        wCell.value = pct;
+        wCell.value = {
+          formula: `IFERROR(V${dataRowIdx}/P${dataRowIdx},"")`,
+          result: pct,
+        };
         wCell.numFmt = FMT_PERCENT;
         wCell.alignment = { horizontal: "right" };
         pctForplan.push(pct);
@@ -591,7 +635,10 @@ export async function gerarAnaliseNavesa({
       if (valorVenda != null && valorVenda > 0) {
         const pct = c.impostos / valorVenda;
         const yCell = row.getCell(COL.Y_PCT_IMPOSTOS);
-        yCell.value = pct;
+        yCell.value = {
+          formula: `IFERROR(X${dataRowIdx}/P${dataRowIdx},"")`,
+          result: pct,
+        };
         yCell.numFmt = FMT_PERCENT;
         yCell.alignment = { horizontal: "right" };
         pctImpostos.push(pct);
@@ -609,7 +656,10 @@ export async function gerarAnaliseNavesa({
       if (valorVenda != null && valorVenda > 0) {
         const pct = comissao / valorVenda;
         const aaCell = row.getCell(COL.AA_PCT_COMISSAO);
-        aaCell.value = pct;
+        aaCell.value = {
+          formula: `IFERROR(Z${dataRowIdx}/P${dataRowIdx},"")`,
+          result: pct,
+        };
         aaCell.numFmt = FMT_PERCENT;
         aaCell.alignment = { horizontal: "right" };
         pctComissao.push(pct);
@@ -625,7 +675,10 @@ export async function gerarAnaliseNavesa({
     if (temAlgumCusto) {
       const custoTotal = oficina + forplan + impostos + comissaoNum;
       const abCell = row.getCell(COL.AB_CUSTO_TOTAL);
-      abCell.value = custoTotal;
+      abCell.value = {
+        formula: `T${dataRowIdx}+V${dataRowIdx}+X${dataRowIdx}+Z${dataRowIdx}`,
+        result: custoTotal,
+      };
       abCell.numFmt = FMT_MONEY;
       abCell.alignment = { horizontal: "right" };
       totCustoTotal += custoTotal;
@@ -633,14 +686,20 @@ export async function gerarAnaliseNavesa({
       if (valorVenda != null && valorVenda > 0 && valorAq != null && margemBruta != null) {
         const margemLiq = margemBruta - custoTotal;
         const acCell = row.getCell(COL.AC_MARGEM_LIQ);
-        acCell.value = margemLiq;
+        acCell.value = {
+          formula: `Q${dataRowIdx}-AB${dataRowIdx}`,
+          result: margemLiq,
+        };
         acCell.numFmt = FMT_MONEY;
         acCell.alignment = { horizontal: "right" };
         totMargemLiq += margemLiq;
 
         const pct = margemLiq / valorVenda;
         const adCell = row.getCell(COL.AD_PCT_LIQ);
-        adCell.value = pct;
+        adCell.value = {
+          formula: `IFERROR(AC${dataRowIdx}/P${dataRowIdx},"")`,
+          result: pct,
+        };
         adCell.numFmt = FMT_PERCENT;
         adCell.alignment = { horizontal: "right" };
         pctLiq.push(pct);
@@ -794,10 +853,10 @@ export async function gerarAnaliseNavesa({
   totRow.getCell(COL.B_SEQ).value = "TOTAL";
   totRow.getCell(COL.I_VALOR_ENTRADA).value = totValorAquisicao;
   totRow.getCell(COL.L_VALORIZA).value = totGanhosIndiretos;
-  totRow.getCell(COL.N_CUSTO_REAL).value = totCustoReal;
-  totRow.getCell(COL.O_VALOR_VENDA).value = totValorVenda;
-  totRow.getCell(COL.P_MARGEM_BRUTA).value = totMargemBruta;
-  totRow.getCell(COL.Q_PCT_BRUTA).value = totValorVenda > 0 ? totMargemBruta / totValorVenda : 0;
+  totRow.getCell(COL.M_CUSTO_REAL).value = totCustoReal;
+  totRow.getCell(COL.P_VALOR_VENDA).value = totValorVenda;
+  totRow.getCell(COL.Q_MARGEM_BRUTA).value = totMargemBruta;
+  totRow.getCell(COL.R_PCT_BRUTA).value = totValorVenda > 0 ? totMargemBruta / totValorVenda : 0;
   totRow.getCell(COL.T_OFICINA).value = totDespOficina;
   totRow.getCell(COL.V_FORPLAN).value = totForplan;
   totRow.getCell(COL.X_IMPOSTOS).value = totImpostos;
@@ -808,11 +867,11 @@ export async function gerarAnaliseNavesa({
 
   // Formatação da linha TOTAL
   const moneyColsTot = [
-    COL.I_VALOR_ENTRADA, COL.L_VALORIZA, COL.N_CUSTO_REAL, COL.O_VALOR_VENDA,
-    COL.P_MARGEM_BRUTA, COL.T_OFICINA, COL.V_FORPLAN, COL.X_IMPOSTOS,
+    COL.I_VALOR_ENTRADA, COL.L_VALORIZA, COL.M_CUSTO_REAL, COL.P_VALOR_VENDA,
+    COL.Q_MARGEM_BRUTA, COL.T_OFICINA, COL.V_FORPLAN, COL.X_IMPOSTOS,
     COL.Z_COMISSAO, COL.AB_CUSTO_TOTAL, COL.AC_MARGEM_LIQ,
   ];
-  const pctColsTot = [COL.Q_PCT_BRUTA, COL.AD_PCT_LIQ];
+  const pctColsTot = [COL.R_PCT_BRUTA, COL.AD_PCT_LIQ];
   for (const c of moneyColsTot) {
     totRow.getCell(c).numFmt = FMT_MONEY;
     totRow.getCell(c).alignment = { horizontal: "right" };
@@ -837,14 +896,14 @@ export async function gerarAnaliseNavesa({
   const MEDIA_ROW = TOTAL_ROW + 1;
   const medRow = ws.getRow(MEDIA_ROW);
   medRow.getCell(COL.B_SEQ).value = "MÉDIA";
-  if (pctBrutas.length > 0) medRow.getCell(COL.Q_PCT_BRUTA).value = avg(pctBrutas);
+  if (pctBrutas.length > 0) medRow.getCell(COL.R_PCT_BRUTA).value = avg(pctBrutas);
   if (pctFipe.length > 0) medRow.getCell(COL.S_PCT_FIPE).value = avg(pctFipe);
   if (pctOficina.length > 0) medRow.getCell(COL.U_PCT_OFICINA).value = avg(pctOficina);
   if (pctForplan.length > 0) medRow.getCell(COL.W_PCT_FORPLAN).value = avg(pctForplan);
   if (pctImpostos.length > 0) medRow.getCell(COL.Y_PCT_IMPOSTOS).value = avg(pctImpostos);
   if (pctComissao.length > 0) medRow.getCell(COL.AA_PCT_COMISSAO).value = avg(pctComissao);
   if (pctLiq.length > 0) medRow.getCell(COL.AD_PCT_LIQ).value = avg(pctLiq);
-  for (const c of [COL.Q_PCT_BRUTA, COL.S_PCT_FIPE, COL.U_PCT_OFICINA, COL.W_PCT_FORPLAN, COL.Y_PCT_IMPOSTOS, COL.AA_PCT_COMISSAO, COL.AD_PCT_LIQ]) {
+  for (const c of [COL.R_PCT_BRUTA, COL.S_PCT_FIPE, COL.U_PCT_OFICINA, COL.W_PCT_FORPLAN, COL.Y_PCT_IMPOSTOS, COL.AA_PCT_COMISSAO, COL.AD_PCT_LIQ]) {
     medRow.getCell(c).numFmt = FMT_PERCENT;
     medRow.getCell(c).alignment = { horizontal: "right" };
   }
@@ -863,9 +922,9 @@ export async function gerarAnaliseNavesa({
   const QT_ROW = MEDIA_ROW + 1;
   const qtRow = ws.getRow(QT_ROW);
   qtRow.getCell(COL.B_SEQ).value = "QT VENDAS";
-  qtRow.getCell(COL.O_VALOR_VENDA).value = vendas.length;
-  qtRow.getCell(COL.O_VALOR_VENDA).numFmt = FMT_INT;
-  qtRow.getCell(COL.O_VALOR_VENDA).alignment = { horizontal: "right" };
+  qtRow.getCell(COL.P_VALOR_VENDA).value = vendas.length;
+  qtRow.getCell(COL.P_VALOR_VENDA).numFmt = FMT_INT;
+  qtRow.getCell(COL.P_VALOR_VENDA).alignment = { horizontal: "right" };
   for (let c = COL.B_SEQ; c <= COL.AM_OBS_EXTRA; c++) {
     const cell = qtRow.getCell(c);
     cell.font = { bold: true };
@@ -894,8 +953,8 @@ export async function gerarAnaliseNavesa({
   const R_LABEL_A = COL.J_DIAS_PATIO;  // J
   const R_LABEL_B = COL.K_CAUTELAR;    // K
   const R_VALOR = COL.L_VALORIZA;      // L
-  const R_EXTRA = COL.M_CUSTO_FIPE_PCT; // M
-  const R_HEADER_END = COL.N_CUSTO_REAL; // N (header merged J..N)
+  const R_EXTRA = COL.O_CUSTO_FIPE_PCT; // M
+  const R_HEADER_END = COL.M_CUSTO_REAL; // N (header merged J..N)
 
   type KpiLine =
     | { kind: "header"; label: string }
