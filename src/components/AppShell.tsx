@@ -31,16 +31,24 @@ const NAV: NavItem[] = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  // Lazy init: lê preferência do localStorage. SSR retorna false.
-  const [collapsed, setCollapsed] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    try { return localStorage.getItem(COLLAPSED_KEY) === "true"; } catch { return false; }
-  });
+  // Sempre começa false (igual SSR) pra evitar hydration mismatch.
+  // O valor real do localStorage é aplicado após mount via useEffect.
+  const [collapsed, setCollapsed] = useState<boolean>(false);
+  const [hidratado, setHidratado] = useState(false);
 
-  // Persiste preferência
+  // Hidrata do localStorage só após mount (post-hydration)
   useEffect(() => {
+    try {
+      if (localStorage.getItem(COLLAPSED_KEY) === "true") setCollapsed(true);
+    } catch {}
+    setHidratado(true);
+  }, []);
+
+  // Persiste preferência (só depois de hidratar, evita escrever o default no primeiro render)
+  useEffect(() => {
+    if (!hidratado) return;
     try { localStorage.setItem(COLLAPSED_KEY, String(collapsed)); } catch {}
-  }, [collapsed]);
+  }, [collapsed, hidratado]);
 
   // /login não tem shell — renderiza children direto (sem sidebar, sem DataGate).
   // Mantido após os hooks acima pra respeitar rules-of-hooks.
