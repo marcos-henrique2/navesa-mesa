@@ -11,7 +11,7 @@ import {
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
-import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, Search, SlidersHorizontal, X, ClipboardCheck } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, Search, SlidersHorizontal, X, ClipboardCheck, BarChart3 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useInventory } from "@/lib/store/inventory";
 import { classificarPatio } from "@/lib/inventory/status";
@@ -27,6 +27,7 @@ import { FipeBatchRunner } from "./FipeBatchRunner";
 import { CautelarBatchActions } from "./CautelarBatchActions";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import { baixarConferenciaEstoque } from "@/lib/export/conferencia-estoque";
+import { baixarRelatorioGerencial } from "@/lib/export/relatorio-gerencial-estoque";
 
 type StatusFiltro = "all" | "real" | "prep";
 
@@ -474,6 +475,31 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
     }
   };
 
+  const [exportandoGerencial, setExportandoGerencial] = useState(false);
+  const handleExportarGerencial = async () => {
+    if (exportandoGerencial || filtered.length === 0) return;
+    setExportandoGerencial(true);
+    try {
+      const filtroLojaNome =
+        filtroLoja === "all"
+          ? "TODAS"
+          : lojas[Number(filtroLoja)]?.nome?.trim() || `Loja ${filtroLoja}`;
+      const veiculosComLoja = filtered.map((v) => ({
+        ...v,
+        empresa_nome: lojas[v.cod_empresa]?.nome?.trim() ?? null,
+      }));
+      await baixarRelatorioGerencial({
+        veiculos: veiculosComLoja,
+        filtroLoja: filtroLojaNome,
+      });
+    } catch (err) {
+      console.error("Falha ao gerar relatório gerencial:", err);
+      alert("Não foi possível gerar o relatório gerencial. Tente novamente ou contate o suporte.");
+    } finally {
+      setExportandoGerencial(false);
+    }
+  };
+
   const filtrosAtivos = [
     statusFiltro !== "all",
     !!search,
@@ -547,6 +573,16 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
         >
           <ClipboardCheck className="h-4 w-4" />
           {exportandoConf ? "Gerando…" : "Imprimir conferência de estoque"}
+        </button>
+
+        <button
+          onClick={handleExportarGerencial}
+          disabled={exportandoGerencial || filtered.length === 0}
+          title="Gera relatório executivo com totalizadores: capital travado, margem potencial, KM médio, veículos parados há +60/+90 dias e alertas"
+          className="inline-flex items-center gap-2 rounded-md bg-blue-700 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <BarChart3 className="h-4 w-4" />
+          {exportandoGerencial ? "Gerando…" : "Relatório gerencial"}
         </button>
       </div>
 
