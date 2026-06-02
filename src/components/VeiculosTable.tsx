@@ -22,6 +22,7 @@ import { useCautelares, CAUTELAR_ICONE, CAUTELAR_LABEL, type StatusCautelar } fr
 import { computarDiagnosticoLista, type DiagnosticoStatus } from "@/lib/pricing/diagnostico";
 import { calcularMedianasKm } from "@/lib/pricing/medianas";
 import { cn, formatBRL, formatInt } from "@/lib/utils";
+import { usePersistedState } from "@/lib/hooks/usePersistedState";
 import { ResumoPorDimensao } from "./ResumoPorDimensao";
 import { FipeBatchRunner } from "./FipeBatchRunner";
 import { CautelarBatchActions } from "./CautelarBatchActions";
@@ -63,17 +64,17 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
   const router = useRouter();
   const { veiculos, vendas, lojas, isHydrated } = useInventory();
 
-  const [statusFiltro, setStatusFiltro] = useState<StatusFiltro>("all");
-  const [search, setSearch] = useState("");
-  const [filtroLoja, setFiltroLoja] = useState<string>("all");
-  const [filtroMarca, setFiltroMarca] = useState<string>("all");
-  const [filtroCor, setFiltroCor] = useState<string>("all");
-  const [filtroComb, setFiltroComb] = useState<string>("all");
-  const [filtroSituacao, setFiltroSituacao] = useState<string>("all");
-  const [filtroPatio, setFiltroPatio] = useState<string>("all");
-  const [filtroClasse, setFiltroClasse] = useState<"all" | Classe | "showroom" | "repasse">("all");
-  const [filtroFipe, setFiltroFipe] = useState<"all" | "acima" | "abaixo" | "sem">("all");
-  const [filtroCautelar, setFiltroCautelar] = useState<"all" | StatusCautelar | "sem">("all");
+  const [statusFiltro, setStatusFiltro] = usePersistedState<StatusFiltro>("veiculos:statusFiltro", "all");
+  const [search, setSearch] = usePersistedState<string>("veiculos:search", "");
+  const [filtroLoja, setFiltroLoja] = usePersistedState<string>("veiculos:filtroLoja", "all");
+  const [filtroMarca, setFiltroMarca] = usePersistedState<string>("veiculos:filtroMarca", "all");
+  const [filtroCor, setFiltroCor] = usePersistedState<string>("veiculos:filtroCor", "all");
+  const [filtroComb, setFiltroComb] = usePersistedState<string>("veiculos:filtroComb", "all");
+  const [filtroSituacao, setFiltroSituacao] = usePersistedState<string>("veiculos:filtroSituacao", "all");
+  const [filtroPatio, setFiltroPatio] = usePersistedState<string>("veiculos:filtroPatio", "all");
+  const [filtroClasse, setFiltroClasse] = usePersistedState<"all" | Classe | "showroom" | "repasse">("veiculos:filtroClasse", "all");
+  const [filtroFipe, setFiltroFipe] = usePersistedState<"all" | "acima" | "abaixo" | "sem">("veiculos:filtroFipe", "all");
+  const [filtroCautelar, setFiltroCautelar] = usePersistedState<"all" | StatusCautelar | "sem">("veiculos:filtroCautelar", "all");
 
   // Filtro vindo do banner de prioridade Ford (Fase C). Mantemos como state
   // local pra permitir o user limpá-lo sem depender da prop.
@@ -82,14 +83,14 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
   const fipeBatch = useFipeBatch();
   const cautelares = useCautelares();
   const [avancadoOpen, setAvancadoOpen] = useState(false);
-  const [anoMin, setAnoMin] = useState<string>("");
-  const [anoMax, setAnoMax] = useState<string>("");
-  const [kmMin, setKmMin] = useState<string>("");
-  const [kmMax, setKmMax] = useState<string>("");
-  const [precoMin, setPrecoMin] = useState<string>("");
-  const [precoMax, setPrecoMax] = useState<string>("");
-  const [diasMin, setDiasMin] = useState<string>("");
-  const [diasMax, setDiasMax] = useState<string>("");
+  const [anoMin, setAnoMin] = usePersistedState<string>("veiculos:anoMin", "");
+  const [anoMax, setAnoMax] = usePersistedState<string>("veiculos:anoMax", "");
+  const [kmMin, setKmMin] = usePersistedState<string>("veiculos:kmMin", "");
+  const [kmMax, setKmMax] = usePersistedState<string>("veiculos:kmMax", "");
+  const [precoMin, setPrecoMin] = usePersistedState<string>("veiculos:precoMin", "");
+  const [precoMax, setPrecoMax] = usePersistedState<string>("veiculos:precoMax", "");
+  const [diasMin, setDiasMin] = usePersistedState<string>("veiculos:diasMin", "");
+  const [diasMax, setDiasMax] = usePersistedState<string>("veiculos:diasMax", "");
   const [sorting, setSorting] = useState<SortingState>([]);
 
   const lojasCods = useMemo(() => [...new Set(veiculos.map((v) => v.cod_empresa))].sort((a, b) => a - b), [veiculos]);
@@ -445,6 +446,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
   const limparFiltros = () => {
     setStatusFiltro("all"); setSearch(""); setFiltroLoja("all"); setFiltroMarca("all");
     setFiltroCor("all"); setFiltroComb("all"); setFiltroSituacao("all"); setFiltroPatio("all");
+    setFiltroClasse("all"); setFiltroFipe("all"); setFiltroCautelar("all");
     setAnoMin(""); setAnoMax(""); setKmMin(""); setKmMax("");
     setPrecoMin(""); setPrecoMax(""); setDiasMin(""); setDiasMax("");
     setModoPrioridade(null);
@@ -505,6 +507,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
     !!search,
     filtroLoja !== "all", filtroMarca !== "all", filtroCor !== "all",
     filtroComb !== "all", filtroSituacao !== "all", filtroPatio !== "all",
+    filtroClasse !== "all", filtroFipe !== "all", filtroCautelar !== "all",
     !!anoMin, !!anoMax, !!kmMin, !!kmMax, !!precoMin, !!precoMax, !!diasMin, !!diasMax,
     modoPrioridade !== null,
   ].filter(Boolean).length;

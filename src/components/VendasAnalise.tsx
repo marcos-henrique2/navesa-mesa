@@ -9,6 +9,7 @@ import { ArrowUpDown, ArrowUp, ArrowDown, Search, Trophy, TrendingDown, Trending
 import { useRouter } from "next/navigation";
 import { useInventory } from "@/lib/store/inventory";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
+import { usePersistedState } from "@/lib/hooks/usePersistedState";
 import { ComposicaoCustos } from "./ComposicaoCustos";
 import { indexarClientes, chaveCliente, tierRecorrencia } from "@/lib/analytics/clientes";
 import { agregarMargem, calcMargemVenda } from "@/lib/analytics/margem";
@@ -35,7 +36,7 @@ export function VendasAnalise() {
   const { vendas, vendasMeta, custosPorPlaca, isHydrated } = useInventory();
   const fipeBatch = useFipeBatch();
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = usePersistedState<string>("vendas:search", "");
   const [exportando, setExportando] = useState(false);
   const [rodandoFipe, setRodandoFipe] = useState(false);
   const [progressoFipe, setProgressoFipe] = useState<BatchProgress | null>(null);
@@ -58,14 +59,14 @@ export function VendasAnalise() {
       }
     };
   }, [fipeMsg]);
-  const [filtroLoja, setFiltroLoja] = useState("all");
-  const [filtroVendedor, setFiltroVendedor] = useState("all");
-  const [filtroMarca, setFiltroMarca] = useState("all");
-  const [filtroUf, setFiltroUf] = useState("all");
-  const [filtroTipoCli, setFiltroTipoCli] = useState<"all" | "PF" | "PJ" | "troca">("all");
-  const [filtroRecorrencia, setFiltroRecorrencia] = useState<"all" | "unica" | "2-3" | "4mais">("all");
-  const [dataDe, setDataDe] = useState("");
-  const [dataAte, setDataAte] = useState("");
+  const [filtroLoja, setFiltroLoja] = usePersistedState<string>("vendas:filtroLoja", "all");
+  const [filtroVendedor, setFiltroVendedor] = usePersistedState<string>("vendas:filtroVendedor", "all");
+  const [filtroMarca, setFiltroMarca] = usePersistedState<string>("vendas:filtroMarca", "all");
+  const [filtroUf, setFiltroUf] = usePersistedState<string>("vendas:filtroUf", "all");
+  const [filtroTipoCli, setFiltroTipoCli] = usePersistedState<"all" | "PF" | "PJ" | "troca">("vendas:filtroTipoCli", "all");
+  const [filtroRecorrencia, setFiltroRecorrencia] = usePersistedState<"all" | "unica" | "2-3" | "4mais">("vendas:filtroRecorrencia", "all");
+  const [dataDe, setDataDe] = usePersistedState<string>("vendas:dataDe", "");
+  const [dataAte, setDataAte] = usePersistedState<string>("vendas:dataAte", "");
   const [sorting, setSorting] = useState<SortingState>([{ id: "data_venda", desc: true }]);
 
   const hojeISO = useMemo(() => {
