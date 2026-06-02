@@ -49,8 +49,21 @@ export function Chat() {
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Bloqueio temporário por rate limit (429). Quando >0, input desabilitado e
+  // mostra countdown. Decrementa de 1 em 1 segundo até zerar.
+  const [bloqueioSeg, setBloqueioSeg] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Countdown do rate limit — interval único pro lifetime do componente.
+  // Decrementa via callback (sem dep em bloqueioSeg) — evita recriar setInterval
+  // a cada tick e race condition se múltiplos updates chegarem juntos.
+  useEffect(() => {
+    const id = setInterval(() => {
+      setBloqueioSeg((s) => Math.max(0, s - 1));
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
 
   // Carrega histórico do Supabase ao montar
   useEffect(() => {
@@ -91,7 +104,7 @@ export function Chat() {
   }, [messages, streaming]);
 
   async function send(prompt: string) {
-    if (!prompt.trim() || streaming) return;
+    if (!prompt.trim() || streaming || bloqueioSeg > 0) return;
 
     const userMsg: ChatMessage = { role: "user", content: prompt };
     setMessages((prev) => [...prev, userMsg]);
@@ -136,7 +149,16 @@ export function Chat() {
         try {
           const j = (await resp.json()) as { error?: string; retryAfter?: number | null; providers_tentados?: string[] };
           if (j.error) errMsg = j.error;
-          if (resp.status === 503 && j.retryAfter) {
+          if (resp.status === 429) {
+            // Rate limit do nosso /api/chat (Upstash). Header `retry-after` é fonte oficial,
+            // fallback no campo `retryAfter` do JSON.
+            const headerRetry = Number(resp.headers.get("retry-after"));
+            const seg = Number.isFinite(headerRetry) && headerRetry > 0
+              ? headerRetry
+              : (j.retryAfter ?? 60);
+            setBloqueioSeg(seg);
+            errMsg = j.error ?? `Você atingiu o limite de mensagens por minuto. Aguarde ${seg}s.`;
+          } else if (resp.status === 503 && j.retryAfter) {
             errMsg = `Todos os modelos de IA atingiram limite temporário. Tente de novo em ~${j.retryAfter} segundos. (${j.providers_tentados?.join(" → ") ?? ""})`;
           } else if (resp.status === 503) {
             errMsg = `Modelos de IA indisponíveis no momento. Aguarde 1-2 minutos e tente de novo.${j.providers_tentados ? ` Tentados: ${j.providers_tentados.join(" → ")}` : ""}`;
@@ -305,17 +327,24 @@ export function Chat() {
                 send(input);
               }
             }}
-            disabled={!bundle || streaming}
-            placeholder={bundle ? "Pergunte sobre vendas, estoque, lojas, modelos…" : "Suba os relatórios primeiro"}
+            disabled={!bundle || streaming || bloqueioSeg > 0}
+            placeholder={
+              bloqueioSeg > 0
+                ? `Aguarde ${bloqueioSeg}s — limite de mensagens por minuto atingido`
+                : bundle
+                ? "Pergunte sobre vendas, estoque, lojas, modelos…"
+                : "Suba os relatórios primeiro"
+            }
             rows={1}
             className="flex-1 resize-none rounded-lg border border-[var(--border-soft)] bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-[var(--brand-500)] focus:outline-none disabled:bg-slate-50 disabled:text-slate-400"
           />
           <button
             type="submit"
-            disabled={!bundle || streaming || !input.trim()}
+            disabled={!bundle || streaming || !input.trim() || bloqueioSeg > 0}
             className="inline-flex h-9 items-center gap-1 rounded-lg bg-[var(--brand-700)] px-3 text-sm font-medium text-white shadow-sm transition hover:bg-[var(--brand-800)] disabled:bg-slate-300 disabled:text-slate-500"
           >
-            <Send className="h-4 w-4" /> Enviar
+            <Send className="h-4 w-4" />
+            {bloqueioSeg > 0 ? `${bloqueioSeg}s` : "Enviar"}
           </button>
         </div>
       </form>

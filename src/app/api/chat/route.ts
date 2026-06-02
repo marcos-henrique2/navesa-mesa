@@ -4,7 +4,16 @@ import { google } from "@ai-sdk/google";
 import { groq } from "@ai-sdk/groq";
 import { streamText, type LanguageModel } from "ai";
 import type { InsightsBundle } from "@/lib/analytics/insights";
+import { getRateLimiter } from "@/lib/ratelimit";
+import { createClient } from "@/lib/supabase/server";
 
+/**
+ * Rate limit:
+ *   10 req/min por user (sliding window via Upstash Redis).
+ *   Se UPSTASH_REDIS_REST_URL/TOKEN não setados, rate limit fica DESABILITADO
+ *   (log warning, sistema continua funcionando). Configure em https://console.upstash.com
+ *   → create Redis database → copiar REST URL + TOKEN pro .env.local e Vercel.
+ */
 export const runtime = "nodejs";
 export const maxDuration = 90;
 
@@ -120,6 +129,51 @@ function extrairRetryAfter(err: unknown): number | null {
 
 export async function POST(req: Request) {
   try {
+    // 1) Autenticação — precisa do user.id pra chavear o rate limit.
+    //    Sem user, devolve 401 antes de gastar qualquer recurso.
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      return new Response(JSON.stringify({ error: "Não autenticado" }), {
+        status: 401,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
+    // 2) Rate limit por user (se Upstash configurado — senão pula gracefully).
+    //    Bloqueia antes do parse do body e antes de instanciar providers.
+    const limiter = getRateLimiter();
+    if (limiter) {
+      try {
+        const { success, limit, remaining, reset } = await limiter.limit(user.id);
+        if (!success) {
+          const retryAfter = Math.max(1, Math.ceil((reset - Date.now()) / 1000));
+          return new Response(
+            JSON.stringify({
+              error: `Limite de ${limit} mensagens por minuto atingido. Aguarde ${retryAfter}s.`,
+              retryAfter,
+            }),
+            {
+              status: 429,
+              headers: {
+                "content-type": "application/json",
+                "x-ratelimit-limit": String(limit),
+                "x-ratelimit-remaining": String(remaining),
+                "x-ratelimit-reset": String(reset),
+                "retry-after": String(retryAfter),
+              },
+            },
+          );
+        }
+      } catch (err) {
+        // Upstash indisponível (rede, 5xx, timeout) — fail-open libera o request
+        // pra não derrubar chat inteiro. Graceful degradation > rigor do rate limit.
+        console.error("[ratelimit] Erro consultando Upstash, request liberado:", err);
+      }
+    }
+
     const body = (await req.json()) as RequestBody;
     const providers = listarProvidersDisponiveis();
 

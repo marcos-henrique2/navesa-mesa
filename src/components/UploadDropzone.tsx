@@ -103,6 +103,7 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
     onDrop,
     accept: CONFIG[modo].accept,
     maxFiles: 1,
+    maxSize: 50 * 1024 * 1024, // 50MB — XLSX real do NBS é ~1-3MB; previne DoS local com arquivo gigante
     disabled: status === "parsing",
   });
 
