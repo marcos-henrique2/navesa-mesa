@@ -502,15 +502,35 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
     }
   };
 
-  const filtrosAtivos = [
+  // Filtros essenciais (sempre visíveis): search, loja, marca, situação + statusFiltro (segmented) + modoPrioridade
+  const filtrosEssenciaisAtivos = [
     statusFiltro !== "all",
     !!search,
-    filtroLoja !== "all", filtroMarca !== "all", filtroCor !== "all",
-    filtroComb !== "all", filtroSituacao !== "all", filtroPatio !== "all",
-    filtroClasse !== "all", filtroFipe !== "all", filtroCautelar !== "all",
-    !!anoMin, !!anoMax, !!kmMin, !!kmMax, !!precoMin, !!precoMax, !!diasMin, !!diasMax,
+    filtroLoja !== "all",
+    filtroMarca !== "all",
+    filtroSituacao !== "all",
     modoPrioridade !== null,
   ].filter(Boolean).length;
+
+  // Filtros avançados (colapsáveis): cor, comb, pátio, classe, fipe, cautelar + ranges
+  const filtrosAvancadosAtivos = [
+    filtroCor !== "all",
+    filtroComb !== "all",
+    filtroPatio !== "all",
+    filtroClasse !== "all",
+    filtroFipe !== "all",
+    filtroCautelar !== "all",
+    !!anoMin, !!anoMax, !!kmMin, !!kmMax, !!precoMin, !!precoMax, !!diasMin, !!diasMax,
+  ].filter(Boolean).length;
+
+  const filtrosAtivos = filtrosEssenciaisAtivos + filtrosAvancadosAtivos;
+
+  // Auto-abre o painel "Mais filtros" no mount inicial se há avançados ativos (sessionStorage).
+  // Sem isso, usuário vê badge "+N" mas precisa clicar pra ver quais filtros estão ativos.
+  useEffect(() => {
+    if (filtrosAvancadosAtivos > 0) setAvancadoOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!isHydrated) {
     return <p className="text-sm text-zinc-500">Carregando…</p>;
@@ -559,15 +579,6 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
             </button>
           </span>
         )}
-        {filtrosAtivos > 0 && (
-          <button
-            onClick={limparFiltros}
-            className="inline-flex items-center gap-1 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:hover:bg-zinc-800"
-          >
-            <X className="h-3 w-3" /> Limpar {filtrosAtivos} filtro{filtrosAtivos > 1 ? "s" : ""}
-          </button>
-        )}
-
         <button
           onClick={handleExportarConferencia}
           disabled={exportandoConf || filtered.length === 0}
@@ -616,36 +627,32 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
 
       {/* Filtros base */}
       <div className="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+        {/* Essenciais: sempre visíveis */}
         <div className="flex flex-wrap items-center gap-3">
           <Select label="Loja" value={filtroLoja} onChange={setFiltroLoja} options={[["all", "Todas"], ...lojasCods.map((l) => [String(l), lojas[l]?.nome?.trim() || `Loja ${l}`] as [string, string])]} />
           <Select label="Marca" value={filtroMarca} onChange={setFiltroMarca} options={[["all", "Todas"], ...marcas.map((m) => [m, m] as [string, string])]} />
-          <Select label="Cor" value={filtroCor} onChange={setFiltroCor} options={[["all", "Todas"], ...cores.map((c) => [c, c] as [string, string])]} />
-          <Select label="Comb" value={filtroComb} onChange={setFiltroComb} options={[["all", "Todos"], ...combs.map((c) => [c, c] as [string, string])]} />
-          <Select label="Pátio" value={filtroPatio} onChange={setFiltroPatio} options={[["all", "Todos"], ...patios.map((p) => [p, p] as [string, string])]} />
           <Select label="Situação" value={filtroSituacao} onChange={setFiltroSituacao} options={[["all", "Todas"], ...situacoes.map((s) => [s, s] as [string, string])]} />
-          <Select label="Classe" value={filtroClasse} onChange={(v) => setFiltroClasse(v as "all" | Classe | "showroom" | "repasse")} options={[
-            ["all", "Todas"],
-            ["showroom", "▸ Show Room"],
-            ["repasse", "▸ Repasse"],
-            ["A", "A"],
-            ["B", "B"],
-            ["C", "C"],
-            ["D", "D"],
-            ["E", "E"],
-          ]} />
-          <Select label="vs FIPE" value={filtroFipe} onChange={(v) => setFiltroFipe(v as "all" | "acima" | "abaixo" | "sem")} options={[
-            ["all", "Todos"],
-            ["acima", "🔴 Acima da FIPE"],
-            ["abaixo", "🟢 Abaixo da FIPE"],
-            ["sem", "❓ Sem match FIPE"],
-          ]} />
-          <Select label="Cautelar" value={filtroCautelar} onChange={(v) => setFiltroCautelar(v as "all" | StatusCautelar | "sem")} options={[
-            ["all", "Todas"],
-            ["aprovado", "✅ Aprovado"],
-            ["com_restricao", "⚠️ Com restrição"],
-            ["reprovado", "🔴 Reprovado"],
-            ["sem", "❔ Sem cautelar"],
-          ]} />
+
+          <button
+            type="button"
+            onClick={() => setAvancadoOpen((v) => !v)}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition",
+              filtrosAvancadosAtivos > 0
+                ? "border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200"
+                : "border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800",
+            )}
+            aria-expanded={avancadoOpen}
+            aria-controls="filtros-avancados-veiculos"
+          >
+            <SlidersHorizontal className="h-3 w-3" />
+            {avancadoOpen ? "▴ Ocultar" : "▾ Mais"} filtros
+            {filtrosAvancadosAtivos > 0 && (
+              <span className="rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                +{filtrosAvancadosAtivos}
+              </span>
+            )}
+          </button>
 
           <div className="relative ml-auto">
             <Search className="absolute left-2 top-2.5 h-4 w-4 text-zinc-400" />
@@ -658,33 +665,86 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
           </div>
         </div>
 
-        <button
-          onClick={() => setAvancadoOpen((v) => !v)}
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100"
+        {/* Avançados: colapsáveis. transition-all com max-height pra abertura suave */}
+        <div
+          id="filtros-avancados-veiculos"
+          inert={!avancadoOpen}
+          aria-hidden={!avancadoOpen}
+          className={cn(
+            "grid overflow-hidden transition-all duration-200 ease-out",
+            avancadoOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+          )}
         >
-          <SlidersHorizontal className="h-3 w-3" />
-          {avancadoOpen ? "Ocultar" : "Mostrar"} filtros avançados (ano, km, preço, dias)
-        </button>
-
-        {avancadoOpen && (
-          <div className="grid gap-3 border-t border-zinc-200 pt-3 dark:border-zinc-800 md:grid-cols-4">
-            <Range label="Ano modelo" minVal={anoMin} maxVal={anoMax} onMin={setAnoMin} onMax={setAnoMax} placeholderMin="ex: 2018" placeholderMax="2026" />
-            <Range label="Quilometragem" minVal={kmMin} maxVal={kmMax} onMin={setKmMin} onMax={setKmMax} placeholderMin="0" placeholderMax="200000" />
-            <Range label="Preço de venda (R$)" minVal={precoMin} maxVal={precoMax} onMin={setPrecoMin} onMax={setPrecoMax} placeholderMin="50000" placeholderMax="500000" />
-            <Range label="Dias no pátio" minVal={diasMin} maxVal={diasMax} onMin={setDiasMin} onMax={setDiasMax} placeholderMin="0" placeholderMax="60" />
+          <div className="min-h-0">
+            <div className="space-y-3 rounded-md bg-zinc-50 p-3 dark:bg-zinc-950/40">
+              <div className="flex flex-wrap items-center gap-3">
+                <Select label="Cor" value={filtroCor} onChange={setFiltroCor} options={[["all", "Todas"], ...cores.map((c) => [c, c] as [string, string])]} />
+                <Select label="Comb" value={filtroComb} onChange={setFiltroComb} options={[["all", "Todos"], ...combs.map((c) => [c, c] as [string, string])]} />
+                <Select label="Pátio" value={filtroPatio} onChange={setFiltroPatio} options={[["all", "Todos"], ...patios.map((p) => [p, p] as [string, string])]} />
+                <Select label="Classe" value={filtroClasse} onChange={(v) => setFiltroClasse(v as "all" | Classe | "showroom" | "repasse")} options={[
+                  ["all", "Todas"],
+                  ["showroom", "▸ Show Room"],
+                  ["repasse", "▸ Repasse"],
+                  ["A", "A"],
+                  ["B", "B"],
+                  ["C", "C"],
+                  ["D", "D"],
+                  ["E", "E"],
+                ]} />
+                <Select label="vs FIPE" value={filtroFipe} onChange={(v) => setFiltroFipe(v as "all" | "acima" | "abaixo" | "sem")} options={[
+                  ["all", "Todos"],
+                  ["acima", "🔴 Acima da FIPE"],
+                  ["abaixo", "🟢 Abaixo da FIPE"],
+                  ["sem", "❓ Sem match FIPE"],
+                ]} />
+                <Select label="Cautelar" value={filtroCautelar} onChange={(v) => setFiltroCautelar(v as "all" | StatusCautelar | "sem")} options={[
+                  ["all", "Todas"],
+                  ["aprovado", "✅ Aprovado"],
+                  ["com_restricao", "⚠️ Com restrição"],
+                  ["reprovado", "🔴 Reprovado"],
+                  ["sem", "❔ Sem cautelar"],
+                ]} />
+              </div>
+              <div className="grid gap-3 border-t border-zinc-200 pt-3 dark:border-zinc-800 md:grid-cols-4">
+                <Range label="Ano modelo" minVal={anoMin} maxVal={anoMax} onMin={setAnoMin} onMax={setAnoMax} placeholderMin="ex: 2018" placeholderMax="2026" />
+                <Range label="Quilometragem" minVal={kmMin} maxVal={kmMax} onMin={setKmMin} onMax={setKmMax} placeholderMin="0" placeholderMax="200000" />
+                <Range label="Preço de venda (R$)" minVal={precoMin} maxVal={precoMax} onMin={setPrecoMin} onMax={setPrecoMax} placeholderMin="50000" placeholderMax="500000" />
+                <Range label="Dias no pátio" minVal={diasMin} maxVal={diasMax} onMin={setDiasMin} onMax={setDiasMax} placeholderMin="0" placeholderMax="60" />
+              </div>
+            </div>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Resumo agregado */}
       <ResumoPorDimensao veiculos={filtered} lojas={lojas} />
 
-      {/* Resultado da tabela */}
-      <div className="flex items-baseline justify-between">
+      {/* Indicador X de Y · Limpar filtros */}
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Mostrando <strong>{formatInt(filtered.length)}</strong> carro{filtered.length === 1 ? "" : "s"} ·
-          custo de fábrica: <strong>{formatBRL(filtered.reduce((s, v) => s + (v.valor_aquisicao ?? 0), 0))}</strong> ·
-          venda: <strong>{formatBRL(filtered.reduce((s, v) => s + (v.preco_venda ?? 0), 0))}</strong>
+          {filtrosAtivos > 0
+            ? filtered.length === 0
+              ? <>Sem resultados pra esses filtros</>
+              : <>Mostrando <strong>{formatInt(filtered.length)}</strong> de <strong>{formatInt(veiculos.length)}</strong> carro{veiculos.length === 1 ? "" : "s"}</>
+            : <><strong>{formatInt(veiculos.length)}</strong> carro{veiculos.length === 1 ? "" : "s"}</>}
+          {filtered.length > 0 && (
+            <>
+              {" · "}custo de fábrica: <strong>{formatBRL(filtered.reduce((s, v) => s + (v.valor_aquisicao ?? 0), 0))}</strong>
+              {" · "}venda: <strong>{formatBRL(filtered.reduce((s, v) => s + (v.preco_venda ?? 0), 0))}</strong>
+            </>
+          )}
+          {filtrosAtivos > 0 && (
+            <>
+              {" · "}
+              <button
+                type="button"
+                onClick={limparFiltros}
+                className="text-blue-700 underline-offset-2 hover:underline dark:text-blue-400"
+              >
+                Limpar filtros
+              </button>
+            </>
+          )}
         </p>
       </div>
 

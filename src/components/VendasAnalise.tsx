@@ -5,7 +5,7 @@ import {
   useReactTable, getCoreRowModel, getFilteredRowModel, getSortedRowModel, getPaginationRowModel,
   flexRender, type ColumnDef, type SortingState,
 } from "@tanstack/react-table";
-import { ArrowUpDown, ArrowUp, ArrowDown, Search, Trophy, TrendingDown, TrendingUp, AlertCircle, Download, RefreshCw, Loader2 } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, Search, Trophy, TrendingDown, TrendingUp, AlertCircle, Download, RefreshCw, Loader2, SlidersHorizontal } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useInventory } from "@/lib/store/inventory";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
@@ -67,6 +67,7 @@ export function VendasAnalise() {
   const [filtroRecorrencia, setFiltroRecorrencia] = usePersistedState<"all" | "unica" | "2-3" | "4mais">("vendas:filtroRecorrencia", "all");
   const [dataDe, setDataDe] = usePersistedState<string>("vendas:dataDe", "");
   const [dataAte, setDataAte] = usePersistedState<string>("vendas:dataAte", "");
+  const [avancadoOpen, setAvancadoOpen] = useState(false);
   const [sorting, setSorting] = useState<SortingState>([{ id: "data_venda", desc: true }]);
 
   const hojeISO = useMemo(() => {
@@ -279,6 +280,43 @@ export function VendasAnalise() {
     initialState: { pagination: { pageSize: 25 } },
   });
 
+  // Contagem de filtros ativos: essenciais (sempre visíveis) vs avançados (colapsáveis)
+  const filtrosEssenciaisAtivos = [
+    !!search,
+    filtroLoja !== "all",
+    filtroVendedor !== "all",
+    !!dataDe,
+    !!dataAte,
+  ].filter(Boolean).length;
+
+  const filtrosAvancadosAtivos = [
+    filtroMarca !== "all",
+    filtroUf !== "all",
+    filtroTipoCli !== "all",
+    filtroRecorrencia !== "all",
+  ].filter(Boolean).length;
+
+  const filtrosAtivos = filtrosEssenciaisAtivos + filtrosAvancadosAtivos;
+
+  // Auto-abre o painel "Mais filtros" no mount inicial se há avançados ativos (sessionStorage).
+  // Sem isso, usuário vê badge "+N" mas precisa clicar pra ver quais filtros estão ativos.
+  useEffect(() => {
+    if (filtrosAvancadosAtivos > 0) setAvancadoOpen(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const limparFiltros = () => {
+    setSearch("");
+    setFiltroLoja("all");
+    setFiltroVendedor("all");
+    setFiltroMarca("all");
+    setFiltroUf("all");
+    setFiltroTipoCli("all");
+    setFiltroRecorrencia("all");
+    setDataDe("");
+    setDataAte("");
+  };
+
   if (!isHydrated) return <p className="text-sm text-zinc-500">Carregando…</p>;
 
   if (vendas.length === 0) {
@@ -320,145 +358,179 @@ export function VendasAnalise() {
       <ComposicaoCustos vendas={filtered} />
 
       {/* Filtros */}
-      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-        <Select label="Loja" value={filtroLoja} onChange={setFiltroLoja} options={[["all", "Todas"], ...lojas.map((l) => [l, l] as [string, string])]} />
-        <Select label="Vendedor" value={filtroVendedor} onChange={setFiltroVendedor} options={[["all", "Todos"], ...vendedores.map((v) => [v, v] as [string, string])]} />
-        <Select label="Marca" value={filtroMarca} onChange={setFiltroMarca} options={[["all", "Todas"], ...marcas.map((m) => [m, m] as [string, string])]} />
-        <Select label="UF" value={filtroUf} onChange={setFiltroUf} options={[["all", "Todos"], ...ufs.map((u) => [u, u] as [string, string])]} />
-        <Select
-          label="Tipo"
-          value={filtroTipoCli}
-          onChange={(v) => setFiltroTipoCli(v as typeof filtroTipoCli)}
-          options={hasAnyTroca
-            ? [["all", "Todos"], ["PF", "Só PF"], ["PJ", "Só PJ"], ["troca", "Com troca"]]
-            : [["all", "Todos"], ["PF", "Só PF"], ["PJ", "Só PJ"]]}
-        />
-        <Select label="Recorrência" value={filtroRecorrencia} onChange={(v) => setFiltroRecorrencia(v as typeof filtroRecorrencia)} options={[["all", "Todas"], ["unica", "1 compra"], ["2-3", "2 a 3"], ["4mais", "4+ (suspeito)"]]} />
+      <div className="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+        {/* Essenciais: sempre visíveis */}
+        <div className="flex flex-wrap items-center gap-3">
+          <Select label="Loja" value={filtroLoja} onChange={setFiltroLoja} options={[["all", "Todas"], ...lojas.map((l) => [l, l] as [string, string])]} />
+          <Select label="Vendedor" value={filtroVendedor} onChange={setFiltroVendedor} options={[["all", "Todos"], ...vendedores.map((v) => [v, v] as [string, string])]} />
 
-        <label className="flex items-center gap-1.5 text-sm">
-          <span className="text-zinc-500">De:</span>
-          <input
-            type="date"
-            value={dataDe}
-            max={dataAte || hojeISO}
-            onChange={(e) => setDataDe(e.target.value)}
-            aria-label="Data inicial"
-            className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-          />
-        </label>
-        <label className="flex items-center gap-1.5 text-sm">
-          <span className="text-zinc-500">Até:</span>
-          <input
-            type="date"
-            value={dataAte}
-            min={dataDe || undefined}
-            max={hojeISO}
-            onChange={(e) => setDataAte(e.target.value)}
-            aria-label="Data final"
-            className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-          />
-        </label>
-        {(dataDe || dataAte) && (
+          <label className="flex items-center gap-1.5 text-sm">
+            <span className="text-zinc-500">De:</span>
+            <input
+              type="date"
+              value={dataDe}
+              max={dataAte || hojeISO}
+              onChange={(e) => setDataDe(e.target.value)}
+              aria-label="Data inicial"
+              className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            />
+          </label>
+          <label className="flex items-center gap-1.5 text-sm">
+            <span className="text-zinc-500">Até:</span>
+            <input
+              type="date"
+              value={dataAte}
+              min={dataDe || undefined}
+              max={hojeISO}
+              onChange={(e) => setDataAte(e.target.value)}
+              aria-label="Data final"
+              className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            />
+          </label>
+
           <button
             type="button"
-            onClick={() => { setDataDe(""); setDataAte(""); }}
-            className="rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            onClick={() => setAvancadoOpen((v) => !v)}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition",
+              filtrosAvancadosAtivos > 0
+                ? "border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200"
+                : "border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800",
+            )}
+            aria-expanded={avancadoOpen}
+            aria-controls="filtros-avancados-vendas"
           >
-            × limpar
+            <SlidersHorizontal className="h-3 w-3" />
+            {avancadoOpen ? "▴ Ocultar" : "▾ Mais"} filtros
+            {filtrosAvancadosAtivos > 0 && (
+              <span className="rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                +{filtrosAvancadosAtivos}
+              </span>
+            )}
           </button>
-        )}
 
-        <div className="relative ml-auto">
-          <Search className="absolute left-2 top-2.5 h-4 w-4 text-zinc-400" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Placa, chassi, modelo, cliente…"
-            className="w-64 rounded-md border border-zinc-300 bg-white pl-8 pr-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-          />
+          <div className="relative ml-auto">
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-zinc-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Placa, chassi, modelo, cliente…"
+              className="w-64 rounded-md border border-zinc-300 bg-white pl-8 pr-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            />
+          </div>
         </div>
 
-        <button
-          type="button"
-          onClick={async () => {
-            if (rodandoFipe) return;
-            setRodandoFipe(true);
-            setFipeMsg(null);
-            setProgressoFipe(null);
-            try {
-              const veiculos: VeiculoParsed[] = filtered.map((v) => ({
-                cod_empresa: v.cod_empresa,
-                chassi: v.chassi,
-                placa: v.placa,
-                marca: v.marca,
-                modelo: v.modelo,
-                ano_fabricacao: v.ano_fabricacao,
-                ano_modelo: v.ano_modelo,
-                cor_externa: v.cor_externa,
-                combustivel: inferirCombustivel(v.modelo),
-                km: v.km,
-                patio: v.patio ?? "",
-                descricao_situacao: null,
-                preco_venda: v.valor_venda,
-                valor_aquisicao: null,
-                custo_total: null,
-                dias_patio: v.dias_estoque,
-                data_entrada: null,
-                vendedor_recebeu: v.vendedor_recebeu,
-              }));
-              const r = await runFipeBatch(veiculos, (p) => setProgressoFipe(p));
-              const matches = Object.keys(r.items).length;
-              setFipeMsg(`FIPE atualizado para ${matches} carro${matches === 1 ? "" : "s"}${r.erros.length > 0 ? ` · ${r.erros.length} sem match` : ""}.`);
-            } catch (err) {
-              setFipeMsg(`Erro ao buscar FIPE: ${err instanceof Error ? err.message : String(err)}`);
-            } finally {
-              setRodandoFipe(false);
-            }
-          }}
-          disabled={filtered.length === 0 || rodandoFipe || exportando}
-          title="Busca preço FIPE pros carros filtrados que ainda não estão no cache"
-          className="inline-flex items-center gap-1.5 rounded-md border border-amber-500 bg-amber-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-300 disabled:text-zinc-500 dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-500"
+        {/* Avançados: colapsáveis */}
+        <div
+          id="filtros-avancados-vendas"
+          inert={!avancadoOpen}
+          aria-hidden={!avancadoOpen}
+          className={cn(
+            "grid overflow-hidden transition-all duration-200 ease-out",
+            avancadoOpen ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+          )}
         >
-          {rodandoFipe ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          {rodandoFipe ? "Buscando FIPE…" : "Buscar FIPE agora"}
-        </button>
+          <div className="min-h-0">
+            <div className="flex flex-wrap items-center gap-3 rounded-md bg-zinc-50 p-3 dark:bg-zinc-950/40">
+              <Select label="Marca" value={filtroMarca} onChange={setFiltroMarca} options={[["all", "Todas"], ...marcas.map((m) => [m, m] as [string, string])]} />
+              <Select label="UF" value={filtroUf} onChange={setFiltroUf} options={[["all", "Todos"], ...ufs.map((u) => [u, u] as [string, string])]} />
+              <Select
+                label="Tipo"
+                value={filtroTipoCli}
+                onChange={(v) => setFiltroTipoCli(v as typeof filtroTipoCli)}
+                options={hasAnyTroca
+                  ? [["all", "Todos"], ["PF", "Só PF"], ["PJ", "Só PJ"], ["troca", "Com troca"]]
+                  : [["all", "Todos"], ["PF", "Só PF"], ["PJ", "Só PJ"]]}
+              />
+              <Select label="Recorrência" value={filtroRecorrencia} onChange={(v) => setFiltroRecorrencia(v as typeof filtroRecorrencia)} options={[["all", "Todas"], ["unica", "1 compra"], ["2-3", "2 a 3"], ["4mais", "4+ (suspeito)"]]} />
+            </div>
+          </div>
+        </div>
 
-        <button
-          type="button"
-          onClick={async () => {
-            if (exportando) return;
-            setExportando(true);
-            try {
-              const mapaFipe = new Map<string, number>();
-              if (fipeBatch?.items) {
-                const itemsByChassi = fipeBatch.items;
-                for (const v of filtered) {
-                  const item = itemsByChassi[v.chassi];
-                  if (item && item.precoFipe > 0) {
-                    mapaFipe.set(v.chassi, item.precoFipe);
+        {/* Ações de exportação */}
+        <div className="flex flex-wrap items-center gap-3 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+          <button
+            type="button"
+            onClick={async () => {
+              if (rodandoFipe) return;
+              setRodandoFipe(true);
+              setFipeMsg(null);
+              setProgressoFipe(null);
+              try {
+                const veiculos: VeiculoParsed[] = filtered.map((v) => ({
+                  cod_empresa: v.cod_empresa,
+                  chassi: v.chassi,
+                  placa: v.placa,
+                  marca: v.marca,
+                  modelo: v.modelo,
+                  ano_fabricacao: v.ano_fabricacao,
+                  ano_modelo: v.ano_modelo,
+                  cor_externa: v.cor_externa,
+                  combustivel: inferirCombustivel(v.modelo),
+                  km: v.km,
+                  patio: v.patio ?? "",
+                  descricao_situacao: null,
+                  preco_venda: v.valor_venda,
+                  valor_aquisicao: null,
+                  custo_total: null,
+                  dias_patio: v.dias_estoque,
+                  data_entrada: null,
+                  vendedor_recebeu: v.vendedor_recebeu,
+                }));
+                const r = await runFipeBatch(veiculos, (p) => setProgressoFipe(p));
+                const matches = Object.keys(r.items).length;
+                setFipeMsg(`FIPE atualizado para ${matches} carro${matches === 1 ? "" : "s"}${r.erros.length > 0 ? ` · ${r.erros.length} sem match` : ""}.`);
+              } catch (err) {
+                setFipeMsg(`Erro ao buscar FIPE: ${err instanceof Error ? err.message : String(err)}`);
+              } finally {
+                setRodandoFipe(false);
+              }
+            }}
+            disabled={filtered.length === 0 || rodandoFipe || exportando}
+            title="Busca preço FIPE pros carros filtrados que ainda não estão no cache"
+            className="inline-flex items-center gap-1.5 rounded-md border border-amber-500 bg-amber-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-300 disabled:text-zinc-500 dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-500"
+          >
+            {rodandoFipe ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            {rodandoFipe ? "Buscando FIPE…" : "Buscar FIPE agora"}
+          </button>
+
+          <button
+            type="button"
+            onClick={async () => {
+              if (exportando) return;
+              setExportando(true);
+              try {
+                const mapaFipe = new Map<string, number>();
+                if (fipeBatch?.items) {
+                  const itemsByChassi = fipeBatch.items;
+                  for (const v of filtered) {
+                    const item = itemsByChassi[v.chassi];
+                    if (item && item.precoFipe > 0) {
+                      mapaFipe.set(v.chassi, item.precoFipe);
+                    }
                   }
                 }
+                await baixarAnaliseNavesa({
+                  vendas: filtered,
+                  todasVendas: vendas,
+                  custosPorPlaca,
+                  fipePorChassi: mapaFipe,
+                  empresa: filtroLoja === "all" ? "TODAS" : filtroLoja,
+                  dataDe,
+                  dataAte,
+                });
+              } finally {
+                setExportando(false);
               }
-              await baixarAnaliseNavesa({
-                vendas: filtered,
-                todasVendas: vendas,
-                custosPorPlaca,
-                fipePorChassi: mapaFipe,
-                empresa: filtroLoja === "all" ? "TODAS" : filtroLoja,
-                dataDe,
-                dataAte,
-              });
-            } finally {
-              setExportando(false);
-            }
-          }}
-          disabled={filtered.length === 0 || exportando || rodandoFipe}
-          title="Gera planilha no formato USADOS ANALISE NAVESA respeitando os filtros aplicados (FIPE preenchida automaticamente onde houver cache)"
-          className="inline-flex items-center gap-1.5 rounded-md border border-purple-600 bg-purple-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-300 disabled:text-zinc-500 dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-500"
-        >
-          {exportando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-          {exportando ? "Exportando…" : "Exportar análise Navesa"}
-        </button>
+            }}
+            disabled={filtered.length === 0 || exportando || rodandoFipe}
+            title="Gera planilha no formato USADOS ANALISE NAVESA respeitando os filtros aplicados (FIPE preenchida automaticamente onde houver cache)"
+            className="inline-flex items-center gap-1.5 rounded-md border border-purple-600 bg-purple-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-300 disabled:text-zinc-500 dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-500"
+          >
+            {exportando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            {exportando ? "Exportando…" : "Exportar análise Navesa"}
+          </button>
+        </div>
       </div>
 
       {/* Progresso/feedback do batch FIPE */}
@@ -526,9 +598,31 @@ export function VendasAnalise() {
         </div>
       )}
 
-      {/* Resultado */}
+      {/* Indicador X de Y · Limpar filtros */}
       <p className="text-sm text-zinc-600 dark:text-zinc-400">
-        Mostrando <strong>{formatInt(filtered.length)}</strong> venda{filtered.length === 1 ? "" : "s"} · valor: <strong>{formatBRL(kpis.valor)}</strong> · margem: <strong className={kpis.margem < 0 ? "text-red-700" : "text-green-700"}>{formatBRL(kpis.margem)}</strong>
+        {filtrosAtivos > 0
+          ? filtered.length === 0
+            ? <>Sem resultados pra esses filtros</>
+            : <>Mostrando <strong>{formatInt(filtered.length)}</strong> de <strong>{formatInt(vendas.length)}</strong> venda{vendas.length === 1 ? "" : "s"}</>
+          : <><strong>{formatInt(vendas.length)}</strong> venda{vendas.length === 1 ? "" : "s"}</>}
+        {filtered.length > 0 && (
+          <>
+            {" · "}valor: <strong>{formatBRL(kpis.valor)}</strong>
+            {" · "}margem: <strong className={kpis.margem < 0 ? "text-red-700" : "text-green-700"}>{formatBRL(kpis.margem)}</strong>
+          </>
+        )}
+        {filtrosAtivos > 0 && (
+          <>
+            {" · "}
+            <button
+              type="button"
+              onClick={limparFiltros}
+              className="text-blue-700 underline-offset-2 hover:underline dark:text-blue-400"
+            >
+              Limpar filtros
+            </button>
+          </>
+        )}
       </p>
 
       {/* Tabela */}
