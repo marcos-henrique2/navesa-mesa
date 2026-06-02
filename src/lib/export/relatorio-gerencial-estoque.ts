@@ -76,14 +76,15 @@ const COL = {
   E_MODELO: 5,
   F_ANO: 6,
   G_KM: 7,
-  H_AQUISICAO: 8,
-  I_VENDA: 9,
-  J_MARGEM: 10,
-  K_STATUS: 11,
-  L_LOCAL: 12,
+  H_DIAS: 8,
+  I_AQUISICAO: 9,
+  J_VENDA: 10,
+  K_MARGEM: 11,
+  L_STATUS: 12,
+  M_LOCAL: 13,
 } as const;
 
-const TOTAL_COLS = 12;
+const TOTAL_COLS = 13;
 
 const COL_WIDTHS: Record<number, number> = {
   [COL.A_SEQ]: 5,
@@ -93,11 +94,12 @@ const COL_WIDTHS: Record<number, number> = {
   [COL.E_MODELO]: 35,
   [COL.F_ANO]: 7,
   [COL.G_KM]: 11,
-  [COL.H_AQUISICAO]: 14,
-  [COL.I_VENDA]: 14,
-  [COL.J_MARGEM]: 14,
-  [COL.K_STATUS]: 16,
-  [COL.L_LOCAL]: 18,
+  [COL.H_DIAS]: 10,
+  [COL.I_AQUISICAO]: 14,
+  [COL.J_VENDA]: 14,
+  [COL.K_MARGEM]: 14,
+  [COL.L_STATUS]: 16,
+  [COL.M_LOCAL]: 18,
 };
 
 const HEADERS: Record<number, string> = {
@@ -108,11 +110,12 @@ const HEADERS: Record<number, string> = {
   [COL.E_MODELO]: "MODELO",
   [COL.F_ANO]: "ANO",
   [COL.G_KM]: "KM",
-  [COL.H_AQUISICAO]: "PREÇO ENTRADA",
-  [COL.I_VENDA]: "PREÇO VENDA",
-  [COL.J_MARGEM]: "MARGEM EST.",
-  [COL.K_STATUS]: "STATUS",
-  [COL.L_LOCAL]: "LOCALIZAÇÃO",
+  [COL.H_DIAS]: "DIAS PÁTIO",
+  [COL.I_AQUISICAO]: "PREÇO ENTRADA",
+  [COL.J_VENDA]: "PREÇO VENDA",
+  [COL.K_MARGEM]: "MARGEM EST.",
+  [COL.L_STATUS]: "STATUS",
+  [COL.M_LOCAL]: "LOCALIZAÇÃO",
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -326,7 +329,7 @@ export async function gerarRelatorioGerencial(
   }
 
   // ─── Linha 1: título ───
-  ws.mergeCells(1, COL.A_SEQ, 1, COL.L_LOCAL);
+  ws.mergeCells(1, COL.A_SEQ, 1, COL.M_LOCAL);
   const row1 = ws.getRow(1);
   row1.height = 32;
   const titleCell = row1.getCell(COL.A_SEQ);
@@ -343,13 +346,13 @@ export async function gerarRelatorioGerencial(
   const row2 = ws.getRow(2);
   row2.height = 22;
   ws.mergeCells(2, COL.A_SEQ, 2, COL.C_PLACA);
-  ws.mergeCells(2, COL.D_MARCA, 2, COL.G_KM);
-  ws.mergeCells(2, COL.H_AQUISICAO, 2, COL.L_LOCAL);
+  ws.mergeCells(2, COL.D_MARCA, 2, COL.H_DIAS);
+  ws.mergeCells(2, COL.I_AQUISICAO, 2, COL.M_LOCAL);
 
   const metaCells: Array<{ col: number; text: string }> = [
     { col: COL.A_SEQ, text: `Data: ${fmtDataBR()}` },
     { col: COL.D_MARCA, text: `Loja: ${filtroLoja === "all" ? "TODAS" : filtroLoja}` },
-    { col: COL.H_AQUISICAO, text: `Total de veículos: ${veiculos.length}` },
+    { col: COL.I_AQUISICAO, text: `Total de veículos: ${veiculos.length}` },
   ];
   for (const { col, text } of metaCells) {
     const cell = row2.getCell(col);
@@ -442,21 +445,21 @@ export async function gerarRelatorioGerencial(
     gCell.alignment = { horizontal: "right", vertical: "middle", indent: 1 };
     gCell.font = { size: 10 };
 
-    // H — Preço entrada (aquisição)
-    const hCell = row.getCell(COL.H_AQUISICAO);
-    if (v.valor_aquisicao != null) {
-      hCell.value = v.valor_aquisicao;
-      hCell.numFmt = FMT_MONEY_INT;
+    // H — Dias pátio
+    const hCell = row.getCell(COL.H_DIAS);
+    if (v.dias_patio != null) {
+      hCell.value = v.dias_patio;
+      hCell.numFmt = FMT_INT;
     } else {
       hCell.value = "—";
     }
-    hCell.alignment = { horizontal: "right", vertical: "middle", indent: 1 };
+    hCell.alignment = { horizontal: "center", vertical: "middle" };
     hCell.font = { size: 10 };
 
-    // I — Preço venda
-    const iCell = row.getCell(COL.I_VENDA);
-    if (v.preco_venda != null) {
-      iCell.value = v.preco_venda;
+    // I — Preço entrada (aquisição)
+    const iCell = row.getCell(COL.I_AQUISICAO);
+    if (v.valor_aquisicao != null) {
+      iCell.value = v.valor_aquisicao;
       iCell.numFmt = FMT_MONEY_INT;
     } else {
       iCell.value = "—";
@@ -464,90 +467,101 @@ export async function gerarRelatorioGerencial(
     iCell.alignment = { horizontal: "right", vertical: "middle", indent: 1 };
     iCell.font = { size: 10 };
 
-    // J — Margem estimada (com cor condicional)
-    const jCell = row.getCell(COL.J_MARGEM);
-    const margem = classificarMargem(v.valor_aquisicao, v.preco_venda);
-    if (margem.valor != null) {
-      jCell.value = margem.valor;
+    // J — Preço venda
+    const jCell = row.getCell(COL.J_VENDA);
+    if (v.preco_venda != null) {
+      jCell.value = v.preco_venda;
       jCell.numFmt = FMT_MONEY_INT;
     } else {
       jCell.value = "—";
     }
     jCell.alignment = { horizontal: "right", vertical: "middle", indent: 1 };
+    jCell.font = { size: 10 };
+
+    // K — Margem estimada (com cor condicional)
+    const kCell = row.getCell(COL.K_MARGEM);
+    const margem = classificarMargem(v.valor_aquisicao, v.preco_venda);
+    if (margem.valor != null) {
+      kCell.value = margem.valor;
+      kCell.numFmt = FMT_MONEY_INT;
+    } else {
+      kCell.value = "—";
+    }
+    kCell.alignment = { horizontal: "right", vertical: "middle", indent: 1 };
     if (margem.tone === "neg") {
-      jCell.font = { size: 10, bold: true, color: { argb: COLOR.marginNegFg } };
-      jCell.fill = {
+      kCell.font = { size: 10, bold: true, color: { argb: COLOR.marginNegFg } };
+      kCell.fill = {
         type: "pattern",
         pattern: "solid",
         fgColor: { argb: COLOR.marginNegBg },
       };
     } else if (margem.tone === "good") {
-      jCell.font = { size: 10, bold: true, color: { argb: COLOR.marginGoodFg } };
-      jCell.fill = {
+      kCell.font = { size: 10, bold: true, color: { argb: COLOR.marginGoodFg } };
+      kCell.fill = {
         type: "pattern",
         pattern: "solid",
         fgColor: { argb: COLOR.marginGoodBg },
       };
     } else {
-      jCell.font = { size: 10 };
+      kCell.font = { size: 10 };
     }
 
-    // K — Status (descrição da situação, com cor condicional)
-    const kCell = row.getCell(COL.K_STATUS);
+    // L — Status (descrição da situação, com cor condicional)
+    const lCell = row.getCell(COL.L_STATUS);
     const statusTone = classificarStatus(v.descricao_situacao);
-    kCell.value = v.descricao_situacao?.trim() || "—";
-    kCell.alignment = { horizontal: "center", vertical: "middle" };
+    lCell.value = v.descricao_situacao?.trim() || "—";
+    lCell.alignment = { horizontal: "center", vertical: "middle" };
     if (statusTone === "disponivel") {
-      kCell.font = { size: 10, bold: true, color: { argb: COLOR.statusDisponivelFg } };
-      kCell.fill = {
+      lCell.font = { size: 10, bold: true, color: { argb: COLOR.statusDisponivelFg } };
+      lCell.fill = {
         type: "pattern",
         pattern: "solid",
         fgColor: { argb: COLOR.statusDisponivelBg },
       };
     } else if (statusTone === "faltaDoc") {
-      kCell.font = { size: 10, bold: true, color: { argb: COLOR.statusFaltaDocFg } };
-      kCell.fill = {
+      lCell.font = { size: 10, bold: true, color: { argb: COLOR.statusFaltaDocFg } };
+      lCell.fill = {
         type: "pattern",
         pattern: "solid",
         fgColor: { argb: COLOR.statusFaltaDocBg },
       };
     } else if (statusTone === "bloqueado") {
-      kCell.font = { size: 10, bold: true, color: { argb: COLOR.statusBloqueadoFg } };
-      kCell.fill = {
+      lCell.font = { size: 10, bold: true, color: { argb: COLOR.statusBloqueadoFg } };
+      lCell.fill = {
         type: "pattern",
         pattern: "solid",
         fgColor: { argb: COLOR.statusBloqueadoBg },
       };
     } else {
-      kCell.font = { size: 10 };
+      lCell.font = { size: 10 };
     }
 
-    // L — Localização (pátio, com cor condicional por categoria)
-    const lCell = row.getCell(COL.L_LOCAL);
+    // M — Localização (pátio, com cor condicional por categoria)
+    const mCell = row.getCell(COL.M_LOCAL);
     const patioCategoria = categorizarPatio(v.patio);
-    lCell.value = v.patio.trim() || "—";
-    lCell.alignment = { horizontal: "left", vertical: "middle", indent: 1 };
-    lCell.font = { size: 10 };
+    mCell.value = v.patio.trim() || "—";
+    mCell.alignment = { horizontal: "left", vertical: "middle", indent: 1 };
+    mCell.font = { size: 10 };
     if (patioCategoria === "prep") {
-      lCell.fill = {
+      mCell.fill = {
         type: "pattern",
         pattern: "solid",
         fgColor: { argb: COLOR.patioPrepBg },
       };
     } else if (patioCategoria === "transito") {
-      lCell.fill = {
+      mCell.fill = {
         type: "pattern",
         pattern: "solid",
         fgColor: { argb: COLOR.patioTransitoBg },
       };
     } else if (patioCategoria === "oficina") {
-      lCell.fill = {
+      mCell.fill = {
         type: "pattern",
         pattern: "solid",
         fgColor: { argb: COLOR.patioOficinaBg },
       };
     } else if (patioCategoria === "bloqueado") {
-      lCell.fill = {
+      mCell.fill = {
         type: "pattern",
         pattern: "solid",
         fgColor: { argb: COLOR.patioBloqueadoBg },
@@ -558,13 +572,13 @@ export async function gerarRelatorioGerencial(
     const margemTemFill = margem.tone !== "neutral";
     const statusTemFill = statusTone !== "neutro";
     const localTemFill = patioCategoria !== "loja" && patioCategoria !== "outro";
-    for (let c: number = COL.A_SEQ; c <= COL.L_LOCAL; c++) {
+    for (let c: number = COL.A_SEQ; c <= COL.M_LOCAL; c++) {
       const cell = row.getCell(c);
       cell.border = thinBorder();
       if (isZebra) {
-        if (c === COL.J_MARGEM && margemTemFill) continue;
-        if (c === COL.K_STATUS && statusTemFill) continue;
-        if (c === COL.L_LOCAL && localTemFill) continue;
+        if (c === COL.K_MARGEM && margemTemFill) continue;
+        if (c === COL.L_STATUS && statusTemFill) continue;
+        if (c === COL.M_LOCAL && localTemFill) continue;
         cell.fill = zebraFill;
       }
     }
@@ -585,7 +599,7 @@ export async function gerarRelatorioGerencial(
   let cursor = lastDataRow + 3; // pula 2 linhas vazias
 
   // Cabeçalho do bloco
-  ws.mergeCells(cursor, COL.A_SEQ, cursor, COL.L_LOCAL);
+  ws.mergeCells(cursor, COL.A_SEQ, cursor, COL.M_LOCAL);
   const blockHeaderRow = ws.getRow(cursor);
   blockHeaderRow.height = 26;
   const blockHeaderCell = blockHeaderRow.getCell(COL.A_SEQ);
@@ -673,8 +687,8 @@ export async function gerarRelatorioGerencial(
           ? COLOR.statusFaltaDocBg
           : COLOR.totalBg;
 
-    // Label: B..G merged
-    ws.mergeCells(cursor, COL.B_LOJA, cursor, COL.G_KM);
+    // Label: B..H merged
+    ws.mergeCells(cursor, COL.B_LOJA, cursor, COL.H_DIAS);
     const labelCell = r.getCell(COL.B_LOJA);
     labelCell.value = linha.label + (linha.alerta ? "  ⚠" : "");
     labelCell.font = {
@@ -690,9 +704,9 @@ export async function gerarRelatorioGerencial(
     };
     labelCell.border = thinBorder();
 
-    // Valor: H..L merged
-    ws.mergeCells(cursor, COL.H_AQUISICAO, cursor, COL.L_LOCAL);
-    const valorCell = r.getCell(COL.H_AQUISICAO);
+    // Valor: I..M merged
+    ws.mergeCells(cursor, COL.I_AQUISICAO, cursor, COL.M_LOCAL);
+    const valorCell = r.getCell(COL.I_AQUISICAO);
     valorCell.value = linha.valor;
     if (linha.numFmt) valorCell.numFmt = linha.numFmt;
     valorCell.font = {

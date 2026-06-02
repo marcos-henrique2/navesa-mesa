@@ -56,22 +56,24 @@ const COL = {
   G_KM: 7,
   H_DIAS: 8,
   I_AQUISICAO: 9,
-  J_CONFERIDO: 10,
+  J_LOCALIZACAO: 10,
+  K_CONFERIDO: 11,
 } as const;
 
-const TOTAL_COLS = 10;
+const TOTAL_COLS = 11;
 
 const COL_WIDTHS: Record<number, number> = {
   [COL.A_SEQ]: 5,
   [COL.B_LOJA]: 22,
   [COL.C_PLACA]: 10,
   [COL.D_CHASSI]: 22,
-  [COL.E_VEICULO]: 35,
-  [COL.F_ANO]: 12,
-  [COL.G_KM]: 14,
-  [COL.H_DIAS]: 12,
-  [COL.I_AQUISICAO]: 16,
-  [COL.J_CONFERIDO]: 14,
+  [COL.E_VEICULO]: 30,
+  [COL.F_ANO]: 11,
+  [COL.G_KM]: 12,
+  [COL.H_DIAS]: 10,
+  [COL.I_AQUISICAO]: 14,
+  [COL.J_LOCALIZACAO]: 20,
+  [COL.K_CONFERIDO]: 14,
 };
 
 const HEADERS: Record<number, string> = {
@@ -84,7 +86,8 @@ const HEADERS: Record<number, string> = {
   [COL.G_KM]: "KM",
   [COL.H_DIAS]: "DIAS PÁTIO",
   [COL.I_AQUISICAO]: "AQUISIÇÃO",
-  [COL.J_CONFERIDO]: "✓ CONFERIDO",
+  [COL.J_LOCALIZACAO]: "LOCALIZAÇÃO",
+  [COL.K_CONFERIDO]: "✓ CONFERIDO",
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -163,7 +166,7 @@ export async function gerarConferenciaEstoque(
   }
 
   // ─── Linha 1: título ───
-  ws.mergeCells(1, COL.A_SEQ, 1, COL.J_CONFERIDO);
+  ws.mergeCells(1, COL.A_SEQ, 1, COL.K_CONFERIDO);
   const row1 = ws.getRow(1);
   row1.height = 32;
   const titleCell = row1.getCell(COL.A_SEQ);
@@ -181,7 +184,7 @@ export async function gerarConferenciaEstoque(
   row2.height = 22;
   ws.mergeCells(2, COL.A_SEQ, 2, COL.C_PLACA);
   ws.mergeCells(2, COL.D_CHASSI, 2, COL.F_ANO);
-  ws.mergeCells(2, COL.G_KM, 2, COL.J_CONFERIDO);
+  ws.mergeCells(2, COL.G_KM, 2, COL.K_CONFERIDO);
 
   const metaCells: Array<{ col: number; text: string }> = [
     { col: COL.A_SEQ, text: `Data: ${fmtDataBR()}` },
@@ -300,13 +303,19 @@ export async function gerarConferenciaEstoque(
     iCell.alignment = { horizontal: "right", vertical: "middle", indent: 1 };
     iCell.font = { size: 10 };
 
-    // J — Conferido (vazio pra marcação manual)
-    const jCell = row.getCell(COL.J_CONFERIDO);
-    jCell.value = "";
-    jCell.alignment = { horizontal: "center", vertical: "middle" };
+    // J — Localização (pátio físico — pode ser diferente da Loja dona)
+    const jCell = row.getCell(COL.J_LOCALIZACAO);
+    jCell.value = v.patio?.trim() || "—";
+    jCell.alignment = { horizontal: "left", vertical: "middle", indent: 1 };
+    jCell.font = { size: 10 };
+
+    // K — Conferido (vazio pra marcação manual)
+    const kCell = row.getCell(COL.K_CONFERIDO);
+    kCell.value = "";
+    kCell.alignment = { horizontal: "center", vertical: "middle" };
 
     // Aplica bordas + zebra em todas as células
-    for (let c = COL.A_SEQ; c <= COL.J_CONFERIDO; c++) {
+    for (let c = COL.A_SEQ; c <= COL.K_CONFERIDO; c++) {
       const cell = row.getCell(c);
       cell.border = thinBorder();
       if (isZebra) cell.fill = zebraFill;
@@ -318,7 +327,7 @@ export async function gerarConferenciaEstoque(
   const totalRowNum = lastDataRow + 3; // pula 2 linhas vazias
 
   // Linha de total (merge A:J pra ficar destacado, fundo cinza, bold)
-  ws.mergeCells(totalRowNum, COL.A_SEQ, totalRowNum, COL.J_CONFERIDO);
+  ws.mergeCells(totalRowNum, COL.A_SEQ, totalRowNum, COL.K_CONFERIDO);
   const totalRow = ws.getRow(totalRowNum);
   totalRow.height = 24;
   const totalCell = totalRow.getCell(COL.A_SEQ);
