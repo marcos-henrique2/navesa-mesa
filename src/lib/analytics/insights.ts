@@ -1052,14 +1052,24 @@ export function distribuicaoClasses(
 
 export type SeveridadeAlerta = "critico" | "atencao" | "info";
 
+/** Ação de drill-down: aplica filtros no sessionStorage e navega pra rota. */
+export type AcaoAlerta = {
+  /** Rota destino */
+  rota: "/veiculos" | "/vendas";
+  /** Filtros a aplicar antes de navegar. Chaves SEM prefixo (será adicionado). */
+  filtros: Record<string, string>;
+  /** Label do botão (default: "Ver detalhes") */
+  label?: string;
+};
+
 export type Alerta = {
   id: string;
   severidade: SeveridadeAlerta;
   icone: string;
   titulo: string;
   detalhe: string;
-  /** Link opcional pra detalhar (página + query). */
-  link?: { href: string; label: string };
+  /** Drill-down opcional: aplica filtros e navega. */
+  acao?: AcaoAlerta;
 };
 
 /**
@@ -1090,7 +1100,6 @@ export function gerarAlertas(
         icone: "🚨",
         titulo: `Sem bônus de fábrica, operação está no prejuízo`,
         detalhe: `Margem atual R$ ${fmtBR(sumario.margem)} é menor que os R$ ${fmtBR(sumario.ganhosIndiretos)} em bônus. Sem eles, prejuízo de R$ ${fmtBR(Math.abs(sumario.margemSemBonus))}.`,
-        link: { href: "/insights", label: "Ver detalhes" },
       });
     }
   }
@@ -1106,7 +1115,11 @@ export function gerarAlertas(
         icone: "⏰",
         titulo: `${parados180.length} carros parados há mais de 180 dias`,
         detalhe: `R$ ${fmtBR(valor)} em exposição. Histórico mostra que carros nessa faixa fecham com margem média de -20%. Considere leilão/repasse urgente.`,
-        link: { href: "/veiculos", label: "Ver carros" },
+        acao: {
+          rota: "/veiculos",
+          filtros: { diasMin: "180" },
+          label: "Ver carros parados",
+        },
       });
     }
   }
@@ -1121,7 +1134,6 @@ export function gerarAlertas(
         icone: "🔴",
         titulo: `${risco.qtEmRisco} carros em modelos com histórico de prejuízo`,
         detalhe: `R$ ${fmtBR(risco.valorEmRisco)} em estoque ativo. Esses modelos já fecharam vendas com margem negativa nesse período.`,
-        link: { href: "/insights", label: "Ver lista" },
       });
     }
   }
@@ -1137,7 +1149,11 @@ export function gerarAlertas(
           icone: "🏬",
           titulo: `${l.loja}: ${fmtBR(l.margem)} de prejuízo`,
           detalhe: `${l.qt} vendas com margem ${l.margemPct.toFixed(2)}%. Investigar precificação.`,
-          link: { href: "/vendas", label: "Ver vendas" },
+          acao: {
+            rota: "/vendas",
+            filtros: { filtroLoja: l.loja },
+            label: "Ver vendas da loja",
+          },
         });
       }
     }
@@ -1155,7 +1171,11 @@ export function gerarAlertas(
         icone: "👤",
         titulo: `${v.vendedor}: ${v.margemPct.toFixed(2)}% em ${v.qt} vendas`,
         detalhe: `Vendendo com margem ${v.margemPct.toFixed(2)}% — perda média de R$ ${fmtBR(Math.abs(v.margem / v.qt))} por venda. Investigar política de desconto.`,
-        link: { href: "/vendas", label: "Ver detalhes" },
+        acao: {
+          rota: "/vendas",
+          filtros: { filtroVendedor: v.vendedor },
+          label: "Ver vendas do vendedor",
+        },
       });
     }
   }
@@ -1178,7 +1198,11 @@ export function gerarAlertas(
         icone: "📦",
         titulo: `${c.qt} unidades de ${c.modelo} no estoque`,
         detalhe: `R$ ${fmtBR(c.valor)} concentrados. A política Auto Avaliar recomenda repasse pra modelos com ≥5 unidades.`,
-        link: { href: "/veiculos", label: "Ver unidades" },
+        acao: {
+          rota: "/veiculos",
+          filtros: { search: c.modelo },
+          label: "Ver unidades",
+        },
       });
     }
   }
@@ -1207,7 +1231,11 @@ export function gerarAlertas(
         icone: "📈",
         titulo: `${qtAcima10} carros pedindo mais de 10% acima da FIPE`,
         detalhe: `R$ ${fmtBR(valorAcima10)} em estoque com preço acima do mercado. Risco real de não vender ou ficar muito tempo parado.`,
-        link: { href: "/veiculos", label: "Ver carros" },
+        acao: {
+          rota: "/veiculos",
+          filtros: { filtroFipe: "acima" },
+          label: "Ver carros acima da FIPE",
+        },
       });
     }
     if (qtAcima5 > 0) {
@@ -1217,7 +1245,11 @@ export function gerarAlertas(
         icone: "📊",
         titulo: `${qtAcima5} carros pedindo entre 5% e 10% acima da FIPE`,
         detalhe: `R$ ${fmtBR(valorAcima5)} levemente acima do mercado. Considere revisar precificação.`,
-        link: { href: "/veiculos", label: "Ver carros" },
+        acao: {
+          rota: "/veiculos",
+          filtros: { filtroFipe: "acima" },
+          label: "Ver carros acima da FIPE",
+        },
       });
     }
   }
@@ -1239,7 +1271,11 @@ export function gerarAlertas(
         icone: "🔴",
         titulo: `${reprovados} carros com cautelar REPROVADA no estoque`,
         detalhe: `Esses carros são classe E — só repasse via leilão. Considere remover do show room.`,
-        link: { href: "/veiculos", label: "Ver carros" },
+        acao: {
+          rota: "/veiculos",
+          filtros: { filtroCautelar: "reprovado" },
+          label: "Ver carros reprovados",
+        },
       });
     }
     if (comRestricao > 0) {
@@ -1249,7 +1285,6 @@ export function gerarAlertas(
         icone: "⚠️",
         titulo: `${comRestricao} carros com cautelar COM RESTRIÇÃO`,
         detalhe: `Carros que precisam de atenção na precificação. Foram rebaixados 1 classe na política Auto Avaliar.`,
-        link: { href: "/veiculos", label: "Ver carros" },
       });
     }
     if (semCautelar > veiculos.length * 0.5 && veiculos.length > 0) {
@@ -1259,7 +1294,6 @@ export function gerarAlertas(
         icone: "📋",
         titulo: `${semCautelar} carros sem laudo cautelar informado`,
         detalhe: `${((semCautelar / veiculos.length) * 100).toFixed(0)}% do estoque sem laudo. Preencher melhora a classificação automática.`,
-        link: { href: "/veiculos", label: "Ver estoque" },
       });
     }
   }
@@ -1274,7 +1308,6 @@ export function gerarAlertas(
         icone: "📋",
         titulo: `Cobertura de custos NBS abaixo de 95%`,
         detalhe: `Apenas ${(sumario.cobertura * 100).toFixed(1)}% das vendas têm custo oficial cruzado. O resto usa estimativa. Suba o relatório de custos atualizado.`,
-        link: { href: "/upload", label: "Atualizar custos" },
       });
     }
   }
