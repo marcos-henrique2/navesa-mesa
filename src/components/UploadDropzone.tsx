@@ -2,8 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
-import { useRouter } from "next/navigation";
-import { UploadCloud, FileSpreadsheet, AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
+import { UploadCloud, FileSpreadsheet, AlertCircle, CheckCircle2, Loader2, RotateCcw } from "lucide-react";
 import { parseNbsXlsx } from "@/lib/parsers/nbs-xlsx";
 import { parseNbsVendasXlsx } from "@/lib/parsers/nbs-vendas-xlsx";
 import { parseNbsCustosXls } from "@/lib/parsers/nbs-custos-xls";
@@ -16,19 +15,19 @@ const CONFIG = {
   estoque: {
     title: "Estoque (Veículos em Estoque)",
     desc: "Arraste o XLSX de estoque do NBS aqui.",
-    redirect: "/veiculos",
+    label: "Estoque",
     accept: { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] },
   },
   vendas: {
     title: "Vendas (Veículos Vendidos)",
     desc: "Arraste o XLSX de vendas do NBS aqui.",
-    redirect: "/vendas",
+    label: "Vendas",
     accept: { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] },
   },
   custos: {
     title: "Custos (Relatório de Custos)",
     desc: "Arraste o .xls de Custos do NBS aqui.",
-    redirect: "/vendas",
+    label: "Custos",
     accept: {
       "application/vnd.ms-excel": [".xls"],
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
@@ -37,13 +36,20 @@ const CONFIG = {
 };
 
 export function UploadDropzone({ modo }: { modo: Modo }) {
-  const router = useRouter();
   const { setFromParse, setVendasFromParse, setCustosFromParse, clearVendas, clearCustos, meta, vendasMeta, custosMeta } = useInventory();
   const [status, setStatus] = useState<"idle" | "parsing" | "done" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [resultCount, setResultCount] = useState<number | null>(null);
   const [mergeFeedback, setMergeFeedback] = useState<string | null>(null);
+
+  const resetar = useCallback(() => {
+    setStatus("idle");
+    setError(null);
+    setFileName(null);
+    setResultCount(null);
+    setMergeFeedback(null);
+  }, []);
 
   const onDrop = useCallback(
     async (accepted: File[]) => {
@@ -85,13 +91,12 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
           }
         }
         setStatus("done");
-        setTimeout(() => router.push(CONFIG[modo].redirect), 1500);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Erro desconhecido");
         setStatus("error");
       }
     },
-    [modo, setFromParse, setVendasFromParse, setCustosFromParse, router],
+    [modo, setFromParse, setVendasFromParse, setCustosFromParse],
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -183,21 +188,37 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
               )}
               {status === "done" && (
                 <>
-                  <p className="mt-1 flex items-center gap-2 text-xs text-green-600">
+                  <p className="mt-1 flex items-center gap-2 text-xs font-medium text-green-700">
                     <CheckCircle2 className="h-3 w-3" />
-                    {formatInt(resultCount ?? 0)} registros — redirecionando…
+                    {cfg.label} importado ({formatInt(resultCount ?? 0)} registros). Você pode subir o próximo arquivo.
                   </p>
                   {mergeFeedback && (
                     <p className="mt-1 text-[11px] text-slate-500">
                       Merge incremental: {mergeFeedback}
                     </p>
                   )}
+                  <button
+                    type="button"
+                    onClick={resetar}
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  >
+                    <RotateCcw className="h-3 w-3" /> Subir outro arquivo
+                  </button>
                 </>
               )}
               {status === "error" && (
-                <p className="mt-1 flex items-center gap-2 text-xs text-red-600">
-                  <AlertCircle className="h-3 w-3" /> {error}
-                </p>
+                <>
+                  <p className="mt-1 flex items-center gap-2 text-xs text-red-600">
+                    <AlertCircle className="h-3 w-3" /> {error}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={resetar}
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  >
+                    <RotateCcw className="h-3 w-3" /> Tentar novamente
+                  </button>
+                </>
               )}
             </div>
           </div>
