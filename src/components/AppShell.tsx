@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { LayoutDashboard, Car, TrendingUp, Building2, Upload, Menu, X, Sparkles, MessageSquare, History, ChevronLeft, ChevronRight } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { LayoutDashboard, Car, TrendingUp, Building2, Upload, Menu, X, Sparkles, MessageSquare, History, ChevronLeft, ChevronRight, LogOut, Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { DataGate } from "./DataGate";
+import { createClient } from "@/lib/supabase/client";
 
 const COLLAPSED_KEY = "navesa-mesa:sidebar-collapsed";
 
@@ -41,6 +42,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     try { localStorage.setItem(COLLAPSED_KEY, String(collapsed)); } catch {}
   }, [collapsed]);
 
+  // /login não tem shell — renderiza children direto (sem sidebar, sem DataGate).
+  // Mantido após os hooks acima pra respeitar rules-of-hooks.
+  if (pathname === "/login") {
+    return <>{children}</>;
+  }
+
   const toggle = () => setCollapsed((c) => !c);
 
   return (
@@ -69,14 +76,73 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Main */}
       <div className="flex flex-1 flex-col min-w-0">
-        {/* Topbar mobile */}
+        {/* Topbar mobile (sidebar trigger + user) */}
         <header className="flex items-center gap-3 border-b border-[var(--border-soft)] bg-white px-4 py-3 md:hidden">
           <button onClick={() => setOpen(true)} className="rounded-md p-1.5 text-slate-600 hover:bg-slate-100"><Menu className="h-5 w-5" /></button>
           <span className="font-semibold text-slate-900">Navesa Mesa</span>
+          <div className="ml-auto"><UserMenu /></div>
+        </header>
+
+        {/* Topbar desktop (só user no canto direito) */}
+        <header className="hidden md:flex items-center justify-end border-b border-[var(--border-soft)] bg-white px-6 py-2">
+          <UserMenu />
         </header>
 
         <main className="flex-1 min-w-0"><DataGate>{children}</DataGate></main>
       </div>
+    </div>
+  );
+}
+
+function UserMenu() {
+  const router = useRouter();
+  const [email, setEmail] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
+
+  useEffect(() => {
+    const supabase = createClient();
+    let mounted = true;
+    supabase.auth.getUser().then(({ data }) => {
+      if (mounted) setEmail(data.user?.email ?? null);
+    });
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (mounted) setEmail(session?.user.email ?? null);
+    });
+    return () => {
+      mounted = false;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
+
+  async function handleSignOut() {
+    setSigningOut(true);
+    const supabase = createClient();
+    try {
+      await supabase.auth.signOut();
+      router.replace("/login");
+      router.refresh();
+    } finally {
+      setSigningOut(false);
+    }
+  }
+
+  if (!email) return null;
+
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span className="hidden truncate text-slate-500 sm:inline max-w-[200px]" title={email}>
+        {email}
+      </span>
+      <button
+        type="button"
+        onClick={handleSignOut}
+        disabled={signingOut}
+        className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 disabled:opacity-50"
+        title="Sair"
+      >
+        {signingOut ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
+        <span>Sair</span>
+      </button>
     </div>
   );
 }
