@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { useInventory } from "@/lib/store/inventory";
+import { useInventory, nomeOuCodigo } from "@/lib/store/inventory";
 import { agregarMargem } from "@/lib/analytics/margem";
 import { cn } from "@/lib/utils";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
@@ -23,25 +23,36 @@ type LojaStats = {
 };
 
 export function HeatmapLojas() {
-  const { veiculos, vendas, custosPorPlaca } = useInventory();
+  const { veiculos, vendas, custosPorPlaca, lojas } = useInventory();
 
   const stats = useMemo<LojaStats[]>(() => {
-    const map = new Map<string, { veiculos: VeiculoParsed[]; vendas: VendaParsed[] }>();
+    // Chave canônica: cod_empresa (estável entre vendas e veículos).
+    // Veículos não têm empresa_nome no Supabase — só vendas têm.
+    // Mapa cod_empresa → nome derivado de vendas (fallback pra "Loja X" se desconhecido).
+    const nomePorCod = new Map<number, string>();
+    for (const v of vendas) {
+      if (typeof v.cod_empresa === "number" && v.empresa_nome && !nomePorCod.has(v.cod_empresa)) {
+        nomePorCod.set(v.cod_empresa, v.empresa_nome);
+      }
+    }
+
+    const map = new Map<number, { veiculos: VeiculoParsed[]; vendas: VendaParsed[] }>();
     for (const v of veiculos) {
-      const k = `Loja ${v.cod_empresa}`;
-      const cur = map.get(k) ?? { veiculos: [], vendas: [] };
+      if (typeof v.cod_empresa !== "number") continue;
+      const cur = map.get(v.cod_empresa) ?? { veiculos: [], vendas: [] };
       cur.veiculos.push(v);
-      map.set(k, cur);
+      map.set(v.cod_empresa, cur);
     }
     for (const v of vendas) {
-      const k = v.empresa_nome ?? `Loja ${v.cod_empresa}`;
-      const cur = map.get(k) ?? { veiculos: [], vendas: [] };
+      if (typeof v.cod_empresa !== "number") continue;
+      const cur = map.get(v.cod_empresa) ?? { veiculos: [], vendas: [] };
       cur.vendas.push(v);
-      map.set(k, cur);
+      map.set(v.cod_empresa, cur);
     }
 
     const result: LojaStats[] = [];
-    for (const [loja, grupo] of map.entries()) {
+    for (const [cod, grupo] of map.entries()) {
+      const loja = nomeOuCodigo(lojas, cod) || nomePorCod.get(cod) || `Loja ${cod}`;
       const estoqueQt = grupo.veiculos.length;
       const estoqueValor = grupo.veiculos.reduce((s, v) => s + (v.valor_aquisicao ?? 0), 0);
 
