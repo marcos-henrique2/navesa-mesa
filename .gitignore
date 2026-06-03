@@ -43,3 +43,4 @@ scripts/*.local.ts
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+samples/

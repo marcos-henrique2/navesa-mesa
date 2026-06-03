@@ -7,6 +7,7 @@ import { useInventory, nomeOuCodigo } from "@/lib/store/inventory";
 import { classificarPatio, STATUS_LABEL } from "@/lib/inventory/status";
 import { PrecificacaoBlock } from "./veiculos/PrecificacaoBlock";
 import { ComposicaoCustos } from "./ComposicaoCustos";
+import { ComposicaoCustosEstoque } from "./ComposicaoCustosEstoque";
 import {
   classificarVeiculo,
   contarPorModelo,
@@ -26,11 +27,12 @@ import {
 import { formatBRL, formatInt, cn } from "@/lib/utils";
 
 export function VeiculoDetalhe({ chassi }: { chassi: string }) {
-  const { veiculos, lojas, vendas, custosPorPlaca, isHydrated } = useInventory();
+  const { veiculos, lojas, vendas, custosPorPlaca, custosEstoquePorPlaca, isHydrated } = useInventory();
 
   const veiculo = useMemo(() => veiculos.find((v) => v.chassi === chassi), [veiculos, chassi]);
 
   const custoDetalhado = veiculo?.placa ? custosPorPlaca[veiculo.placa] ?? null : null;
+  const custoEstoque = veiculo?.placa && !custoDetalhado ? custosEstoquePorPlaca[veiculo.placa] ?? null : null;
 
   const vendasDaPlaca = useMemo(() => {
     if (!veiculo?.placa || !custoDetalhado) return [];
@@ -133,9 +135,9 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
           <Row label="Margem bruta" value={margemAtual === null ? "—" : `${margemAtual.toFixed(1)}%`} bold tone={margemAtual !== null ? (margemAtual >= 7 ? "good" : margemAtual >= 3 ? "warn" : "bad") : undefined} />
           <Row label="Dias de pátio" value={formatInt(veiculo.dias_patio)} />
           <Row label="Data entrada" value={veiculo.data_entrada ? new Date(veiculo.data_entrada).toLocaleDateString("pt-BR") : "—"} />
-          {!custoDetalhado && (
+          {!custoDetalhado && !custoEstoque && (
             <p className="mt-3 text-xs italic text-[var(--text-muted)]">
-              ℹ️ Detalhe por categoria (oficina, floor plan, impostos, etc.) é fornecido pelo NBS apenas após a venda do carro.
+              ℹ️ Detalhe completo por categoria aparece quando o relatório &quot;Custos de Veículos em Estoque&quot; do NBS for importado pra essa loja.
             </p>
           )}
         </Card>
@@ -143,6 +145,10 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
 
       {custoDetalhado && vendasDaPlaca.length > 0 && (
         <ComposicaoCustos vendas={vendasDaPlaca} />
+      )}
+
+      {!custoDetalhado && custoEstoque && (
+        <ComposicaoCustosEstoque custo={custoEstoque} />
       )}
 
       {classificacao && (

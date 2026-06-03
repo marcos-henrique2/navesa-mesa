@@ -4,9 +4,15 @@ import { create } from "zustand";
 import type { ParseResult, VeiculoParsed, SnapshotMeta } from "@/lib/parsers/nbs-xlsx";
 import type { VendasParseResult, VendaParsed, VendasSnapshotMeta } from "@/lib/parsers/nbs-vendas-xlsx";
 import type { CustosParseResult, CustoDetalhado, CustosMeta } from "@/lib/parsers/nbs-custos-xls";
+import type { CustosEstoquePdfResult, CustoEstoqueDetalhado, CustosEstoquePdfMeta } from "@/lib/parsers/nbs-custos-estoque-pdf";
 import { mergeVendas, mergeCustos, type MergeResultVendas, type MergeResultCustos } from "./merge";
 import { listVendas, upsertVendas, clearVendas as sbClearVendas } from "@/lib/data/vendas";
 import { listCustos, upsertCustos, clearCustos as sbClearCustos } from "@/lib/data/custos";
+import {
+  listCustosEstoque,
+  upsertCustosEstoque,
+  clearCustosEstoque as sbClearCustosEstoque,
+} from "@/lib/data/custos-estoque";
 import { listVeiculosAtual, getMetaAtual, inserirEstoqueSnapshot, clearEstoque } from "@/lib/data/veiculos";
 import { getSupabase } from "@/lib/data/supabase";
 import { LOJAS_IGNORADAS, isLojaIgnorada } from "@/lib/config/lojas-ignoradas";
@@ -37,21 +43,26 @@ export type InventoryStoreState = {
   custosMeta: CustosMeta | null;
   custosPorPlaca: Record<string, CustoDetalhado>;
   custosWarnings: string[];
+  custosEstoqueMeta: CustosEstoquePdfMeta | null;
+  custosEstoquePorPlaca: Record<string, CustoEstoqueDetalhado>;
+  custosEstoqueWarnings: string[];
   isHydrated: boolean;
   loadingState: LoadingState;
   loadError: string | null;
-  
+
   // Actions
   load: () => Promise<void>;
   retry: () => void;
   setFromParse: (result: ParseResult) => Promise<void>;
   setVendasFromParse: (result: VendasParseResult) => Promise<MergeResultVendas["delta"]>; // Retorna o delta para fins de contabilidade
   setCustosFromParse: (result: CustosParseResult) => Promise<MergeResultCustos["delta"]>; // Retorna o delta
+  setCustosEstoqueFromParse: (result: CustosEstoquePdfResult) => Promise<{ novos: number; substituidos: number; mantidos: number }>;
   updateLoja: (cod: number, patch: Partial<LojaInfo>) => void;
   removeLoja: (cod: number) => void;
   clear: () => Promise<void>;
   clearVendas: () => Promise<void>;
   clearCustos: () => Promise<void>;
+  clearCustosEstoque: () => Promise<void>;
 };
 
 const LOJAS_KEY = "navesa-mesa:lojas-v1";
@@ -110,6 +121,18 @@ function derivarCustosMeta(qt: number): CustosMeta | null {
   };
 }
 
+function derivarCustosEstoqueMeta(qt: number): CustosEstoquePdfMeta | null {
+  if (qt === 0) return null;
+  return {
+    arquivo_nome: "supabase",
+    empresa: "",
+    filial: "",
+    cod_empresa: 0,
+    data_impressao: null,
+    total_veiculos: qt,
+  };
+}
+
 function getInitialLojas(): Record<number, LojaInfo> {
   if (typeof window === "undefined") return SEED_LOJAS;
   try {
@@ -136,6 +159,9 @@ export const useInventoryStore = create<InventoryStoreState>((set, get) => ({
   custosMeta: null,
   custosPorPlaca: {},
   custosWarnings: [],
+  custosEstoqueMeta: null,
+  custosEstoquePorPlaca: {},
+  custosEstoqueWarnings: [],
   isHydrated: false,
   loadingState: "loading",
   loadError: null,
@@ -159,31 +185,35 @@ export const useInventoryStore = create<InventoryStoreState>((set, get) => ({
       }
 
       // 2. Carga inicial
-      const [vendasInicial, custosInicial, veiculosDb, metaDb] = await Promise.all([
+      const [vendasInicial, custosInicial, custosEstoqueInicial, veiculosDb, metaDb] = await Promise.all([
         listVendas(),
         listCustos(),
+        listCustosEstoque(),
         listVeiculosAtual(),
         getMetaAtual(),
       ]);
 
       let vendasDb = vendasInicial;
       let custosDb = custosInicial;
+      let custosEstoqueDb = custosEstoqueInicial;
 
       // 3. Detecta "carga falsa" (RLS race condition) e faz retry único após 1s
       const isSuspiciousResult =
         vendasDb.length === 0 && custosDb.length === 0 && veiculosDb.length > 0;
       if (isSuspiciousResult) {
         await new Promise<void>((resolve) => setTimeout(resolve, 1000));
-        const [vendasRetry, custosRetry] = await Promise.all([
+        const [vendasRetry, custosRetry, custosEstoqueRetry] = await Promise.all([
           listVendas(),
           listCustos(),
+          listCustosEstoque(),
         ]);
-        if (vendasRetry.length > 0 || custosRetry.length > 0) {
+        if (vendasRetry.length > 0 || custosRetry.length > 0 || custosEstoqueRetry.itens.length > 0) {
           console.warn(
             "[inventoryStore] Sessão race detectado — retry recuperou dados de vendas/custos",
           );
           vendasDb = vendasRetry;
           custosDb = custosRetry;
+          custosEstoqueDb = custosEstoqueRetry;
         }
       }
 
@@ -197,9 +227,19 @@ export const useInventoryStore = create<InventoryStoreState>((set, get) => ({
       }
       const custosFiltrados = custosDb.filter((c) => !placasIgnoradas.has(c.placa));
 
+      // Custos de estoque: filtra por cod_empresa (vem direto na linha)
+      const custosEstoqueFiltrados = custosEstoqueDb.itens.filter((c) => {
+        const cod = custosEstoqueDb.codEmpresaPorPlaca[c.placa];
+        return !isLojaIgnorada(cod);
+      });
+
       // Processa custos
       const cMap: Record<string, CustoDetalhado> = {};
       for (const c of custosFiltrados) if (c.placa) cMap[c.placa] = c;
+
+      // Processa custos de estoque
+      const ceMap: Record<string, CustoEstoqueDetalhado> = {};
+      for (const c of custosEstoqueFiltrados) if (c.placa) ceMap[c.placa] = c;
 
       // Deriva lojas
       const currentLojas = get().lojas;
@@ -236,6 +276,9 @@ export const useInventoryStore = create<InventoryStoreState>((set, get) => ({
         custosPorPlaca: cMap,
         custosMeta: derivarCustosMeta(custosFiltrados.length),
         custosWarnings: [],
+        custosEstoquePorPlaca: ceMap,
+        custosEstoqueMeta: derivarCustosEstoqueMeta(custosEstoqueFiltrados.length),
+        custosEstoqueWarnings: [],
         veiculos: veiculosFiltrados,
         meta: metaDb,
         warnings: [],
@@ -332,6 +375,37 @@ export const useInventoryStore = create<InventoryStoreState>((set, get) => ({
     return merged.delta;
   },
 
+  setCustosEstoqueFromParse: async (result: CustosEstoquePdfResult) => {
+    // Se a loja do PDF é ignorada, descarta tudo silenciosamente.
+    if (isLojaIgnorada(result.meta.cod_empresa)) {
+      return { novos: 0, substituidos: 0, mantidos: Object.keys(get().custosEstoquePorPlaca).length };
+    }
+
+    const itensFiltrados = result.itens; // PDF cobre 1 loja só — sem necessidade de filtrar por placa
+    const existentes = get().custosEstoquePorPlaca;
+    const merged: Record<string, CustoEstoqueDetalhado> = { ...existentes };
+    let novos = 0;
+    let substituidos = 0;
+    for (const c of itensFiltrados) {
+      if (!c.placa) continue;
+      if (merged[c.placa]) substituidos++;
+      else novos++;
+      merged[c.placa] = c;
+    }
+    const mantidos = Math.max(0, Object.keys(existentes).length - substituidos);
+
+    // Persiste no Supabase (upsert por placa) — só do lote novo
+    await upsertCustosEstoque(itensFiltrados, result.meta.cod_empresa);
+
+    set({
+      custosEstoquePorPlaca: merged,
+      custosEstoqueMeta: result.meta,
+      custosEstoqueWarnings: result.warnings,
+    });
+
+    return { novos, substituidos, mantidos };
+  },
+
   setCustosFromParse: async (result: CustosParseResult) => {
     const currentCustos = get().custosPorPlaca;
     const currentCustosMeta = get().custosMeta;
@@ -386,5 +460,10 @@ export const useInventoryStore = create<InventoryStoreState>((set, get) => ({
   clearCustos: async () => {
     await sbClearCustos();
     set({ custosMeta: null, custosPorPlaca: {}, custosWarnings: [] });
+  },
+
+  clearCustosEstoque: async () => {
+    await sbClearCustosEstoque();
+    set({ custosEstoqueMeta: null, custosEstoquePorPlaca: {}, custosEstoqueWarnings: [] });
   },
 }));
