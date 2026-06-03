@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Car, TrendingUp, Building2, Upload, Menu, X, Sparkles, MessageSquare, History, ChevronLeft, ChevronRight, LogOut, Loader2 } from "lucide-react";
+import { LayoutDashboard, Car, TrendingUp, Building2, Upload, Menu, X, Sparkles, MessageSquare, History, ChevronLeft, ChevronRight, LogOut, Loader2, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { DataGate } from "./DataGate";
 import { ThemeToggle } from "./ThemeToggle";
 import { ToastContainer } from "./ui/Toast";
 import { Tooltip } from "./ui/Tooltip";
+import { CommandPalette } from "./CommandPalette";
 import { createClient } from "@/lib/supabase/client";
 
 const COLLAPSED_KEY = "navesa-mesa:sidebar-collapsed";
@@ -99,8 +100,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="ml-auto flex items-center gap-1"><ThemeToggle /><UserMenu /></div>
         </header>
 
-        {/* Topbar desktop (theme toggle + user no canto direito) */}
+        {/* Topbar desktop (busca + theme toggle + user no canto direito) */}
         <header className="hidden md:flex items-center justify-end gap-1 border-b border-[var(--border-soft)] bg-[var(--bg-surface)] px-6 py-2">
+          <SearchTrigger />
           <ThemeToggle />
           <UserMenu />
         </header>
@@ -110,7 +112,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Toasts globais — montado 1x no shell, fora do <main> pra não afetar layout/scroll */}
       <ToastContainer />
+      {/* Command palette global — Ctrl+K em qualquer página, montado fora do DataGate */}
+      <CommandPalette />
     </div>
+  );
+}
+
+function SearchTrigger() {
+  return (
+    <button
+      type="button"
+      onClick={() => window.dispatchEvent(new CustomEvent("open-command-palette"))}
+      className="hidden md:inline-flex items-center gap-2 rounded-md border border-[var(--border-soft)] bg-[var(--bg-muted)] px-3 py-1.5 text-xs text-[var(--text-muted)] transition hover:bg-[var(--bg-app)] mr-2"
+      title="Buscar (Ctrl+K)"
+    >
+      <Search className="h-3.5 w-3.5" />
+      <span>Buscar...</span>
+      <kbd className="rounded border border-[var(--border-soft)] bg-[var(--bg-surface)] px-1.5 py-0.5 text-[10px]">Ctrl+K</kbd>
+    </button>
   );
 }
 

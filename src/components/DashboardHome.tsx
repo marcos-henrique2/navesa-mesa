@@ -8,6 +8,7 @@ import { classificarPatio, type StatusVeiculo } from "@/lib/inventory/status";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
 import { PageHeader } from "./AppShell";
 import { AlertasOperacionais } from "./AlertasOperacionais";
+import { HeatmapLojas } from "./HeatmapLojas";
 
 export function DashboardHome() {
   const { meta, veiculos, vendasMeta, vendas, custosPorPlaca, isHydrated } = useInventory();
@@ -143,6 +144,13 @@ export function DashboardHome() {
                     Período: <strong>{new Date(vendasMeta.periodo_inicio).toLocaleDateString("pt-BR")}</strong> → <strong>{new Date(vendasMeta.periodo_fim).toLocaleDateString("pt-BR")}</strong>
                   </p>
                 )}
+              </section>
+            )}
+
+            {/* Heatmap por loja — visão consolidada de saúde operacional */}
+            {isHydrated && veiculos.length > 0 && (
+              <section>
+                <HeatmapLojas />
               </section>
             )}
 
