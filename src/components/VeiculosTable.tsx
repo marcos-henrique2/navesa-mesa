@@ -29,8 +29,11 @@ import { FipeBatchRunner } from "./FipeBatchRunner";
 import { CautelarBatchActions } from "./CautelarBatchActions";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import { baixarConferenciaEstoque } from "@/lib/export/conferencia-estoque";
+import { baixarConferenciaEstoquePdf } from "@/lib/export/conferencia-estoque-pdf";
 import { baixarRelatorioGerencial } from "@/lib/export/relatorio-gerencial-estoque";
+import { baixarRelatorioGerencialPdf } from "@/lib/export/relatorio-gerencial-estoque-pdf";
 import { showSuccessToast, showErrorToast } from "./ui/Toast";
+import { ExportDropdown } from "./ui/ExportDropdown";
 
 // Mesma lógica de todayISO() usada pelos módulos de export — espelhada aqui
 // só pra exibir o nome correto no toast de sucesso.
@@ -541,7 +544,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
   };
 
   const [exportandoConf, setExportandoConf] = useState(false);
-  const handleExportarConferencia = async () => {
+  const handleExportarConferencia = async (formato: "xlsx" | "pdf") => {
     if (exportandoConf || filtered.length === 0) return;
     setExportandoConf(true);
     try {
@@ -553,21 +556,31 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
         ...v,
         empresa_nome: lojas[v.cod_empresa]?.nome?.trim() ?? "—",
       }));
-      await baixarConferenciaEstoque({
-        veiculos: veiculosComLoja,
-        filtroLoja: filtroLojaNome,
-      });
-      showSuccessToast(`conferencia-estoque-${todayISOLocal()}.xlsx baixada`);
+      if (formato === "xlsx") {
+        await baixarConferenciaEstoque({
+          veiculos: veiculosComLoja,
+          filtroLoja: filtroLojaNome,
+        });
+        showSuccessToast(`conferencia-estoque-${todayISOLocal()}.xlsx baixada`);
+      } else {
+        await baixarConferenciaEstoquePdf({
+          veiculos: veiculosComLoja,
+          filtroLoja: filtroLojaNome,
+        });
+        showSuccessToast(`conferencia-estoque-${todayISOLocal()}.pdf baixado`);
+      }
     } catch (err) {
       console.error("Falha ao gerar planilha de conferência:", err);
-      showErrorToast("Erro ao gerar planilha de conferência. Tente novamente.");
+      showErrorToast(
+        `Erro ao gerar conferência (${formato.toUpperCase()}). Tente novamente.`,
+      );
     } finally {
       setExportandoConf(false);
     }
   };
 
   const [exportandoGerencial, setExportandoGerencial] = useState(false);
-  const handleExportarGerencial = async () => {
+  const handleExportarGerencial = async (formato: "xlsx" | "pdf") => {
     if (exportandoGerencial || filtered.length === 0) return;
     setExportandoGerencial(true);
     try {
@@ -579,14 +592,24 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
         ...v,
         empresa_nome: lojas[v.cod_empresa]?.nome?.trim() ?? null,
       }));
-      await baixarRelatorioGerencial({
-        veiculos: veiculosComLoja,
-        filtroLoja: filtroLojaNome,
-      });
-      showSuccessToast(`relatorio-gerencial-estoque-${todayISOLocal()}.xlsx baixado`);
+      if (formato === "xlsx") {
+        await baixarRelatorioGerencial({
+          veiculos: veiculosComLoja,
+          filtroLoja: filtroLojaNome,
+        });
+        showSuccessToast(`relatorio-gerencial-estoque-${todayISOLocal()}.xlsx baixado`);
+      } else {
+        await baixarRelatorioGerencialPdf({
+          veiculos: veiculosComLoja,
+          filtroLoja: filtroLojaNome,
+        });
+        showSuccessToast(`relatorio-gerencial-estoque-${todayISOLocal()}.pdf baixado`);
+      }
     } catch (err) {
       console.error("Falha ao gerar relatório gerencial:", err);
-      showErrorToast("Erro ao gerar relatório gerencial. Tente novamente.");
+      showErrorToast(
+        `Erro ao gerar relatório gerencial (${formato.toUpperCase()}). Tente novamente.`,
+      );
     } finally {
       setExportandoGerencial(false);
     }
@@ -669,25 +692,55 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
             </button>
           </span>
         )}
-        <button
-          onClick={handleExportarConferencia}
-          disabled={exportandoConf || filtered.length === 0}
-          title="Gera planilha em paisagem A4 com a lista atual (após filtros) pra conferência física no pátio"
-          className="ml-auto inline-flex items-center gap-2 rounded-md bg-emerald-800 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-emerald-900 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <ClipboardCheck className="h-4 w-4" />
-          {exportandoConf ? "Gerando…" : "Imprimir conferência de estoque"}
-        </button>
+        <div className="ml-auto">
+          <ExportDropdown
+            disabled={exportandoConf || filtered.length === 0}
+            title="Gera relatório em paisagem A4 com a lista atual (após filtros) pra conferência física no pátio"
+            buttonClassName="inline-flex items-center gap-2 rounded-md bg-emerald-800 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-emerald-900"
+            trigger={
+              <>
+                <ClipboardCheck className="h-4 w-4" />
+                {exportandoConf ? "Gerando…" : "Imprimir conferência"}
+              </>
+            }
+            items={[
+              {
+                label: "XLSX",
+                description: "Planilha editável, com fórmulas",
+                onSelect: () => handleExportarConferencia("xlsx"),
+              },
+              {
+                label: "PDF",
+                description: "Pronto para imprimir, paisagem A4",
+                onSelect: () => handleExportarConferencia("pdf"),
+              },
+            ]}
+          />
+        </div>
 
-        <button
-          onClick={handleExportarGerencial}
+        <ExportDropdown
           disabled={exportandoGerencial || filtered.length === 0}
           title="Gera relatório executivo com totalizadores: capital travado, margem potencial, KM médio, veículos parados há +60/+90 dias e alertas"
-          className="inline-flex items-center gap-2 rounded-md bg-blue-700 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <BarChart3 className="h-4 w-4" />
-          {exportandoGerencial ? "Gerando…" : "Relatório gerencial"}
-        </button>
+          buttonClassName="inline-flex items-center gap-2 rounded-md bg-blue-700 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-blue-800"
+          trigger={
+            <>
+              <BarChart3 className="h-4 w-4" />
+              {exportandoGerencial ? "Gerando…" : "Relatório gerencial"}
+            </>
+          }
+          items={[
+            {
+              label: "XLSX",
+              description: "Planilha com totalizadores + cores",
+              onSelect: () => handleExportarGerencial("xlsx"),
+            },
+            {
+              label: "PDF",
+              description: "Versão imprimível com bloco resumo",
+              onSelect: () => handleExportarGerencial("pdf"),
+            },
+          ]}
+        />
       </div>
 
       {/* KPIs reativos — valores em CUSTO DE FÁBRICA (capital travado) */}

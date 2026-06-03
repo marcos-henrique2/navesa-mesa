@@ -14,7 +14,9 @@ import { ComposicaoCustos } from "./ComposicaoCustos";
 import { indexarClientes, chaveCliente, tierRecorrencia } from "@/lib/analytics/clientes";
 import { agregarMargem, calcMargemVenda } from "@/lib/analytics/margem";
 import { baixarAnaliseNavesa } from "@/lib/export/analise-navesa";
+import { baixarAnaliseNavesaPdf } from "@/lib/export/analise-navesa-pdf";
 import { showSuccessToast, showErrorToast } from "./ui/Toast";
+import { ExportDropdown } from "./ui/ExportDropdown";
 import { runFipeBatch, type BatchProgress } from "@/lib/fipe/batch";
 import { useFipeBatch } from "@/lib/fipe/useFipeBatch";
 import type { VendaParsed } from "@/lib/parsers/nbs-vendas-xlsx";
@@ -495,45 +497,80 @@ export function VendasAnalise() {
             {rodandoFipe ? "Buscando FIPE…" : "Buscar FIPE agora"}
           </button>
 
-          <button
-            type="button"
-            onClick={async () => {
-              if (exportando) return;
-              setExportando(true);
-              try {
-                const mapaFipe = new Map<string, number>();
-                if (fipeBatch?.items) {
-                  const itemsByChassi = fipeBatch.items;
-                  for (const v of filtered) {
-                    const item = itemsByChassi[v.chassi];
-                    if (item && item.precoFipe > 0) {
-                      mapaFipe.set(v.chassi, item.precoFipe);
-                    }
-                  }
-                }
-                await baixarAnaliseNavesa({
-                  vendas: filtered,
-                  todasVendas: vendas,
-                  custosPorPlaca,
-                  fipePorChassi: mapaFipe,
-                  empresa: filtroLoja === "all" ? "TODAS" : filtroLoja,
-                  dataDe,
-                  dataAte,
-                });
-                showSuccessToast(`analise-navesa-${dataDe}-a-${dataAte}.xlsx baixada`);
-              } catch {
-                showErrorToast("Erro ao gerar análise Navesa. Tente novamente.");
-              } finally {
-                setExportando(false);
-              }
-            }}
+          <ExportDropdown
             disabled={filtered.length === 0 || exportando || rodandoFipe}
-            title="Gera planilha no formato USADOS ANALISE NAVESA respeitando os filtros aplicados (FIPE preenchida automaticamente onde houver cache)"
-            className="inline-flex items-center gap-1.5 rounded-md border border-purple-600 bg-purple-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:border-[var(--border-base)] disabled:bg-[var(--bg-muted)] disabled:text-[var(--text-subtle)]"
-          >
-            {exportando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            {exportando ? "Exportando…" : "Exportar análise Navesa"}
-          </button>
+            title="Gera relatório no formato USADOS ANALISE NAVESA respeitando os filtros aplicados"
+            buttonClassName="inline-flex items-center gap-1.5 rounded-md border border-purple-600 bg-purple-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:border-[var(--border-base)] disabled:bg-[var(--bg-muted)] disabled:text-[var(--text-subtle)]"
+            trigger={
+              <>
+                {exportando ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                {exportando ? "Exportando…" : "Exportar análise Navesa"}
+              </>
+            }
+            items={[
+              {
+                label: "XLSX (completo, 38 colunas)",
+                description: "Planilha com fórmulas, KPIs e FIPE",
+                onSelect: async () => {
+                  if (exportando) return;
+                  setExportando(true);
+                  try {
+                    const mapaFipe = new Map<string, number>();
+                    if (fipeBatch?.items) {
+                      const itemsByChassi = fipeBatch.items;
+                      for (const v of filtered) {
+                        const item = itemsByChassi[v.chassi];
+                        if (item && item.precoFipe > 0) {
+                          mapaFipe.set(v.chassi, item.precoFipe);
+                        }
+                      }
+                    }
+                    await baixarAnaliseNavesa({
+                      vendas: filtered,
+                      todasVendas: vendas,
+                      custosPorPlaca,
+                      fipePorChassi: mapaFipe,
+                      empresa: filtroLoja === "all" ? "TODAS" : filtroLoja,
+                      dataDe,
+                      dataAte,
+                    });
+                    showSuccessToast(`analise-navesa-${dataDe}-a-${dataAte}.xlsx baixada`);
+                  } catch {
+                    showErrorToast("Erro ao gerar análise Navesa (XLSX). Tente novamente.");
+                  } finally {
+                    setExportando(false);
+                  }
+                },
+              },
+              {
+                label: "PDF (resumido)",
+                description: "Capa, tabela simplificada e KPIs (paisagem A4)",
+                onSelect: async () => {
+                  if (exportando) return;
+                  setExportando(true);
+                  try {
+                    await baixarAnaliseNavesaPdf({
+                      vendas: filtered,
+                      todasVendas: vendas,
+                      custosPorPlaca,
+                      empresa: filtroLoja === "all" ? "TODAS" : filtroLoja,
+                      dataDe,
+                      dataAte,
+                    });
+                    showSuccessToast(`analise-navesa-${dataDe}-a-${dataAte}.pdf baixado`);
+                  } catch {
+                    showErrorToast("Erro ao gerar análise Navesa (PDF). Tente novamente.");
+                  } finally {
+                    setExportando(false);
+                  }
+                },
+              },
+            ]}
+          />
         </div>
       </div>
 
