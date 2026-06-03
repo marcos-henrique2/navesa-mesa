@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { ArrowLeft, AlertTriangle } from "lucide-react";
 import { useInventory, nomeOuCodigo } from "@/lib/store/inventory";
+import { normalizarPlaca } from "@/lib/utils/placa";
 import { classificarPatio, STATUS_LABEL } from "@/lib/inventory/status";
 import { PrecificacaoBlock } from "./veiculos/PrecificacaoBlock";
 import { ComposicaoCustos } from "./ComposicaoCustos";
@@ -32,7 +33,9 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
   const veiculo = useMemo(() => veiculos.find((v) => v.chassi === chassi), [veiculos, chassi]);
 
   const custoDetalhado = veiculo?.placa ? custosPorPlaca[veiculo.placa] ?? null : null;
-  const custoEstoque = veiculo?.placa && !custoDetalhado ? custosEstoquePorPlaca[veiculo.placa] ?? null : null;
+  const custoEstoque = veiculo?.placa && !custoDetalhado
+    ? custosEstoquePorPlaca[normalizarPlaca(veiculo.placa)] ?? null
+    : null;
 
   const vendasDaPlaca = useMemo(() => {
     if (!veiculo?.placa || !custoDetalhado) return [];

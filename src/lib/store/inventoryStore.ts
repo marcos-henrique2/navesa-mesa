@@ -16,6 +16,7 @@ import {
 import { listVeiculosAtual, getMetaAtual, inserirEstoqueSnapshot, clearEstoque } from "@/lib/data/veiculos";
 import { getSupabase } from "@/lib/data/supabase";
 import { LOJAS_IGNORADAS, isLojaIgnorada } from "@/lib/config/lojas-ignoradas";
+import { normalizarPlaca } from "@/lib/utils/placa";
 
 export type LojaInfo = {
   cod_empresa: number;
@@ -237,9 +238,12 @@ export const useInventoryStore = create<InventoryStoreState>((set, get) => ({
       const cMap: Record<string, CustoDetalhado> = {};
       for (const c of custosFiltrados) if (c.placa) cMap[c.placa] = c;
 
-      // Processa custos de estoque
+      // Processa custos de estoque — chaves normalizadas (sem hífen/espaço, maiúsculas)
+      // pra bater com placas do estoque vindas em formato "ABC-1234" ou "ABC1234"
       const ceMap: Record<string, CustoEstoqueDetalhado> = {};
-      for (const c of custosEstoqueFiltrados) if (c.placa) ceMap[c.placa] = c;
+      for (const c of custosEstoqueFiltrados) {
+        if (c.placa) ceMap[normalizarPlaca(c.placa)] = c;
+      }
 
       // Deriva lojas
       const currentLojas = get().lojas;
@@ -388,9 +392,10 @@ export const useInventoryStore = create<InventoryStoreState>((set, get) => ({
     let substituidos = 0;
     for (const c of itensFiltrados) {
       if (!c.placa) continue;
-      if (merged[c.placa]) substituidos++;
+      const chave = normalizarPlaca(c.placa);
+      if (merged[chave]) substituidos++;
       else novos++;
-      merged[c.placa] = c;
+      merged[chave] = c;
     }
     const mantidos = Math.max(0, Object.keys(existentes).length - substituidos);
 
