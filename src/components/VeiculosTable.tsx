@@ -271,7 +271,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
       const nome = lojas[cod]?.nome?.trim();
       return (
         <span className="text-xs">
-          {nome ? <span title={`Cód: ${cod}`}>{nome}</span> : <span className="text-zinc-500 italic">Loja {cod}</span>}
+          {nome ? <span title={`Cód: ${cod}`}>{nome}</span> : <span className="text-[var(--text-muted)] italic">Loja {cod}</span>}
         </span>
       );
     } },
@@ -282,7 +282,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
       accessorFn: (v) => classifMap.get(v.chassi)?.classe ?? "?",
       cell: ({ row }) => {
         const c = classifMap.get(row.original.chassi);
-        if (!c) return <span className="text-zinc-400 text-xs">—</span>;
+        if (!c) return <span className="text-[var(--text-subtle)] text-xs">—</span>;
         const cor = CLASSE_COR[c.classe];
         return (
           <span
@@ -301,7 +301,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
       accessorFn: (v) => cautelares[v.chassi] ?? "",
       cell: ({ row }) => {
         const c = cautelares[row.original.chassi];
-        if (!c) return <span className="text-zinc-300 text-xs">—</span>;
+        if (!c) return <span className="text-[var(--text-subtle)] opacity-60 text-xs">—</span>;
         return <span className="text-base" title={CAUTELAR_LABEL[c]}>{CAUTELAR_ICONE[c]}</span>;
       },
       size: 80,
@@ -311,7 +311,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
     { accessorKey: "ano_modelo", header: "Ano", cell: (info) => info.getValue<number | null>() ?? "—" },
     { accessorKey: "km", header: "KM", cell: (info) => {
       const km = info.getValue<number | null>();
-      if (km === null) return <span className="text-zinc-400">—</span>;
+      if (km === null) return <span className="text-[var(--text-subtle)]">—</span>;
       const tone = km < 30000 ? "text-green-700 dark:text-green-400"
         : km < 80000 ? ""
         : km < 150000 ? "text-amber-700 dark:text-amber-400"
@@ -334,10 +334,10 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
         const v = row.original;
         const item = fipeBatch?.items[v.chassi];
         if (!item) {
-          return <span className="text-xs text-zinc-300">—</span>;
+          return <span className="text-xs text-[var(--text-subtle)] opacity-60">—</span>;
         }
         const desv = calcularDesvioFipe(v.preco_venda, item.precoFipe);
-        if (!desv) return <span className="text-xs text-zinc-300">—</span>;
+        if (!desv) return <span className="text-xs text-[var(--text-subtle)] opacity-60">—</span>;
         const tone = desv.pct > 5
           ? "text-red-700"
           : desv.pct > 0
@@ -354,7 +354,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
       size: 80,
       sortUndefined: "last",
     },
-    { accessorKey: "valor_aquisicao", header: "Aquisição", cell: (info) => <span className="tabular-nums text-zinc-600">{formatBRL(info.getValue<number | null>())}</span> },
+    { accessorKey: "valor_aquisicao", header: "Aquisição", cell: (info) => <span className="tabular-nums text-[var(--text-body)]">{formatBRL(info.getValue<number | null>())}</span> },
     {
       id: "gasto_pos_entrada",
       header: "Gasto pós-entrada",
@@ -364,7 +364,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
       },
       cell: ({ getValue }) => {
         const diff = getValue<number | null>();
-        if (diff == null || diff === 0) return <span className="tabular-nums text-zinc-300">—</span>;
+        if (diff == null || diff === 0) return <span className="tabular-nums text-[var(--text-subtle)] opacity-60">—</span>;
         if (diff < 0) {
           return (
             <span
@@ -375,11 +375,11 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
             </span>
           );
         }
-        return <span className="tabular-nums text-zinc-600">{formatBRL(diff)}</span>;
+        return <span className="tabular-nums text-[var(--text-body)]">{formatBRL(diff)}</span>;
       },
       sortUndefined: "last",
     },
-    { accessorKey: "custo_total", header: "Custo total", cell: (info) => <span className="tabular-nums text-zinc-600">{formatBRL(info.getValue<number | null>())}</span> },
+    { accessorKey: "custo_total", header: "Custo total", cell: (info) => <span className="tabular-nums text-[var(--text-body)]">{formatBRL(info.getValue<number | null>())}</span> },
     {
       id: "margem_teorica_pct",
       header: "Margem teórica %",
@@ -390,7 +390,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
       },
       cell: ({ getValue }) => {
         const pct = getValue<number | null>();
-        if (pct == null) return <span className="tabular-nums text-xs text-zinc-300">—</span>;
+        if (pct == null) return <span className="tabular-nums text-xs text-[var(--text-subtle)] opacity-60">—</span>;
         const tone = pct >= 5
           ? "text-emerald-700 dark:text-emerald-400"
           : pct >= 0
@@ -423,8 +423,8 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
       },
       cell: ({ getValue }) => {
         const v = getValue<number | null>();
-        if (v == null) return <span className="tabular-nums text-zinc-300">—</span>;
-        return <span className="tabular-nums text-zinc-600">{formatBRL(v)}</span>;
+        if (v == null) return <span className="tabular-nums text-[var(--text-subtle)] opacity-60">—</span>;
+        return <span className="tabular-nums text-[var(--text-body)]">{formatBRL(v)}</span>;
       },
       sortUndefined: "last",
     },
@@ -533,13 +533,13 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
   }, []);
 
   if (!isHydrated) {
-    return <p className="text-sm text-zinc-500">Carregando…</p>;
+    return <p className="text-sm text-[var(--text-muted)]">Carregando…</p>;
   }
 
   if (veiculos.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-12 text-center dark:border-zinc-700 dark:bg-zinc-900">
-        <p className="text-zinc-500">Nenhum relatório carregado nessa sessão.</p>
+      <div className="rounded-lg border border-dashed border-[var(--border-base)] bg-[var(--bg-surface)] p-12 text-center">
+        <p className="text-[var(--text-muted)]">Nenhum relatório carregado nessa sessão.</p>
         <a href="/upload" className="mt-3 inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">📤 Subir o XLSX do NBS</a>
       </div>
     );
@@ -555,7 +555,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
 
       {/* Status segmented control */}
       <div className="flex flex-wrap items-center gap-3">
-        <div className="inline-flex rounded-lg border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="inline-flex rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] p-1">
           <SegBtn active={statusFiltro === "all"} onClick={() => setStatusFiltro("all")}>
             Tudo <span className="ml-1 text-xs opacity-70">({formatInt(kpis.totalQt)})</span>
           </SegBtn>
@@ -626,7 +626,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
       </div>
 
       {/* Filtros base */}
-      <div className="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="space-y-3 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4">
         {/* Essenciais: sempre visíveis */}
         <div className="flex flex-wrap items-center gap-3">
           <Select label="Loja" value={filtroLoja} onChange={setFiltroLoja} options={[["all", "Todas"], ...lojasCods.map((l) => [String(l), lojas[l]?.nome?.trim() || `Loja ${l}`] as [string, string])]} />
@@ -640,7 +640,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
               "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition",
               filtrosAvancadosAtivos > 0
                 ? "border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200"
-                : "border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800",
+                : "border-[var(--border-base)] bg-[var(--bg-surface)] text-[var(--text-body)] hover:bg-[var(--bg-muted)]",
             )}
             aria-expanded={avancadoOpen}
             aria-controls="filtros-avancados-veiculos"
@@ -655,12 +655,12 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
           </button>
 
           <div className="relative ml-auto">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-zinc-400" />
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--text-subtle)]" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Placa, chassi, modelo…"
-              className="w-64 rounded-md border border-zinc-300 bg-white pl-8 pr-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              className="w-64 rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] pl-8 pr-3 py-1.5 text-sm"
             />
           </div>
         </div>
@@ -676,7 +676,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
           )}
         >
           <div className="min-h-0">
-            <div className="space-y-3 rounded-md bg-zinc-50 p-3 dark:bg-zinc-950/40">
+            <div className="space-y-3 rounded-md bg-[var(--bg-muted)] p-3">
               <div className="flex flex-wrap items-center gap-3">
                 <Select label="Cor" value={filtroCor} onChange={setFiltroCor} options={[["all", "Todas"], ...cores.map((c) => [c, c] as [string, string])]} />
                 <Select label="Comb" value={filtroComb} onChange={setFiltroComb} options={[["all", "Todos"], ...combs.map((c) => [c, c] as [string, string])]} />
@@ -705,7 +705,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
                   ["sem", "❔ Sem cautelar"],
                 ]} />
               </div>
-              <div className="grid gap-3 border-t border-zinc-200 pt-3 dark:border-zinc-800 md:grid-cols-4">
+              <div className="grid gap-3 border-t border-[var(--border-soft)] pt-3 md:grid-cols-4">
                 <Range label="Ano modelo" minVal={anoMin} maxVal={anoMax} onMin={setAnoMin} onMax={setAnoMax} placeholderMin="ex: 2018" placeholderMax="2026" />
                 <Range label="Quilometragem" minVal={kmMin} maxVal={kmMax} onMin={setKmMin} onMax={setKmMax} placeholderMin="0" placeholderMax="200000" />
                 <Range label="Preço de venda (R$)" minVal={precoMin} maxVal={precoMax} onMin={setPrecoMin} onMax={setPrecoMax} placeholderMin="50000" placeholderMax="500000" />
@@ -721,7 +721,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
 
       {/* Indicador X de Y · Limpar filtros */}
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="text-sm text-[var(--text-body)] dark:text-[var(--text-subtle)]">
           {filtrosAtivos > 0
             ? filtered.length === 0
               ? <>Sem resultados pra esses filtros</>
@@ -749,20 +749,20 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
       </div>
 
       {/* Tabela */}
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="overflow-hidden rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)]">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950">
+            <thead className="border-b border-[var(--border-soft)] bg-[var(--bg-muted)]">
               {table.getHeaderGroups().map((hg) => (
                 <tr key={hg.id}>
                   {hg.headers.map((h) => (
                     <th
                       key={h.id}
-                      className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400"
+                      className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--text-body)] dark:text-[var(--text-subtle)]"
                       style={{ width: h.column.columnDef.size }}
                     >
                       {h.column.getCanSort() ? (
-                        <button onClick={h.column.getToggleSortingHandler()} className="inline-flex items-center gap-1 hover:text-zinc-900 dark:hover:text-zinc-100">
+                        <button onClick={h.column.getToggleSortingHandler()} className="inline-flex items-center gap-1 hover:text-[var(--text-strong)]">
                           {flexRender(h.column.columnDef.header, h.getContext())}
                           {h.column.getIsSorted() === "asc" ? <ArrowUp className="h-3 w-3" /> : h.column.getIsSorted() === "desc" ? <ArrowDown className="h-3 w-3" /> : <ArrowUpDown className="h-3 w-3 opacity-40" />}
                         </button>
@@ -778,8 +778,8 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
                   key={row.id}
                   onClick={() => router.push(`/veiculos/${row.original.chassi}`)}
                   className={cn(
-                    "cursor-pointer border-b border-zinc-100 last:border-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/50",
-                    ehPreparacao(row.original) && "bg-amber-50/40 hover:bg-amber-100/60 dark:bg-amber-950/10 dark:hover:bg-amber-950/20",
+                    "cursor-pointer border-b border-[var(--border-soft)] last:border-0 hover:bg-[var(--bg-muted)]",
+                    ehPreparacao(row.original) && "bg-amber-50/40 hover:bg-amber-100/60 dark:bg-amber-950/20 dark:hover:bg-amber-950/40",
                   )}
                   title="Clique para precificar"
                 >
@@ -791,17 +791,17 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
                 </tr>
               ))}
               {table.getRowModel().rows.length === 0 && (
-                <tr><td colSpan={columns.length} className="py-12 text-center text-zinc-500">Nenhum veículo com esses filtros.</td></tr>
+                <tr><td colSpan={columns.length} className="py-12 text-center text-[var(--text-muted)]">Nenhum veículo com esses filtros.</td></tr>
               )}
             </tbody>
           </table>
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-t border-zinc-200 bg-zinc-50 px-3 py-2 text-xs dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="flex items-center justify-between gap-3 border-t border-[var(--border-soft)] bg-[var(--bg-muted)] px-3 py-2 text-xs">
           <span>Página {table.getState().pagination.pageIndex + 1} de {table.getPageCount() || 1}</span>
           <div className="flex gap-1">
-            <button onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()} className="rounded-md border border-zinc-300 px-2 py-1 disabled:opacity-40 dark:border-zinc-700">‹</button>
-            <button onClick={() => table.nextPage()} disabled={!table.getCanNextPage()} className="rounded-md border border-zinc-300 px-2 py-1 disabled:opacity-40 dark:border-zinc-700">›</button>
+            <button onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()} className="rounded-md border border-[var(--border-base)] px-2 py-1 disabled:opacity-40">‹</button>
+            <button onClick={() => table.nextPage()} disabled={!table.getCanNextPage()} className="rounded-md border border-[var(--border-base)] px-2 py-1 disabled:opacity-40">›</button>
           </div>
         </div>
       </div>
@@ -815,8 +815,8 @@ function SegBtn({ active, onClick, children, accent }: { active: boolean; onClic
       ? "bg-green-600 text-white"
       : accent === "amber"
         ? "bg-amber-600 text-white"
-        : "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-    : "text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800";
+        : "bg-[var(--brand-700)] text-white dark:bg-[var(--brand-500)]"
+    : "text-[var(--text-body)] hover:bg-[var(--bg-muted)]";
   return (
     <button onClick={onClick} className={cn("rounded-md px-3 py-1.5 text-sm font-medium transition", activeClass)}>
       {children}
@@ -826,9 +826,9 @@ function SegBtn({ active, onClick, children, accent }: { active: boolean; onClic
 
 function Kpi({ title, value, subtitle, tone, active }: { title: string; value: string; subtitle: string; tone: "green" | "amber" | "zinc"; active: boolean }) {
   const toneClass = {
-    green: { bg: "from-emerald-50 to-white", bar: "bg-emerald-500", label: "text-emerald-700" },
-    amber: { bg: "from-amber-50 to-white", bar: "bg-amber-500", label: "text-amber-700" },
-    zinc: { bg: "from-[var(--brand-50)] to-white", bar: "bg-[var(--brand-600)]", label: "text-[var(--brand-700)]" },
+    green: { bg: "from-emerald-50 to-[var(--bg-surface)] dark:from-emerald-950/40", bar: "bg-emerald-500", label: "text-emerald-700 dark:text-emerald-400" },
+    amber: { bg: "from-amber-50 to-[var(--bg-surface)] dark:from-amber-950/40", bar: "bg-amber-500", label: "text-amber-700 dark:text-amber-400" },
+    zinc:  { bg: "from-[var(--brand-50)] to-[var(--bg-surface)] dark:from-[var(--brand-900)]/40", bar: "bg-[var(--brand-600)]", label: "text-[var(--brand-700)] dark:text-[var(--brand-300)]" },
   }[tone];
   return (
     <div className={cn(
@@ -838,8 +838,8 @@ function Kpi({ title, value, subtitle, tone, active }: { title: string; value: s
     )}>
       <div className={cn("absolute left-0 top-0 h-full w-1", toneClass.bar)} />
       <p className={cn("text-[10px] font-semibold uppercase tracking-wider", toneClass.label)}>{title}</p>
-      <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight text-slate-900">{value}</p>
-      <p className="mt-1 text-xs text-slate-500">{subtitle}</p>
+      <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight text-[var(--text-strong)]">{value}</p>
+      <p className="mt-1 text-xs text-[var(--text-muted)]">{subtitle}</p>
     </div>
   );
 }
@@ -847,11 +847,11 @@ function Kpi({ title, value, subtitle, tone, active }: { title: string; value: s
 function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: [string, string][] }) {
   return (
     <label className="flex items-center gap-1.5 text-sm">
-      <span className="text-zinc-500">{label}:</span>
+      <span className="text-[var(--text-muted)]">{label}:</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="max-w-48 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+        className="max-w-48 rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-2 py-1 text-sm"
       >
         {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
       </select>
@@ -864,7 +864,7 @@ function Range({ label, minVal, maxVal, onMin, onMax, placeholderMin, placeholde
 }) {
   return (
     <div>
-      <p className="mb-1 text-xs font-medium text-zinc-600 dark:text-zinc-400">{label}</p>
+      <p className="mb-1 text-xs font-medium text-[var(--text-body)] dark:text-[var(--text-subtle)]">{label}</p>
       <div className="flex items-center gap-1.5">
         <input
           type="number"
@@ -872,16 +872,16 @@ function Range({ label, minVal, maxVal, onMin, onMax, placeholderMin, placeholde
           value={minVal}
           onChange={(e) => onMin(e.target.value)}
           placeholder={placeholderMin}
-          className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm tabular-nums dark:border-zinc-700 dark:bg-zinc-900"
+          className="w-full rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-2 py-1 text-sm tabular-nums"
         />
-        <span className="text-xs text-zinc-400">a</span>
+        <span className="text-xs text-[var(--text-subtle)]">a</span>
         <input
           type="number"
           inputMode="numeric"
           value={maxVal}
           onChange={(e) => onMax(e.target.value)}
           placeholder={placeholderMax}
-          className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm tabular-nums dark:border-zinc-700 dark:bg-zinc-900"
+          className="w-full rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-2 py-1 text-sm tabular-nums"
         />
       </div>
     </div>

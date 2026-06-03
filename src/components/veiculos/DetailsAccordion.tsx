@@ -41,7 +41,7 @@ export function DetailsAccordion({
         aria-controls={panelId}
         className={cn(
           "flex w-full items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-left text-xs font-medium",
-          "hover:bg-white/40 focus:outline-none focus:ring-2 focus:ring-current/20",
+          "hover:bg-[var(--bg-surface)]/40 focus:outline-none focus:ring-2 focus:ring-current/20",
         )}
       >
         <span className="flex items-center gap-2">

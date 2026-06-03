@@ -40,12 +40,12 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
     });
   }, [veiculo, veiculos, cautelarAtual]);
 
-  if (!isHydrated) return <p className="text-sm text-zinc-500">Carregando…</p>;
+  if (!isHydrated) return <p className="text-sm text-[var(--text-muted)]">Carregando…</p>;
 
   if (!veiculo) {
     return (
-      <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-12 text-center dark:border-zinc-700 dark:bg-zinc-900">
-        <p className="text-zinc-500">Veículo com chassi <span className="font-mono">{chassi}</span> não encontrado nessa sessão.</p>
+      <div className="rounded-lg border border-dashed border-[var(--border-base)] bg-[var(--bg-surface)] p-12 text-center">
+        <p className="text-[var(--text-muted)]">Veículo com chassi <span className="font-mono">{chassi}</span> não encontrado nessa sessão.</p>
         <Link href="/veiculos" className="mt-3 inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">Ver estoque</Link>
       </div>
     );
@@ -71,27 +71,27 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/veiculos" className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100">
+        <Link href="/veiculos" className="inline-flex items-center gap-1 text-sm text-[var(--text-muted)] hover:text-[var(--text-strong)]">
           <ArrowLeft className="h-3 w-3" /> voltar ao estoque
         </Link>
         <div className="mt-3 flex flex-wrap items-baseline gap-3">
           <h1 className="text-2xl font-bold">{veiculo.marca} {veiculo.modelo}</h1>
-          <span className="font-mono text-sm text-zinc-500">{veiculo.placa}</span>
+          <span className="font-mono text-sm text-[var(--text-muted)]">{veiculo.placa}</span>
           {status !== "disponivel" && (
             <span className={cn(
               "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
               status === "preparacao" && "bg-amber-100 text-amber-800",
               status === "bloqueado" && "bg-red-100 text-red-800",
-              status === "transito" && "bg-slate-100 text-slate-700",
+              status === "transito" && "bg-[var(--bg-muted)] text-[var(--text-body)]",
               status === "oficina" && "bg-orange-100 text-orange-800",
               status === "documentacao" && "bg-yellow-100 text-yellow-800",
-              status === "outro" && "bg-slate-100 text-slate-600",
+              status === "outro" && "bg-[var(--bg-muted)] text-[var(--text-body)]",
             )}>
               {(ehPrep || status === "bloqueado") && <AlertTriangle className="h-3 w-3" />} {statusLabel}
             </span>
           )}
         </div>
-        <p className="mt-1 text-xs text-zinc-500">Chassi <span className="font-mono">{veiculo.chassi}</span></p>
+        <p className="mt-1 text-xs text-[var(--text-muted)]">Chassi <span className="font-mono">{veiculo.chassi}</span></p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -151,7 +151,7 @@ function kmTone(km: number | null): "good" | "warn" | "bad" | undefined {
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] p-5">
       <h3 className="mb-3 font-semibold">{title}</h3>
       <div className="space-y-1.5 text-sm">{children}</div>
     </div>
@@ -165,8 +165,8 @@ function Row({ label, value, bold, muted, tone }: { label: string; value: string
     : "";
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <span className="text-zinc-500">{label}</span>
-      <span className={cn("text-right tabular-nums", bold && "font-semibold", muted && "text-zinc-600 dark:text-zinc-400", toneClass)}>{value}</span>
+      <span className="text-[var(--text-muted)]">{label}</span>
+      <span className={cn("text-right tabular-nums", bold && "font-semibold", muted && "text-[var(--text-body)]", toneClass)}>{value}</span>
     </div>
   );
 }
@@ -189,10 +189,10 @@ function ClassificacaoBox({
             {classif.classe}
           </div>
           <div>
-            <h3 className="text-base font-semibold text-slate-900">
+            <h3 className="text-base font-semibold text-[var(--text-strong)]">
               Classe {CLASSE_LABEL[classif.classe]}
             </h3>
-            <p className="text-xs text-slate-600">{CLASSE_DESC[classif.classe]}</p>
+            <p className="text-xs text-[var(--text-body)]">{CLASSE_DESC[classif.classe]}</p>
           </div>
         </div>
         <span className={cn(
@@ -205,8 +205,8 @@ function ClassificacaoBox({
       </div>
 
       {/* Seletor de Cautelar */}
-      <div className="mt-4 rounded-lg bg-white/70 p-3">
-        <p className="mb-2 text-xs font-semibold text-slate-700">Laudo cautelar</p>
+      <div className="mt-4 rounded-lg bg-[var(--bg-surface)]/70 dark:bg-[var(--bg-surface)]/40 p-3">
+        <p className="mb-2 text-xs font-semibold text-[var(--text-body)]">Laudo cautelar</p>
         <div className="flex flex-wrap gap-2">
           {(["aprovado", "com_restricao", "reprovado"] as StatusCautelar[]).map((s) => {
             const ativo = cautelar === s;
@@ -219,7 +219,7 @@ function ClassificacaoBox({
                   "inline-flex items-center gap-1.5 rounded-lg border-2 px-3 py-1.5 text-xs font-medium transition",
                   ativo
                     ? `${ccor.bg} ${ccor.text} ${ccor.border}`
-                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
+                    : "border-[var(--border-soft)] bg-[var(--bg-surface)] text-[var(--text-body)] hover:border-[var(--border-base)] hover:bg-[var(--bg-muted)]",
                 )}
               >
                 <span>{CAUTELAR_ICONE[s]}</span> {CAUTELAR_LABEL[s]}
@@ -229,7 +229,7 @@ function ClassificacaoBox({
           {cautelar && (
             <button
               onClick={() => onCautelarChange(null)}
-              className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-[10px] text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+              className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-muted)] hover:text-[var(--text-body)]"
               title="Limpar cautelar"
             >
               ✕ limpar
@@ -245,27 +245,27 @@ function ClassificacaoBox({
 
       {/* Métricas */}
       <div className="mt-4 grid grid-cols-3 gap-3 text-center">
-        <div className="rounded-lg bg-white/70 p-2">
-          <p className="text-[10px] uppercase tracking-wider text-slate-500">Idade</p>
-          <p className="font-semibold tabular-nums text-slate-900">
+        <div className="rounded-lg bg-[var(--bg-surface)]/70 dark:bg-[var(--bg-surface)]/40 p-2">
+          <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Idade</p>
+          <p className="font-semibold tabular-nums text-[var(--text-strong)]">
             {classif.metricas.idade != null ? `${classif.metricas.idade} ${classif.metricas.idade === 1 ? "ano" : "anos"}` : "—"}
           </p>
         </div>
-        <div className="rounded-lg bg-white/70 p-2">
-          <p className="text-[10px] uppercase tracking-wider text-slate-500">KM/ano</p>
-          <p className="font-semibold tabular-nums text-slate-900">
+        <div className="rounded-lg bg-[var(--bg-surface)]/70 dark:bg-[var(--bg-surface)]/40 p-2">
+          <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">KM/ano</p>
+          <p className="font-semibold tabular-nums text-[var(--text-strong)]">
             {classif.metricas.kmPorAno != null ? formatInt(classif.metricas.kmPorAno) : "—"}
           </p>
         </div>
-        <div className="rounded-lg bg-white/70 p-2">
-          <p className="text-[10px] uppercase tracking-wider text-slate-500">Iguais no estoque</p>
-          <p className="font-semibold tabular-nums text-slate-900">{classif.metricas.qtMesmoModelo}</p>
+        <div className="rounded-lg bg-[var(--bg-surface)]/70 dark:bg-[var(--bg-surface)]/40 p-2">
+          <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Iguais no estoque</p>
+          <p className="font-semibold tabular-nums text-[var(--text-strong)]">{classif.metricas.qtMesmoModelo}</p>
         </div>
       </div>
 
       {/* Motivos */}
       {classif.motivos.length > 0 && (
-        <ul className="mt-3 space-y-1 text-xs text-slate-700">
+        <ul className="mt-3 space-y-1 text-xs text-[var(--text-body)]">
           {classif.motivos.map((m, i) => (
             <li key={i}>✓ {m}</li>
           ))}
@@ -274,17 +274,17 @@ function ClassificacaoBox({
 
       {/* Alertas manuais */}
       <details className="mt-3">
-        <summary className="cursor-pointer text-xs font-medium text-slate-700 hover:text-slate-900">
+        <summary className="cursor-pointer text-xs font-medium text-[var(--text-body)] hover:text-[var(--text-strong)]">
           ⚠️ {classif.alertasManuais.length} aspectos pra validar manualmente
         </summary>
-        <ul className="mt-2 space-y-1 text-xs text-slate-600">
+        <ul className="mt-2 space-y-1 text-xs text-[var(--text-body)]">
           {classif.alertasManuais.map((a, i) => (
             <li key={i}>• {a}</li>
           ))}
         </ul>
       </details>
 
-      <p className="mt-3 text-[10px] text-slate-500">
+      <p className="mt-3 text-[10px] text-[var(--text-muted)]">
         Classificação automática pela política Auto Avaliar. KM, idade e dias de pátio vêm do NBS; avarias e documentação ficam pro avaliador validar.
       </p>
     </div>

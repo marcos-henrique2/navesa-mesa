@@ -37,15 +37,15 @@ export function AlertasOperacionais() {
   return (
     <section>
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="flex items-center gap-2 text-base font-semibold text-slate-900">
-          <AlertTriangle className="h-4 w-4 text-amber-600" />
+        <h2 className="flex items-center gap-2 text-base font-semibold text-[var(--text-strong)]">
+          <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
           Alertas operacionais
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+          <span className="rounded-full bg-[var(--bg-muted)] px-2 py-0.5 text-[10px] font-bold text-[var(--text-body)]">
             {alertas.length}
           </span>
         </h2>
         {criticos.length > 0 && (
-          <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">
+          <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700 dark:bg-red-950/60 dark:text-red-300">
             {criticos.length} crítico{criticos.length === 1 ? "" : "s"}
           </span>
         )}
@@ -60,7 +60,7 @@ export function AlertasOperacionais() {
       {ocultos > 0 && (
         <button
           onClick={() => setExpandido(true)}
-          className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-[var(--brand-700)] hover:text-[var(--brand-900)]"
+          className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-[var(--brand-700)] hover:text-[var(--brand-900)] dark:text-[var(--brand-300)] dark:hover:text-[var(--brand-100)]"
         >
           <ChevronDown className="h-3 w-3" /> Ver mais {ocultos} alerta{ocultos === 1 ? "" : "s"}
         </button>
@@ -68,7 +68,7 @@ export function AlertasOperacionais() {
       {expandido && alertas.length > COLLAPSE_LIMIT && (
         <button
           onClick={() => setExpandido(false)}
-          className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-700"
+          className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text-body)]"
         >
           <ChevronUp className="h-3 w-3" /> Recolher
         </button>
@@ -79,22 +79,22 @@ export function AlertasOperacionais() {
 
 const TONE_BY_SEV: Record<SeveridadeAlerta, { bg: string; border: string; text: string; chip: string }> = {
   critico: {
-    bg: "bg-red-50",
-    border: "border-red-300",
-    text: "text-red-900",
-    chip: "bg-red-200 text-red-800",
+    bg: "bg-red-50 dark:bg-red-950/30",
+    border: "border-red-300 dark:border-red-900/70",
+    text: "text-red-900 dark:text-red-200",
+    chip: "bg-red-200 text-red-800 dark:bg-red-900/60 dark:text-red-200",
   },
   atencao: {
-    bg: "bg-amber-50",
-    border: "border-amber-300",
-    text: "text-amber-900",
-    chip: "bg-amber-200 text-amber-800",
+    bg: "bg-amber-50 dark:bg-amber-950/30",
+    border: "border-amber-300 dark:border-amber-900/70",
+    text: "text-amber-900 dark:text-amber-200",
+    chip: "bg-amber-200 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200",
   },
   info: {
-    bg: "bg-slate-50",
-    border: "border-slate-200",
-    text: "text-slate-800",
-    chip: "bg-slate-200 text-slate-700",
+    bg: "bg-[var(--bg-muted)]",
+    border: "border-[var(--border-soft)]",
+    text: "text-[var(--text-strong)]",
+    chip: "bg-[var(--bg-app)] text-[var(--text-body)]",
   },
 };
 
@@ -116,9 +116,9 @@ function AlertaCard({ alerta }: { alerta: Alerta }) {
             {alerta.severidade}
           </span>
         </div>
-        <p className="mt-1 text-left text-xs text-slate-600">{alerta.detalhe}</p>
+        <p className="mt-1 text-left text-xs text-[var(--text-body)] opacity-90">{alerta.detalhe}</p>
         {alerta.acao && (
-          <p className="mt-1.5 inline-flex items-center gap-0.5 text-[11px] font-medium text-[var(--brand-700)] opacity-60 transition group-hover:opacity-100 group-focus-visible:opacity-100">
+          <p className="mt-1.5 inline-flex items-center gap-0.5 text-[11px] font-medium text-[var(--brand-700)] opacity-60 transition group-hover:opacity-100 group-focus-visible:opacity-100 dark:text-[var(--brand-300)]">
             {alerta.acao.label ?? "Ver detalhes"} <ChevronRight className="h-3 w-3" />
           </p>
         )}

@@ -19,12 +19,12 @@ export function VendaDetalhe({ chassi }: { chassi: string }) {
   }, [vendas, venda]);
   const margemDetail = useMemo(() => venda ? calcMargemVenda(venda, custosPorPlaca) : null, [venda, custosPorPlaca]);
 
-  if (!isHydrated) return <p className="text-sm text-zinc-500">Carregando…</p>;
+  if (!isHydrated) return <p className="text-sm text-[var(--text-muted)]">Carregando…</p>;
 
   if (!venda) {
     return (
-      <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-12 text-center dark:border-zinc-700 dark:bg-zinc-900">
-        <p className="text-zinc-500">Venda com chassi <span className="font-mono">{chassi}</span> não encontrada.</p>
+      <div className="rounded-lg border border-dashed border-[var(--border-base)] bg-[var(--bg-surface)] p-12 text-center">
+        <p className="text-[var(--text-muted)]">Venda com chassi <span className="font-mono">{chassi}</span> não encontrada.</p>
         <Link href="/vendas" className="mt-3 inline-block rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700">Voltar pra análise</Link>
       </div>
     );
@@ -60,19 +60,19 @@ export function VendaDetalhe({ chassi }: { chassi: string }) {
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/vendas" className="inline-flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100">
+        <Link href="/vendas" className="inline-flex items-center gap-1 text-sm text-[var(--text-muted)] hover:text-[var(--text-strong)]">
           <ArrowLeft className="h-3 w-3" /> voltar para análise
         </Link>
         <div className="mt-3 flex flex-wrap items-baseline gap-3">
           <h1 className="text-2xl font-bold">{venda.marca} · {venda.modelo}</h1>
-          <span className="font-mono text-sm text-zinc-500">{venda.placa}</span>
+          <span className="font-mono text-sm text-[var(--text-muted)]">{venda.placa}</span>
           {venda.placa_troca && (
             <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">
               <Repeat className="h-3 w-3" /> Troca: {venda.placa_troca}
             </span>
           )}
         </div>
-        <p className="mt-1 text-xs text-zinc-500">Chassi <span className="font-mono">{venda.chassi}</span></p>
+        <p className="mt-1 text-xs text-[var(--text-muted)]">Chassi <span className="font-mono">{venda.chassi}</span></p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -101,15 +101,15 @@ export function VendaDetalhe({ chassi }: { chassi: string }) {
 
 
       {/* Composição de custos da venda */}
-      <section className="rounded-lg border border-[var(--border-soft)] bg-white shadow-[var(--shadow-sm)]">
+      <section className="rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] shadow-[var(--shadow-sm)]">
         <header className="flex items-center gap-2 border-b border-[var(--border-soft)] px-5 py-3">
           <h3 className="font-semibold">💰 Composição financeira</h3>
           {temOficial ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300">
               <CheckCircle2 className="h-3 w-3" /> Oficial NBS
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
               <Info className="h-3 w-3" /> Estimada (sem relatório de custos)
             </span>
           )}
@@ -125,7 +125,7 @@ export function VendaDetalhe({ chassi }: { chassi: string }) {
               return (
                 <div key={item.label}>
                   <div className="flex items-center justify-between gap-3 text-sm">
-                    <span className={cn("inline-flex items-center gap-2", isRedutor ? "text-emerald-700 font-medium" : "text-slate-700")}>
+                    <span className={cn("inline-flex items-center gap-2", isRedutor ? "text-emerald-700 font-medium" : "text-[var(--text-body)]")}>
                       {item.icon} {item.label}
                     </span>
                     <span className={cn("tabular-nums font-semibold", isRedutor && "text-emerald-700")}>
@@ -133,10 +133,10 @@ export function VendaDetalhe({ chassi }: { chassi: string }) {
                     </span>
                   </div>
                   <div className="mt-1 flex items-center gap-2">
-                    <div className="h-1.5 flex-1 overflow-hidden rounded bg-slate-200">
+                    <div className="h-1.5 flex-1 overflow-hidden rounded bg-[var(--bg-muted)]">
                       <div className={item.color + " h-full"} style={{ width: `${Math.min(100, pct)}%` }} />
                     </div>
-                    <span className="text-xs tabular-nums text-slate-500" style={{ width: 48 }}>{pct.toFixed(1)}%</span>
+                    <span className="text-xs tabular-nums text-[var(--text-muted)]" style={{ width: 48 }}>{pct.toFixed(1)}%</span>
                   </div>
                 </div>
               );
@@ -144,25 +144,25 @@ export function VendaDetalhe({ chassi }: { chassi: string }) {
 
             <div className="border-t border-[var(--border-soft)] pt-3">
               <div className="flex items-center justify-between text-sm">
-                <span className="font-semibold">Custo total {temOficial && <span className="text-[10px] font-normal text-slate-500">(oficial NBS)</span>}</span>
+                <span className="font-semibold">Custo total {temOficial && <span className="text-[10px] font-normal text-[var(--text-muted)]">(oficial NBS)</span>}</span>
                 <span className="tabular-nums font-bold">{formatBRL(custoTotal)}</span>
               </div>
             </div>
           </div>
 
-          <div className="rounded-lg border border-[var(--border-soft)] bg-slate-50 p-4">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Valor vendido</p>
-            <p className="mt-1 text-2xl font-bold tabular-nums text-slate-900">{formatBRL(valorVenda)}</p>
+          <div className="rounded-lg border border-[var(--border-soft)] bg-[var(--bg-muted)] p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Valor vendido</p>
+            <p className="mt-1 text-2xl font-bold tabular-nums text-[var(--text-strong)]">{formatBRL(valorVenda)}</p>
             {venda.preco_venda_tabela && venda.preco_venda_tabela !== valorVenda && (
-              <p className="text-[11px] text-slate-500">Tabela: {formatBRL(venda.preco_venda_tabela)}</p>
+              <p className="text-[11px] text-[var(--text-muted)]">Tabela: {formatBRL(venda.preco_venda_tabela)}</p>
             )}
 
-            <p className="mt-4 text-[10px] font-semibold uppercase tracking-wider text-slate-500">(−) Custo Total NBS</p>
-            <p className="mt-1 text-base font-semibold tabular-nums text-slate-600">{formatBRL(custoTotal)}</p>
+            <p className="mt-4 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">(−) Custo Total NBS</p>
+            <p className="mt-1 text-base font-semibold tabular-nums text-[var(--text-body)]">{formatBRL(custoTotal)}</p>
 
-            <div className="my-3 border-t border-slate-300" />
+            <div className="my-3 border-t border-[var(--border-base)]" />
 
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Margem Real</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Margem Real</p>
             <p className={cn("mt-1 flex items-center gap-1 text-2xl font-bold tabular-nums", positiva ? "text-emerald-700" : "text-red-700")}>
               {positiva ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />}
               {formatBRL(margem)}
@@ -203,7 +203,7 @@ function diasTone(d: number | null): "good" | "warn" | "bad" | undefined {
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] p-5">
       <h3 className="mb-3 font-semibold">{title}</h3>
       <div className="space-y-1.5 text-sm">{children}</div>
     </div>
@@ -219,7 +219,7 @@ function ClienteCard({ venda, cliente }: { venda: NonNullable<ReturnType<typeof 
   const styles = TIER_STYLES[tier];
 
   return (
-    <section className={cn("rounded-lg border bg-white shadow-[var(--shadow-sm)]", styles.cardBorder)}>
+    <section className={cn("rounded-lg border bg-[var(--bg-surface)] shadow-[var(--shadow-sm)]", styles.cardBorder)}>
       <header className={cn("flex items-center gap-2 border-b px-5 py-3", styles.headerBg, styles.cardBorder)}>
         <h3 className="font-semibold">👤 Cliente</h3>
         {cliente && cliente.totalCompras > 1 && (
@@ -246,7 +246,7 @@ function ClienteCard({ venda, cliente }: { venda: NonNullable<ReturnType<typeof 
             <p className={cn("flex items-center gap-2 text-sm font-semibold", styles.alertText)}>
               {styles.icon} {TIER_LABEL[tier]}
             </p>
-            <p className="mt-1 text-xs text-slate-600">
+            <p className="mt-1 text-xs text-[var(--text-body)]">
               <strong>{cliente.totalCompras}</strong> compras no total
               {cliente.diasEntrePrimeiraUltima !== null && cliente.diasEntrePrimeiraUltima > 0 && (
                 <> em <strong>{cliente.diasEntrePrimeiraUltima}</strong> dias</>
@@ -254,20 +254,20 @@ function ClienteCard({ venda, cliente }: { venda: NonNullable<ReturnType<typeof 
               {" · "}faturamento <strong>{formatBRL(cliente.totalValor)}</strong>
             </p>
 
-            <p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Histórico de compras</p>
-            <ul className="mt-1.5 divide-y divide-slate-200">
+            <p className="mt-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Histórico de compras</p>
+            <ul className="mt-1.5 divide-y divide-[var(--border-soft)]">
               {cliente.vendas.map((vv, i) => {
                 const isAtual = vv.chassi === v.chassi;
                 return (
-                  <li key={vv.chassi} className={cn("flex items-center justify-between py-1.5 text-xs", isAtual && "font-semibold text-slate-900")}>
+                  <li key={vv.chassi} className={cn("flex items-center justify-between py-1.5 text-xs", isAtual && "font-semibold text-[var(--text-strong)]")}>
                     <span className="flex items-center gap-2">
-                      <span className="tabular-nums text-slate-400" style={{ width: 18 }}>{i + 1}.</span>
-                      {isAtual && <span className="rounded bg-slate-900 px-1 py-0.5 text-[9px] font-bold text-white">ATUAL</span>}
+                      <span className="tabular-nums text-[var(--text-subtle)]" style={{ width: 18 }}>{i + 1}.</span>
+                      {isAtual && <span className="rounded bg-[var(--text-strong)] px-1 py-0.5 text-[9px] font-bold text-[var(--bg-surface)]">ATUAL</span>}
                       <span className="font-mono">{vv.placa}</span>
-                      <span className="text-slate-500">{vv.marca} {vv.modelo.slice(0, 40)}</span>
+                      <span className="text-[var(--text-muted)]">{vv.marca} {vv.modelo.slice(0, 40)}</span>
                     </span>
                     <span className="flex items-center gap-3">
-                      <span className="text-slate-500">{vv.data_venda ? new Date(vv.data_venda).toLocaleDateString("pt-BR") : "—"}</span>
+                      <span className="text-[var(--text-muted)]">{vv.data_venda ? new Date(vv.data_venda).toLocaleDateString("pt-BR") : "—"}</span>
                       <span className="tabular-nums">{formatBRL(vv.valor_venda)}</span>
                     </span>
                   </li>
@@ -286,24 +286,24 @@ const TIER_STYLES: Record<RecorrenciaTier, {
   alertBg: string; alertText: string;
 }> = {
   "unica": {
-    cardBorder: "border-[var(--border-soft)]", headerBg: "bg-slate-50",
-    badge: "bg-slate-100 text-slate-700", icon: null,
-    alertBg: "bg-slate-50", alertText: "text-slate-700",
+    cardBorder: "border-[var(--border-soft)]", headerBg: "bg-[var(--bg-muted)]",
+    badge: "bg-[var(--bg-muted)] text-[var(--text-body)]", icon: null,
+    alertBg: "bg-[var(--bg-muted)]", alertText: "text-[var(--text-body)]",
   },
   "ocasional": {
-    cardBorder: "border-[var(--border-soft)]", headerBg: "bg-blue-50",
-    badge: "bg-blue-100 text-blue-800", icon: <Repeat className="h-3 w-3" />,
-    alertBg: "bg-blue-50", alertText: "text-blue-900",
+    cardBorder: "border-[var(--border-soft)]", headerBg: "bg-blue-50 dark:bg-blue-950/30",
+    badge: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200", icon: <Repeat className="h-3 w-3" />,
+    alertBg: "bg-blue-50 dark:bg-blue-950/30", alertText: "text-blue-900 dark:text-blue-200",
   },
   "recorrente": {
-    cardBorder: "border-amber-200", headerBg: "bg-amber-50",
-    badge: "bg-amber-200 text-amber-900", icon: <AlertCircle className="h-3 w-3" />,
-    alertBg: "bg-amber-50", alertText: "text-amber-900",
+    cardBorder: "border-amber-200 dark:border-amber-900", headerBg: "bg-amber-50 dark:bg-amber-950/30",
+    badge: "bg-amber-200 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200", icon: <AlertCircle className="h-3 w-3" />,
+    alertBg: "bg-amber-50 dark:bg-amber-950/30", alertText: "text-amber-900 dark:text-amber-200",
   },
   "lojista-suspeito": {
-    cardBorder: "border-red-300", headerBg: "bg-red-50",
+    cardBorder: "border-red-300 dark:border-red-900", headerBg: "bg-red-50 dark:bg-red-950/30",
     badge: "bg-red-600 text-white", icon: <AlertCircle className="h-3 w-3" />,
-    alertBg: "bg-red-50", alertText: "text-red-900",
+    alertBg: "bg-red-50 dark:bg-red-950/30", alertText: "text-red-900 dark:text-red-200",
   },
 };
 
@@ -314,8 +314,8 @@ function Row({ label, value, bold, muted, tone }: { label: string; value: string
     : "";
   return (
     <div className="flex items-baseline justify-between gap-3">
-      <span className="text-zinc-500">{label}</span>
-      <span className={cn("text-right tabular-nums", bold && "font-semibold", muted && "text-zinc-600 dark:text-zinc-400", toneClass)}>{value}</span>
+      <span className="text-[var(--text-muted)]">{label}</span>
+      <span className={cn("text-right tabular-nums", bold && "font-semibold", muted && "text-[var(--text-body)]", toneClass)}>{value}</span>
     </div>
   );
 }

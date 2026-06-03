@@ -26,14 +26,14 @@ export function LojasTable() {
   const total = linhas.length;
 
   if (!isHydrated) {
-    return <p className="text-sm text-zinc-500">Carregando…</p>;
+    return <p className="text-sm text-[var(--text-muted)]">Carregando…</p>;
   }
 
   if (linhas.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-12 text-center dark:border-zinc-700 dark:bg-zinc-900">
-        <Building2 className="mx-auto h-10 w-10 text-zinc-400" />
-        <p className="mt-3 text-zinc-500">Sem lojas cadastradas. Faça um upload primeiro.</p>
+      <div className="rounded-lg border border-dashed border-[var(--border-base)] bg-[var(--bg-surface)] p-12 text-center">
+        <Building2 className="mx-auto h-10 w-10 text-[var(--text-subtle)]" />
+        <p className="mt-3 text-[var(--text-muted)]">Sem lojas cadastradas. Faça um upload primeiro.</p>
         <a href="/upload" className="mt-3 inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">📤 Subir relatório</a>
       </div>
     );
@@ -41,27 +41,27 @@ export function LojasTable() {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4">
         <p className="text-sm">
           <strong>{preenchidas}</strong> de <strong>{total}</strong> lojas com nome preenchido.
           {preenchidas < total && <span className="ml-2 text-amber-600">Preencha as restantes para o nome aparecer nas telas.</span>}
         </p>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="overflow-hidden rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)]">
         <table className="w-full text-sm">
-          <thead className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950">
+          <thead className="border-b border-[var(--border-soft)] bg-[var(--bg-muted)]">
             <tr>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400" style={{ width: 80 }}>Código</th>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">Nome da loja</th>
-              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400" style={{ width: 200 }}>Cidade</th>
-              <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400" style={{ width: 120 }}>Carros</th>
-              <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400" style={{ width: 60 }}>Status</th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--text-body)] dark:text-[var(--text-subtle)]" style={{ width: 80 }}>Código</th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--text-body)] dark:text-[var(--text-subtle)]">Nome da loja</th>
+              <th className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--text-body)] dark:text-[var(--text-subtle)]" style={{ width: 200 }}>Cidade</th>
+              <th className="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide text-[var(--text-body)] dark:text-[var(--text-subtle)]" style={{ width: 120 }}>Carros</th>
+              <th className="px-3 py-2 text-center text-xs font-medium uppercase tracking-wide text-[var(--text-body)] dark:text-[var(--text-subtle)]" style={{ width: 60 }}>Status</th>
             </tr>
           </thead>
           <tbody>
             {linhas.map((l) => (
-              <tr key={l.cod} className="border-b border-zinc-100 last:border-0 dark:border-zinc-800">
+              <tr key={l.cod} className="border-b border-[var(--border-soft)] last:border-0">
                 <td className="px-3 py-2"><span className="font-mono">{l.cod}</span></td>
                 <td className="px-3 py-2">
                   <input
@@ -70,8 +70,8 @@ export function LojasTable() {
                     onChange={(e) => updateLoja(l.cod, { nome: e.target.value })}
                     placeholder={`Ex: NAVESA ... loja ${l.cod}`}
                     className={cn(
-                      "w-full rounded-md border bg-white px-2 py-1.5 text-sm dark:bg-zinc-900",
-                      l.nome.trim() ? "border-zinc-300 dark:border-zinc-700" : "border-amber-300 dark:border-amber-700",
+                      "w-full rounded-md border bg-[var(--bg-surface)] px-2 py-1.5 text-sm",
+                      l.nome.trim() ? "border-[var(--border-base)]" : "border-amber-300 dark:border-amber-700",
                     )}
                   />
                 </td>
@@ -81,10 +81,10 @@ export function LojasTable() {
                     value={l.cidade}
                     onChange={(e) => updateLoja(l.cod, { cidade: e.target.value })}
                     placeholder="Cidade"
-                    className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                    className="w-full rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-2 py-1.5 text-sm"
                   />
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums text-zinc-600">{formatInt(l.carros)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-[var(--text-body)]">{formatInt(l.carros)}</td>
                 <td className="px-3 py-2 text-center">
                   {l.nome.trim() ? (
                     <CheckCircle2 className="mx-auto h-4 w-4 text-green-600" aria-label="Preenchida" />
@@ -98,7 +98,7 @@ export function LojasTable() {
         </table>
       </div>
 
-      <p className="text-xs text-zinc-500">💾 As alterações são salvas automaticamente. Os nomes ficam guardados mesmo após novo upload.</p>
+      <p className="text-xs text-[var(--text-muted)]">💾 As alterações são salvas automaticamente. Os nomes ficam guardados mesmo após novo upload.</p>
     </div>
   );
 }

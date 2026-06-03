@@ -6,6 +6,7 @@ import { LayoutDashboard, Car, TrendingUp, Building2, Upload, Menu, X, Sparkles,
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { DataGate } from "./DataGate";
+import { ThemeToggle } from "./ThemeToggle";
 import { createClient } from "@/lib/supabase/client";
 
 const COLLAPSED_KEY = "navesa-mesa:sidebar-collapsed";
@@ -64,7 +65,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <aside
         suppressHydrationWarning
         className={cn(
-          "hidden md:flex flex-col border-r border-[var(--border-soft)] bg-white transition-[width] duration-200 ease-out",
+          "hidden md:flex flex-col border-r border-[var(--border-soft)] bg-[var(--bg-surface)] transition-[width] duration-200 ease-out",
           collapsed ? "w-16" : "w-64",
         )}
       >
@@ -74,9 +75,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Sidebar mobile (drawer) — sempre full no mobile, sem toggle */}
       {open && (
         <div className="fixed inset-0 z-40 md:hidden" onClick={() => setOpen(false)}>
-          <div className="absolute inset-0 bg-black/30" />
-          <aside className="absolute inset-y-0 left-0 w-64 bg-white shadow-lg" onClick={(e) => e.stopPropagation()}>
-            <button onClick={() => setOpen(false)} className="absolute right-3 top-3 rounded-md p-1 text-slate-500 hover:bg-slate-100"><X className="h-5 w-5" /></button>
+          <div className="absolute inset-0 bg-black/50" />
+          <aside className="absolute inset-y-0 left-0 w-64 bg-[var(--bg-surface)] shadow-lg" onClick={(e) => e.stopPropagation()}>
+            <button onClick={() => setOpen(false)} className="absolute right-3 top-3 rounded-md p-1 text-[var(--text-muted)] hover:bg-[var(--bg-muted)]"><X className="h-5 w-5" /></button>
             <SidebarContent pathname={pathname} collapsed={false} onItemClick={() => setOpen(false)} />
           </aside>
         </div>
@@ -85,14 +86,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Main */}
       <div className="flex flex-1 flex-col min-w-0">
         {/* Topbar mobile (sidebar trigger + user) */}
-        <header className="flex items-center gap-3 border-b border-[var(--border-soft)] bg-white px-4 py-3 md:hidden">
-          <button onClick={() => setOpen(true)} className="rounded-md p-1.5 text-slate-600 hover:bg-slate-100"><Menu className="h-5 w-5" /></button>
-          <span className="font-semibold text-slate-900">Navesa Mesa</span>
-          <div className="ml-auto"><UserMenu /></div>
+        <header className="flex items-center gap-3 border-b border-[var(--border-soft)] bg-[var(--bg-surface)] px-4 py-3 md:hidden">
+          <button onClick={() => setOpen(true)} className="rounded-md p-1.5 text-[var(--text-body)] hover:bg-[var(--bg-muted)]"><Menu className="h-5 w-5" /></button>
+          <span className="font-semibold text-[var(--text-strong)]">Navesa Mesa</span>
+          <div className="ml-auto flex items-center gap-1"><ThemeToggle /><UserMenu /></div>
         </header>
 
-        {/* Topbar desktop (só user no canto direito) */}
-        <header className="hidden md:flex items-center justify-end border-b border-[var(--border-soft)] bg-white px-6 py-2">
+        {/* Topbar desktop (theme toggle + user no canto direito) */}
+        <header className="hidden md:flex items-center justify-end gap-1 border-b border-[var(--border-soft)] bg-[var(--bg-surface)] px-6 py-2">
+          <ThemeToggle />
           <UserMenu />
         </header>
 
@@ -138,14 +140,14 @@ function UserMenu() {
 
   return (
     <div className="flex items-center gap-2 text-xs">
-      <span className="hidden truncate text-slate-500 sm:inline max-w-[200px]" title={email}>
+      <span className="hidden truncate text-[var(--text-muted)] sm:inline max-w-[200px]" title={email}>
         {email}
       </span>
       <button
         type="button"
         onClick={handleSignOut}
         disabled={signingOut}
-        className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-slate-600 transition hover:bg-slate-50 hover:text-slate-900 disabled:opacity-50"
+        className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border-soft)] bg-[var(--bg-surface)] px-2.5 py-1.5 text-[var(--text-body)] transition hover:bg-[var(--bg-muted)] hover:text-[var(--text-strong)] disabled:opacity-50"
         title="Sair"
       >
         {signingOut ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <LogOut className="h-3.5 w-3.5" />}
@@ -181,15 +183,15 @@ function SidebarContent({
           </div>
           {!collapsed && (
             <div className="min-w-0">
-              <p className="truncate text-sm font-bold leading-none text-slate-900">Navesa Mesa</p>
-              <p className="mt-0.5 truncate text-[11px] text-slate-500">Precificação de Seminovos</p>
+              <p className="truncate text-sm font-bold leading-none text-[var(--text-strong)]">Navesa Mesa</p>
+              <p className="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">Precificação de Seminovos</p>
             </div>
           )}
         </Link>
         {onToggle && !collapsed && (
           <button
             onClick={onToggle}
-            className="rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            className="rounded-md p-1 text-[var(--text-subtle)] transition hover:bg-[var(--bg-muted)] hover:text-[var(--text-body)]"
             title="Recolher menu"
             aria-label="Recolher menu"
           >
@@ -203,7 +205,7 @@ function SidebarContent({
         <div className="flex justify-center border-b border-[var(--border-soft)] py-2">
           <button
             onClick={onToggle}
-            className="rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            className="rounded-md p-1.5 text-[var(--text-subtle)] transition hover:bg-[var(--bg-muted)] hover:text-[var(--text-body)]"
             title="Expandir menu"
             aria-label="Expandir menu"
           >
@@ -215,7 +217,7 @@ function SidebarContent({
       {/* Nav */}
       <nav className={cn("flex-1 py-4", collapsed ? "px-2" : "px-3")}>
         {!collapsed && (
-          <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Navegação</p>
+          <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-subtle)]">Navegação</p>
         )}
         <ul className="space-y-1">
           {NAV.map((item) => {
@@ -230,11 +232,11 @@ function SidebarContent({
                     "flex items-center rounded-lg text-sm font-medium transition",
                     collapsed ? "justify-center px-2 py-2" : "gap-2.5 px-3 py-2",
                     active
-                      ? "bg-gradient-to-r from-[var(--brand-50)] to-transparent text-[var(--brand-900)] shadow-sm"
-                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
+                      ? "bg-gradient-to-r from-[var(--brand-50)] to-transparent text-[var(--brand-900)] shadow-sm dark:from-[var(--brand-900)]/30 dark:text-[var(--brand-100)]"
+                      : "text-[var(--text-body)] hover:bg-[var(--bg-muted)] hover:text-[var(--text-strong)]",
                   )}
                 >
-                  <span className={active ? "text-[var(--brand-700)]" : "text-slate-400"}>{item.icon}</span>
+                  <span className={active ? "text-[var(--brand-700)] dark:text-[var(--brand-300)]" : "text-[var(--text-subtle)]"}>{item.icon}</span>
                   {!collapsed && (
                     <>
                       <span className="truncate">{item.label}</span>
@@ -249,7 +251,7 @@ function SidebarContent({
       </nav>
 
       {!collapsed && (
-        <div className="border-t border-[var(--border-soft)] px-5 py-3 text-[11px] text-slate-400">
+        <div className="border-t border-[var(--border-soft)] px-5 py-3 text-[11px] text-[var(--text-subtle)]">
           <p>Mesa de Precificação</p>
           <p className="mt-0.5">Versão MVP · {new Date().getFullYear()}</p>
         </div>
@@ -260,10 +262,10 @@ function SidebarContent({
 
 export function PageHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: React.ReactNode }) {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--border-soft)] bg-white px-6 py-5">
+    <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--border-soft)] bg-[var(--bg-surface)] px-6 py-5">
       <div>
-        <h1 className="text-xl font-bold text-slate-900">{title}</h1>
-        {subtitle && <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>}
+        <h1 className="text-xl font-bold text-[var(--text-strong)]">{title}</h1>
+        {subtitle && <p className="mt-0.5 text-sm text-[var(--text-muted)]">{subtitle}</p>}
       </div>
       {action}
     </div>

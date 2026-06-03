@@ -505,7 +505,7 @@ function PrecificacaoView({
 
           {/* Linha de fechamento — sempre visível, contextual */}
           {fechamento && (
-            <p className="rounded-lg bg-white/60 px-3 py-2 text-xs">{fechamento}</p>
+            <p className="rounded-lg bg-[var(--bg-surface)]/60 px-3 py-2 text-xs">{fechamento}</p>
           )}
 
           {/* ─── VER DETALHES ─── */}

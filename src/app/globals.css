@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
-/* Força light mode: variant dark: só ativa em ancestral com .dark.
-   Como nada no app coloca .dark, ficamos sempre claro mesmo se o SO estiver em dark. */
+/* Modo dark: variant dark: ativa quando o <html> tem classe .dark
+   (controlado pelo ThemeToggle / script anti-flicker no layout.tsx). */
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* Navesa Mesa — Design System
@@ -51,6 +51,39 @@
   --shadow-lg:  0 12px 24px -8px rgba(15, 37, 66, 0.12), 0 4px 8px -4px rgba(15, 37, 66, 0.06);
 }
 
+/* Paleta dark — override de variáveis quando .dark no <html>.
+   Brand permanece intacto: azul-marinho funciona em ambos modos. */
+.dark {
+  /* Surfaces */
+  --bg-app:     #0A0E16;
+  --bg-surface: #111827;
+  --bg-muted:   #1F2937;
+
+  /* Text */
+  --text-strong: #F1F5F9;
+  --text-body:   #CBD5E1;
+  --text-muted:  #94A3B8;
+  --text-subtle: #64748B;
+
+  /* Borders */
+  --border-soft: #1F2937;
+  --border-base: #334155;
+
+  /* Status (saturação alta — chama atenção em dark) */
+  --success:    #10B981;
+  --success-bg: #064E3B;
+  --warning:    #F59E0B;
+  --warning-bg: #78350F;
+  --danger:     #EF4444;
+  --danger-bg:  #7F1D1D;
+
+  /* Shadows mais sutis em dark */
+  --shadow-sm:  0 1px 2px 0 rgba(0, 0, 0, 0.2);
+  --shadow:     0 1px 3px 0 rgba(0, 0, 0, 0.3), 0 1px 2px -1px rgba(0, 0, 0, 0.2);
+  --shadow-md:  0 4px 8px -2px rgba(0, 0, 0, 0.4);
+  --shadow-lg:  0 12px 24px -8px rgba(0, 0, 0, 0.5);
+}
+
 @theme inline {
   --color-background: var(--bg-app);
   --color-foreground: var(--text-strong);
@@ -87,5 +120,5 @@ body {
 /* Scrollbar suave */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 999px; }
-::-webkit-scrollbar-thumb:hover { background: #94A3B8; }
+::-webkit-scrollbar-thumb { background: var(--border-base); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-subtle); }

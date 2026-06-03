@@ -84,9 +84,9 @@ export function FipeSecao({
       <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider opacity-70">
         FIPE &amp; matching
       </h4>
-      <div className="rounded-lg bg-white/70 p-3 text-xs">
+      <div className="rounded-lg bg-[var(--bg-surface)]/70 p-3 text-xs">
         <p className="text-[10px] uppercase tracking-wider opacity-60">Modelo NBS</p>
-        <p className="font-mono text-slate-800">{modeloNbs}</p>
+        <p className="font-mono text-[var(--text-body)]">{modeloNbs}</p>
         <div className="mt-2 flex items-center justify-between gap-3">
           <div>
             <p className="text-[10px] uppercase tracking-wider opacity-60">Preço FIPE atual</p>
@@ -97,7 +97,7 @@ export function FipeSecao({
           <button
             type="button"
             onClick={onAbrirDrawer}
-            className="inline-flex items-center gap-1.5 rounded-md border border-current/30 bg-white px-3 py-1.5 text-xs font-medium hover:bg-slate-50"
+            className="inline-flex items-center gap-1.5 rounded-md border border-current/30 bg-[var(--bg-surface)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--bg-muted)]"
             aria-label="Abrir revisão de match FIPE"
           >
             <Sparkles className="h-3 w-3" aria-hidden="true" /> Revisar match FIPE
@@ -124,7 +124,7 @@ export function ComparaveisSecao({ sugestao }: { sugestao: PrecoSuggestion }) {
       <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider opacity-70">
         {sugestao.comparaveis.length} venda{sugestao.comparaveis.length === 1 ? "" : "s"} comparável{sugestao.comparaveis.length === 1 ? "" : "is"}
       </h4>
-      <div className="rounded-lg bg-white/70 p-3 text-xs">
+      <div className="rounded-lg bg-[var(--bg-surface)]/70 p-3 text-xs">
         <p>
           {sugestao.medianaHistorica != null && (
             <>Mediana <span className="font-semibold tabular-nums">{formatBRL(sugestao.medianaHistorica)}</span></>
@@ -136,14 +136,14 @@ export function ComparaveisSecao({ sugestao }: { sugestao: PrecoSuggestion }) {
         <button
           type="button"
           onClick={() => setTabelaAberta((v) => !v)}
-          className="mt-1.5 text-[var(--brand-700)] underline hover:text-[var(--brand-900)]"
+          className="mt-1.5 text-[var(--brand-700)] underline hover:text-[var(--brand-900)] dark:text-[var(--brand-300)] dark:hover:text-[var(--brand-100)]"
         >
           {tabelaAberta ? "Ocultar tabela" : "Ver tabela"}
         </button>
         {tabelaAberta && (
-          <div className="mt-2 overflow-x-auto rounded-md border border-current/10 bg-white">
+          <div className="mt-2 overflow-x-auto rounded-md border border-current/10 bg-[var(--bg-surface)]">
             <table className="w-full text-[11px]">
-              <thead className="bg-slate-50 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+              <thead className="bg-[var(--bg-muted)] text-left text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                 <tr>
                   <th className="px-2 py-1.5">Placa</th>
                   <th className="px-2 py-1.5 text-right">Vendido</th>
@@ -157,13 +157,13 @@ export function ComparaveisSecao({ sugestao }: { sugestao: PrecoSuggestion }) {
                   <tr key={c.placa} className="border-t border-current/10">
                     <td className="px-2 py-1 font-mono">{c.placa}</td>
                     <td className="px-2 py-1 text-right tabular-nums">{formatBRL(c.precoVenda)}</td>
-                    <td className="px-2 py-1 text-right tabular-nums text-slate-500">
+                    <td className="px-2 py-1 text-right tabular-nums text-[var(--text-muted)]">
                       {c.km != null ? formatInt(c.km) : "—"}
                     </td>
-                    <td className="px-2 py-1 text-right tabular-nums text-slate-500">
+                    <td className="px-2 py-1 text-right tabular-nums text-[var(--text-muted)]">
                       {c.diasAteVenda != null ? `${c.diasAteVenda}d` : "—"}
                     </td>
-                    <td className="px-2 py-1 text-right text-slate-500">
+                    <td className="px-2 py-1 text-right text-[var(--text-muted)]">
                       {c.dataVenda ? new Date(c.dataVenda).toLocaleDateString("pt-BR") : "—"}
                     </td>
                   </tr>

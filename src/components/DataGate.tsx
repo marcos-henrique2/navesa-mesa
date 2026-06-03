@@ -23,10 +23,10 @@ function CarregandoSkeleton() {
     <div className="mx-auto max-w-7xl px-6 py-8">
       {/* Header */}
       <div className="mb-2 flex items-center gap-3">
-        <Cloud className="h-5 w-5 animate-pulse text-[var(--brand-700)]" />
-        <h2 className="text-base font-semibold text-slate-800">Carregando dados da nuvem...</h2>
+        <Cloud className="h-5 w-5 animate-pulse text-[var(--brand-700)] dark:text-[var(--brand-300)]" />
+        <h2 className="text-base font-semibold text-[var(--text-strong)]">Carregando dados da nuvem...</h2>
       </div>
-      <p className="mb-6 inline-flex items-center gap-2 text-sm text-slate-500">
+      <p className="mb-6 inline-flex items-center gap-2 text-sm text-[var(--text-muted)]">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
         Buscando estoque, vendas e custos no Supabase
       </p>
@@ -39,7 +39,7 @@ function CarregandoSkeleton() {
       </div>
 
       {/* Tabela placeholder */}
-      <div className="mt-8 rounded-xl border border-[var(--border-soft)] bg-white p-5 shadow-[var(--shadow-sm)]">
+      <div className="mt-8 rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-5 shadow-[var(--shadow-sm)]">
         <Bar w="40%" />
         <div className="mt-4 space-y-2">
           {[0, 1, 2, 3, 4, 5].map((i) => (
@@ -65,7 +65,7 @@ function SkeletonCard({ delay = 0, tall = false }: { delay?: number; tall?: bool
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-xl border border-[var(--border-soft)] bg-white p-5 shadow-[var(--shadow-sm)]",
+        "overflow-hidden rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-5 shadow-[var(--shadow-sm)]",
         tall && "min-h-[180px]",
       )}
       style={{ animationDelay: `${delay}ms` }}
@@ -92,7 +92,7 @@ function SkeletonCard({ delay = 0, tall = false }: { delay?: number; tall?: bool
 function Bar({ w = "100%", h = "h-3", delay = 0 }: { w?: string; h?: string; delay?: number }) {
   return (
     <div
-      className={cn("animate-pulse rounded-md bg-gradient-to-r from-slate-100 via-slate-200 to-slate-100", h)}
+      className={cn("animate-pulse rounded-md bg-gradient-to-r from-[var(--bg-muted)] via-[var(--border-soft)] to-[var(--bg-muted)]", h)}
       style={{ width: w, animationDelay: `${delay}ms` }}
     />
   );
@@ -102,19 +102,19 @@ function ErroDeCarregamento({ mensagem, onRetry }: { mensagem: string; onRetry: 
   const semInternet = /fetch failed|network|ENOTFOUND/i.test(mensagem);
   return (
     <div className="mx-auto max-w-2xl px-6 py-12">
-      <div className="rounded-2xl border-2 border-red-200 bg-red-50 p-8 text-center shadow-[var(--shadow-md)]">
-        <div className="mx-auto mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-red-100 text-red-700">
+      <div className="rounded-2xl border-2 border-red-200 bg-red-50 p-8 text-center shadow-[var(--shadow-md)] dark:border-red-900 dark:bg-red-950/30">
+        <div className="mx-auto mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
           <AlertCircle className="h-7 w-7" />
         </div>
-        <h2 className="text-xl font-bold text-red-900">Não consegui carregar os dados</h2>
-        <p className="mt-2 text-sm text-red-800">
+        <h2 className="text-xl font-bold text-red-900 dark:text-red-200">Não consegui carregar os dados</h2>
+        <p className="mt-2 text-sm text-red-800 dark:text-red-300">
           {semInternet
             ? "Parece que não há conexão com a internet. O sistema precisa do Supabase pra funcionar."
             : "Aconteceu algum problema na conexão com o Supabase."}
         </p>
         <details className="mx-auto mt-3 max-w-md text-left">
-          <summary className="cursor-pointer text-xs text-red-700 hover:text-red-900">Detalhes técnicos</summary>
-          <p className="mt-2 rounded-md bg-white/70 p-2 font-mono text-[11px] text-slate-700">{mensagem}</p>
+          <summary className="cursor-pointer text-xs text-red-700 hover:text-red-900 dark:text-red-300 dark:hover:text-red-100">Detalhes técnicos</summary>
+          <p className="mt-2 rounded-md bg-[var(--bg-surface)]/70 p-2 font-mono text-[11px] text-[var(--text-body)]">{mensagem}</p>
         </details>
         <button
           onClick={onRetry}
@@ -122,7 +122,7 @@ function ErroDeCarregamento({ mensagem, onRetry }: { mensagem: string; onRetry: 
         >
           <RefreshCw className="h-4 w-4" /> Tentar de novo
         </button>
-        <p className="mt-4 text-[11px] text-slate-500">
+        <p className="mt-4 text-[11px] text-[var(--text-muted)]">
           Se o erro persistir, confira sua internet e tente recarregar a página (F5).
         </p>
       </div>

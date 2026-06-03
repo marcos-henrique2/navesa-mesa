@@ -222,7 +222,7 @@ export function VendasAnalise() {
     { accessorKey: "modelo", header: "Modelo", cell: (info) => <span className="text-xs">{info.getValue<string>()}</span> },
     { accessorKey: "km", header: "KM", cell: (info) => {
       const v = info.getValue<number | null>();
-      return <span className="tabular-nums text-xs text-zinc-600">{v != null ? formatInt(v) : "—"}</span>;
+      return <span className="tabular-nums text-xs text-[var(--text-body)]">{v != null ? formatInt(v) : "—"}</span>;
     } },
     { accessorKey: "vendedor_nome", header: "Vendedor", cell: (info) => <span className="text-xs">{info.getValue<string | null>() ?? "—"}</span> },
     { accessorKey: "cliente_nome", header: "Cliente", cell: (info) => {
@@ -264,11 +264,11 @@ export function VendasAnalise() {
     } },
     { accessorKey: "dias_estoque", header: "Dias", cell: (info) => {
       const d = info.getValue<number | null>();
-      if (d === null) return <span className="text-zinc-400">—</span>;
+      if (d === null) return <span className="text-[var(--text-subtle)]">—</span>;
       const tone = d < 30 ? "text-green-700 dark:text-green-400" : d < 90 ? "" : d < 180 ? "text-amber-700 dark:text-amber-400" : "text-red-700 dark:text-red-400";
       return <span className={cn("tabular-nums", tone)}>{d}</span>;
     } },
-    { accessorKey: "comissao_vendedor", header: "Comissão", cell: (info) => <span className="tabular-nums text-xs text-zinc-600">{formatBRL(info.getValue<number | null>())}</span> },
+    { accessorKey: "comissao_vendedor", header: "Comissão", cell: (info) => <span className="tabular-nums text-xs text-[var(--text-body)]">{formatBRL(info.getValue<number | null>())}</span> },
     // Coluna Troca só aparece se o dataset tem trocas
     ...(hasAnyTroca ? [{ id: "troca", header: "Troca", cell: ({ row }: { row: { original: VendaParsed } }) => row.original.placa_troca ? <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">{row.original.placa_troca}</span> : null } as ColumnDef<VendaParsed>] : []),
   ], [clientesIndex, custosPorPlaca, hasAnyTroca]);
@@ -317,12 +317,12 @@ export function VendasAnalise() {
     setDataAte("");
   };
 
-  if (!isHydrated) return <p className="text-sm text-zinc-500">Carregando…</p>;
+  if (!isHydrated) return <p className="text-sm text-[var(--text-muted)]">Carregando…</p>;
 
   if (vendas.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-12 text-center dark:border-zinc-700 dark:bg-zinc-900">
-        <p className="text-zinc-500">Nenhum relatório de vendas carregado.</p>
+      <div className="rounded-lg border border-dashed border-[var(--border-base)] bg-[var(--bg-surface)] p-12 text-center">
+        <p className="text-[var(--text-muted)]">Nenhum relatório de vendas carregado.</p>
         <a href="/upload" className="mt-3 inline-block rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700">📤 Subir relatório de vendas</a>
       </div>
     );
@@ -335,7 +335,7 @@ export function VendasAnalise() {
   return (
     <div className="space-y-6">
       {periodo && (
-        <p className="text-xs text-zinc-500">Período: <strong>{periodo}</strong> · {formatInt(vendasMeta!.total_vendas)} vendas · {formatInt(vendasMeta!.total_lojas)} lojas · {formatInt(vendasMeta!.total_vendedores)} vendedores</p>
+        <p className="text-xs text-[var(--text-muted)]">Período: <strong>{periodo}</strong> · {formatInt(vendasMeta!.total_vendas)} vendas · {formatInt(vendasMeta!.total_lojas)} lojas · {formatInt(vendasMeta!.total_vendedores)} vendedores</p>
       )}
 
       {/* KPIs — esconde 'Trocas' quando o relatório não trouxe essa info no dataset */}
@@ -358,25 +358,25 @@ export function VendasAnalise() {
       <ComposicaoCustos vendas={filtered} />
 
       {/* Filtros */}
-      <div className="space-y-3 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="space-y-3 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4">
         {/* Essenciais: sempre visíveis */}
         <div className="flex flex-wrap items-center gap-3">
           <Select label="Loja" value={filtroLoja} onChange={setFiltroLoja} options={[["all", "Todas"], ...lojas.map((l) => [l, l] as [string, string])]} />
           <Select label="Vendedor" value={filtroVendedor} onChange={setFiltroVendedor} options={[["all", "Todos"], ...vendedores.map((v) => [v, v] as [string, string])]} />
 
           <label className="flex items-center gap-1.5 text-sm">
-            <span className="text-zinc-500">De:</span>
+            <span className="text-[var(--text-muted)]">De:</span>
             <input
               type="date"
               value={dataDe}
               max={dataAte || hojeISO}
               onChange={(e) => setDataDe(e.target.value)}
               aria-label="Data inicial"
-              className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              className="rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-2 py-1 text-sm"
             />
           </label>
           <label className="flex items-center gap-1.5 text-sm">
-            <span className="text-zinc-500">Até:</span>
+            <span className="text-[var(--text-muted)]">Até:</span>
             <input
               type="date"
               value={dataAte}
@@ -384,7 +384,7 @@ export function VendasAnalise() {
               max={hojeISO}
               onChange={(e) => setDataAte(e.target.value)}
               aria-label="Data final"
-              className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              className="rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-2 py-1 text-sm"
             />
           </label>
 
@@ -395,7 +395,7 @@ export function VendasAnalise() {
               "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition",
               filtrosAvancadosAtivos > 0
                 ? "border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200"
-                : "border-zinc-300 bg-white text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800",
+                : "border-[var(--border-base)] bg-[var(--bg-surface)] text-[var(--text-body)] hover:bg-[var(--bg-muted)]",
             )}
             aria-expanded={avancadoOpen}
             aria-controls="filtros-avancados-vendas"
@@ -410,12 +410,12 @@ export function VendasAnalise() {
           </button>
 
           <div className="relative ml-auto">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-zinc-400" />
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--text-subtle)]" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Placa, chassi, modelo, cliente…"
-              className="w-64 rounded-md border border-zinc-300 bg-white pl-8 pr-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+              className="w-64 rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] pl-8 pr-3 py-1.5 text-sm"
             />
           </div>
         </div>
@@ -431,7 +431,7 @@ export function VendasAnalise() {
           )}
         >
           <div className="min-h-0">
-            <div className="flex flex-wrap items-center gap-3 rounded-md bg-zinc-50 p-3 dark:bg-zinc-950/40">
+            <div className="flex flex-wrap items-center gap-3 rounded-md bg-[var(--bg-muted)] p-3">
               <Select label="Marca" value={filtroMarca} onChange={setFiltroMarca} options={[["all", "Todas"], ...marcas.map((m) => [m, m] as [string, string])]} />
               <Select label="UF" value={filtroUf} onChange={setFiltroUf} options={[["all", "Todos"], ...ufs.map((u) => [u, u] as [string, string])]} />
               <Select
@@ -448,7 +448,7 @@ export function VendasAnalise() {
         </div>
 
         {/* Ações de exportação */}
-        <div className="flex flex-wrap items-center gap-3 border-t border-zinc-200 pt-3 dark:border-zinc-800">
+        <div className="flex flex-wrap items-center gap-3 border-t border-[var(--border-soft)] pt-3">
           <button
             type="button"
             onClick={async () => {
@@ -488,7 +488,7 @@ export function VendasAnalise() {
             }}
             disabled={filtered.length === 0 || rodandoFipe || exportando}
             title="Busca preço FIPE pros carros filtrados que ainda não estão no cache"
-            className="inline-flex items-center gap-1.5 rounded-md border border-amber-500 bg-amber-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-300 disabled:text-zinc-500 dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-500"
+            className="inline-flex items-center gap-1.5 rounded-md border border-amber-500 bg-amber-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:border-[var(--border-base)] disabled:bg-[var(--bg-muted)] disabled:text-[var(--text-subtle)]"
           >
             {rodandoFipe ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             {rodandoFipe ? "Buscando FIPE…" : "Buscar FIPE agora"}
@@ -525,7 +525,7 @@ export function VendasAnalise() {
             }}
             disabled={filtered.length === 0 || exportando || rodandoFipe}
             title="Gera planilha no formato USADOS ANALISE NAVESA respeitando os filtros aplicados (FIPE preenchida automaticamente onde houver cache)"
-            className="inline-flex items-center gap-1.5 rounded-md border border-purple-600 bg-purple-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:border-zinc-300 disabled:bg-zinc-300 disabled:text-zinc-500 dark:disabled:border-zinc-700 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-500"
+            className="inline-flex items-center gap-1.5 rounded-md border border-purple-600 bg-purple-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:border-[var(--border-base)] disabled:bg-[var(--bg-muted)] disabled:text-[var(--text-subtle)]"
           >
             {exportando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             {exportando ? "Exportando…" : "Exportar análise Navesa"}
@@ -589,7 +589,7 @@ export function VendasAnalise() {
           </h4>
           <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {[...rankingMarcas].sort((a, b) => b.diasMedio - a.diasMedio).slice(0, 6).map((m) => (
-              <div key={m.nome} className="flex items-center justify-between rounded-md bg-white px-3 py-1.5 text-xs dark:bg-zinc-900">
+              <div key={m.nome} className="flex items-center justify-between rounded-md bg-[var(--bg-surface)] px-3 py-1.5 text-xs">
                 <span>{m.nome}</span>
                 <span className="tabular-nums font-semibold text-amber-700 dark:text-amber-400">{m.diasMedio.toFixed(0)} dias</span>
               </div>
@@ -599,7 +599,7 @@ export function VendasAnalise() {
       )}
 
       {/* Indicador X de Y · Limpar filtros */}
-      <p className="text-sm text-zinc-600 dark:text-zinc-400">
+      <p className="text-sm text-[var(--text-body)]">
         {filtrosAtivos > 0
           ? filtered.length === 0
             ? <>Sem resultados pra esses filtros</>
@@ -626,16 +626,16 @@ export function VendasAnalise() {
       </p>
 
       {/* Tabela */}
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="overflow-hidden rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)]">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950">
+            <thead className="border-b border-[var(--border-soft)] bg-[var(--bg-muted)]">
               {table.getHeaderGroups().map((hg) => (
                 <tr key={hg.id}>
                   {hg.headers.map((h) => (
-                    <th key={h.id} className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-zinc-600 dark:text-zinc-400">
+                    <th key={h.id} className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--text-body)]">
                       {h.column.getCanSort() ? (
-                        <button onClick={h.column.getToggleSortingHandler()} className="inline-flex items-center gap-1 hover:text-zinc-900 dark:hover:text-zinc-100">
+                        <button onClick={h.column.getToggleSortingHandler()} className="inline-flex items-center gap-1 hover:text-[var(--text-strong)]">
                           {flexRender(h.column.columnDef.header, h.getContext())}
                           {h.column.getIsSorted() === "asc" ? <ArrowUp className="h-3 w-3" /> : h.column.getIsSorted() === "desc" ? <ArrowDown className="h-3 w-3" /> : <ArrowUpDown className="h-3 w-3 opacity-40" />}
                         </button>
@@ -650,7 +650,7 @@ export function VendasAnalise() {
                 <tr
                   key={row.id}
                   onClick={() => router.push(`/vendas/${row.original.chassi}`)}
-                  className="cursor-pointer border-b border-zinc-100 last:border-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/50"
+                  className="cursor-pointer border-b border-[var(--border-soft)] last:border-0 hover:bg-[var(--bg-muted)]"
                   title="Clique para ver detalhe"
                 >
                   {row.getVisibleCells().map((cell) => (
@@ -661,17 +661,17 @@ export function VendasAnalise() {
                 </tr>
               ))}
               {table.getRowModel().rows.length === 0 && (
-                <tr><td colSpan={columns.length} className="py-12 text-center text-zinc-500">Nenhuma venda com esses filtros.</td></tr>
+                <tr><td colSpan={columns.length} className="py-12 text-center text-[var(--text-muted)]">Nenhuma venda com esses filtros.</td></tr>
               )}
             </tbody>
           </table>
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-t border-zinc-200 bg-zinc-50 px-3 py-2 text-xs dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="flex items-center justify-between gap-3 border-t border-[var(--border-soft)] bg-[var(--bg-muted)] px-3 py-2 text-xs">
           <span>Página {table.getState().pagination.pageIndex + 1} de {table.getPageCount() || 1}</span>
           <div className="flex gap-1">
-            <button onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()} className="rounded-md border border-zinc-300 px-2 py-1 disabled:opacity-40 dark:border-zinc-700">‹</button>
-            <button onClick={() => table.nextPage()} disabled={!table.getCanNextPage()} className="rounded-md border border-zinc-300 px-2 py-1 disabled:opacity-40 dark:border-zinc-700">›</button>
+            <button onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()} className="rounded-md border border-[var(--border-base)] px-2 py-1 disabled:opacity-40">‹</button>
+            <button onClick={() => table.nextPage()} disabled={!table.getCanNextPage()} className="rounded-md border border-[var(--border-base)] px-2 py-1 disabled:opacity-40">›</button>
           </div>
         </div>
       </div>
@@ -681,35 +681,35 @@ export function VendasAnalise() {
 
 function KpiCard({ title, value, subtitle, tone }: { title: string; value: string; subtitle: string; tone?: "good" | "bad" }) {
   const tones = {
-    good: { bg: "from-emerald-50 to-white", bar: "bg-emerald-500", label: "text-emerald-700" },
-    bad: { bg: "from-red-50 to-white", bar: "bg-red-500", label: "text-red-700" },
-    neutral: { bg: "from-[var(--brand-50)] to-white", bar: "bg-[var(--brand-600)]", label: "text-[var(--brand-700)]" },
+    good:    { bg: "from-emerald-50 to-[var(--bg-surface)] dark:from-emerald-950/40", bar: "bg-emerald-500", label: "text-emerald-700 dark:text-emerald-400" },
+    bad:     { bg: "from-red-50 to-[var(--bg-surface)] dark:from-red-950/40",         bar: "bg-red-500",     label: "text-red-700 dark:text-red-400" },
+    neutral: { bg: "from-[var(--brand-50)] to-[var(--bg-surface)] dark:from-[var(--brand-900)]/40", bar: "bg-[var(--brand-600)]", label: "text-[var(--brand-700)] dark:text-[var(--brand-300)]" },
   };
   const t = tones[tone ?? "neutral"];
   return (
     <div className={cn("relative overflow-hidden rounded-xl border border-[var(--border-soft)] bg-gradient-to-br p-4 shadow-[var(--shadow-sm)]", t.bg)}>
       <div className={cn("absolute left-0 top-0 h-full w-1", t.bar)} />
       <p className={cn("text-[10px] font-semibold uppercase tracking-wider", t.label)}>{title}</p>
-      <p className="mt-1 text-xl font-bold tabular-nums tracking-tight text-slate-900">{value}</p>
-      <p className="text-[11px] text-slate-500">{subtitle}</p>
+      <p className="mt-1 text-xl font-bold tabular-nums tracking-tight text-[var(--text-strong)]">{value}</p>
+      <p className="text-[11px] text-[var(--text-muted)]">{subtitle}</p>
     </div>
   );
 }
 
 function RankCard({ title, icon, items }: { title: string; icon: React.ReactNode; items: { label: string; primary: string; secondary: string; tone?: "good" | "bad" }[] }) {
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-      <header className="flex items-center gap-2 border-b border-zinc-200 px-4 py-2 text-sm font-semibold dark:border-zinc-800">{icon} {title}</header>
-      <ol className="divide-y divide-zinc-100 dark:divide-zinc-800">
+    <div className="rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)]">
+      <header className="flex items-center gap-2 border-b border-[var(--border-soft)] px-4 py-2 text-sm font-semibold">{icon} {title}</header>
+      <ol className="divide-y divide-[var(--border-soft)]">
         {items.map((item, i) => (
           <li key={i} className="flex items-center justify-between px-4 py-2">
             <div className="flex items-baseline gap-2 min-w-0">
-              <span className="text-xs text-zinc-400 tabular-nums">{i + 1}.</span>
+              <span className="text-xs text-[var(--text-subtle)] tabular-nums">{i + 1}.</span>
               <span className="truncate text-sm">{item.label}</span>
             </div>
             <div className="text-right">
               <p className={cn("text-sm font-semibold tabular-nums", item.tone === "good" && "text-green-700 dark:text-green-400", item.tone === "bad" && "text-red-700 dark:text-red-400")}>{item.primary}</p>
-              <p className="text-[10px] text-zinc-500">{item.secondary}</p>
+              <p className="text-[10px] text-[var(--text-muted)]">{item.secondary}</p>
             </div>
           </li>
         ))}
@@ -721,8 +721,8 @@ function RankCard({ title, icon, items }: { title: string; icon: React.ReactNode
 function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: [string, string][] }) {
   return (
     <label className="flex items-center gap-1.5 text-sm">
-      <span className="text-zinc-500">{label}:</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)} className="max-w-56 rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900">
+      <span className="text-[var(--text-muted)]">{label}:</span>
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="max-w-56 rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-2 py-1 text-sm">
         {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
       </select>
     </label>

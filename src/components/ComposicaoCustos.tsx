@@ -30,7 +30,7 @@ export function ComposicaoCustos({ vendas }: { vendas: VendaParsed[] }) {
     { label: "Aquisição (Nota Fábrica)", icon: <ShoppingCart className="h-3.5 w-3.5" />, value: agg.componentes.nota_fabrica, color: "bg-blue-500" },
     { label: "(−) Ganhos Indiretos (Bônus + Valorização)", icon: <Gift className="h-3.5 w-3.5" />, value: agg.componentes.ganhos_indiretos, color: "bg-emerald-500", redutor: true },
     { label: "Despesas Oficina", icon: <Wrench className="h-3.5 w-3.5" />, value: agg.componentes.despesas_oficina, color: "bg-slate-400" },
-    { label: "Frete + ICMS Frete", icon: <Truck className="h-3.5 w-3.5" />, value: agg.componentes.frete, color: "bg-slate-500" },
+    { label: "Frete + ICMS Frete", icon: <Truck className="h-3.5 w-3.5" />, value: agg.componentes.frete, color: "bg-[var(--bg-muted)]0" },
     { label: "Floor Plan", icon: <Banknote className="h-3.5 w-3.5" />, value: agg.componentes.forplan, color: "bg-purple-500" },
     { label: "Impostos (PIS+COFINS+ICMS)", icon: <Landmark className="h-3.5 w-3.5" />, value: agg.componentes.impostos, color: "bg-rose-500" },
     { label: "Comissões", icon: <UserSquare2 className="h-3.5 w-3.5" />, value: agg.componentes.comissoes, color: "bg-teal-500" },
@@ -42,17 +42,17 @@ export function ComposicaoCustos({ vendas }: { vendas: VendaParsed[] }) {
   const somaAbsoluta = itens.reduce((s, i) => s + (i.redutor ? 0 : i.value), 0) || 1;
 
   return (
-    <section className="rounded-xl border border-[var(--border-soft)] bg-white shadow-[var(--shadow-sm)]">
+    <section className="rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] shadow-[var(--shadow-sm)]">
       <header className="flex items-center gap-2 border-b border-[var(--border-soft)] px-5 py-3">
-        <Receipt className="h-4 w-4 text-slate-500" />
-        <h3 className="text-sm font-semibold text-slate-900">Composição de custos</h3>
-        <span className="text-xs text-slate-500">— {agg.qt} venda{agg.qt === 1 ? "" : "s"} no filtro atual</span>
+        <Receipt className="h-4 w-4 text-[var(--text-muted)]" />
+        <h3 className="text-sm font-semibold text-[var(--text-strong)]">Composição de custos</h3>
+        <span className="text-xs text-[var(--text-muted)]">— {agg.qt} venda{agg.qt === 1 ? "" : "s"} no filtro atual</span>
         {temCustosOficiais ? (
-          <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+          <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
             ✓ Fórmula oficial NBS · cobertura {(agg.cobertura * 100).toFixed(0)}%
           </span>
         ) : (
-          <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+          <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
             <Info className="h-3 w-3" /> Sem relatório de custos · usando estimativa
           </span>
         )}
@@ -60,16 +60,16 @@ export function ComposicaoCustos({ vendas }: { vendas: VendaParsed[] }) {
 
       {!temCustosOficiais ? (
         <div className="space-y-3 p-5">
-          <p className="text-sm text-slate-700">
-            A margem mostrada usa o campo <code className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">custo_total_final</code> do relatório de vendas como aproximação.
+          <p className="text-sm text-[var(--text-body)]">
+            A margem mostrada usa o campo <code className="rounded bg-[var(--bg-muted)] px-1.5 py-0.5 text-xs">custo_total_final</code> do relatório de vendas como aproximação.
           </p>
-          <p className="text-sm text-slate-700">
+          <p className="text-sm text-[var(--text-body)]">
             Pra ter os 9 componentes detalhados e a margem oficial NBS centavo-a-centavo, faça upload do <strong>Relatório de Custos</strong> em <a href="/upload" className="text-[var(--brand-700)] underline">/upload</a>.
           </p>
-          <div className="mt-4 rounded-lg border border-[var(--border-soft)] bg-slate-50 p-4">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Margem estimada</p>
-            <p className={cn("mt-1 text-2xl font-bold tabular-nums", positivaMargem ? "text-emerald-700" : "text-red-700")}>{formatBRL(agg.margem)}</p>
-            <p className="text-xs text-slate-500">{agg.margemPct.toFixed(2)}% sobre faturamento ({formatBRL(agg.valor)})</p>
+          <div className="mt-4 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-muted)] p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Margem estimada</p>
+            <p className={cn("mt-1 text-2xl font-bold tabular-nums", positivaMargem ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400")}>{formatBRL(agg.margem)}</p>
+            <p className="text-xs text-[var(--text-muted)]">{agg.margemPct.toFixed(2)}% sobre faturamento ({formatBRL(agg.valor)})</p>
           </div>
         </div>
       ) : (
@@ -83,18 +83,18 @@ export function ComposicaoCustos({ vendas }: { vendas: VendaParsed[] }) {
               return (
                 <div key={item.label}>
                   <div className="flex items-center justify-between gap-3 text-sm">
-                    <span className={cn("inline-flex items-center gap-2", item.redutor ? "text-emerald-700 font-medium" : "text-slate-700")}>
+                    <span className={cn("inline-flex items-center gap-2", item.redutor ? "text-emerald-700 dark:text-emerald-400 font-medium" : "text-[var(--text-body)]")}>
                       {item.icon} {item.label}
                     </span>
-                    <span className={cn("tabular-nums font-semibold", item.redutor && "text-emerald-700")}>
+                    <span className={cn("tabular-nums font-semibold", item.redutor && "text-emerald-700 dark:text-emerald-400")}>
                       {item.redutor ? "−" : ""}{formatBRL(item.value)}
                     </span>
                   </div>
                   <div className="mt-1 flex items-center gap-2">
-                    <div className="h-1.5 flex-1 overflow-hidden rounded bg-slate-200">
+                    <div className="h-1.5 flex-1 overflow-hidden rounded bg-[var(--bg-muted)]">
                       <div className={cn("h-full", item.color)} style={{ width: `${Math.min(100, pctBar)}%` }} />
                     </div>
-                    <span className="text-xs tabular-nums text-slate-500" style={{ width: 48 }}>{pctBar.toFixed(1)}%</span>
+                    <span className="text-xs tabular-nums text-[var(--text-muted)]" style={{ width: 48 }}>{pctBar.toFixed(1)}%</span>
                   </div>
                 </div>
               );
@@ -102,30 +102,30 @@ export function ComposicaoCustos({ vendas }: { vendas: VendaParsed[] }) {
 
             <div className="border-t border-[var(--border-soft)] pt-3">
               <div className="flex items-center justify-between text-sm">
-                <span className="font-semibold text-slate-900">Custo total NBS</span>
-                <span className="tabular-nums font-bold text-slate-900">{formatBRL(agg.custo)}</span>
+                <span className="font-semibold text-[var(--text-strong)]">Custo total NBS</span>
+                <span className="tabular-nums font-bold text-[var(--text-strong)]">{formatBRL(agg.custo)}</span>
               </div>
-              <p className="mt-1 text-[10px] text-slate-500">
+              <p className="mt-1 text-[10px] text-[var(--text-muted)]">
                 = Σ(componentes) − Ganhos Indiretos
               </p>
             </div>
           </div>
 
           {/* Coluna 2: Resumo financeiro */}
-          <div className="rounded-lg border border-[var(--border-soft)] bg-slate-50 p-4">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Faturamento</p>
-            <p className="mt-1 text-xl font-bold tabular-nums text-slate-900">{formatBRL(agg.valor)}</p>
+          <div className="rounded-lg border border-[var(--border-soft)] bg-[var(--bg-muted)] p-4">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Faturamento</p>
+            <p className="mt-1 text-xl font-bold tabular-nums text-[var(--text-strong)]">{formatBRL(agg.valor)}</p>
 
-            <p className="mt-4 text-[10px] font-semibold uppercase tracking-wider text-slate-500">(−) Custo Total NBS</p>
-            <p className="mt-1 text-base font-semibold tabular-nums text-slate-600">{formatBRL(agg.custo)}</p>
+            <p className="mt-4 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">(−) Custo Total NBS</p>
+            <p className="mt-1 text-base font-semibold tabular-nums text-[var(--text-body)]">{formatBRL(agg.custo)}</p>
 
-            <div className="my-3 border-t border-slate-300" />
+            <div className="my-3 border-t border-[var(--border-base)]" />
 
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Margem Real</p>
-            <p className={cn("mt-1 text-2xl font-bold tabular-nums", positivaMargem ? "text-emerald-700" : "text-red-700")}>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Margem Real</p>
+            <p className={cn("mt-1 text-2xl font-bold tabular-nums", positivaMargem ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400")}>
               {formatBRL(agg.margem)}
             </p>
-            <p className={cn("text-xs tabular-nums", positivaMargem ? "text-emerald-700" : "text-red-700")}>
+            <p className={cn("text-xs tabular-nums", positivaMargem ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400")}>
               {agg.margemPct.toFixed(2)}% sobre faturamento
             </p>
           </div>

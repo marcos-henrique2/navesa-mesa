@@ -116,7 +116,7 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
     <div className="space-y-3">
       <div className="min-h-[3.5rem]">
         <h3 className="font-semibold">{cfg.title}</h3>
-        <p className="text-xs text-zinc-500">{cfg.desc}</p>
+        <p className="text-xs text-[var(--text-muted)]">{cfg.desc}</p>
       </div>
 
       <div
@@ -126,22 +126,22 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
           isDragActive && tone === "blue" && "border-blue-500 bg-blue-50",
           isDragActive && tone === "purple" && "border-purple-500 bg-purple-50",
           isDragActive && tone === "emerald" && "border-emerald-500 bg-emerald-50",
-          !isDragActive && "border-zinc-300 bg-white",
+          !isDragActive && "border-[var(--border-base)] bg-[var(--bg-surface)]",
           status === "parsing" && "cursor-wait opacity-60",
         )}
       >
         <input {...getInputProps()} />
-        <UploadCloud className="mx-auto h-10 w-10 text-zinc-400" />
+        <UploadCloud className="mx-auto h-10 w-10 text-[var(--text-subtle)]" />
         <p className="mt-3 text-sm font-medium">
           {isDragActive ? "Solte aqui" : "Arraste o XLSX ou clique"}
         </p>
-        <p className="mt-1 text-xs text-zinc-500">.xlsx ou .xls</p>
+        <p className="mt-1 text-xs text-[var(--text-muted)]">.xlsx ou .xls</p>
       </div>
 
       {existing && status === "idle" && (
-        <div className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs">
+        <div className="rounded-md border border-[var(--border-soft)] bg-[var(--bg-muted)] px-3 py-2 text-xs">
           <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0 flex-1 text-zinc-600">
+            <div className="min-w-0 flex-1 text-[var(--text-body)]">
               <p>
                 <FileSpreadsheet className="mr-1 inline h-3 w-3" />
                 {modo === "estoque" && <>{formatInt(meta!.total_veiculos)} veículos / {formatInt(meta!.total_lojas)} lojas</>}
@@ -149,12 +149,12 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
                 {modo === "custos" && <>{formatInt(custosMeta!.total_vendas)} custos detalhados</>}
               </p>
               {modo === "vendas" && vendasMeta?.periodo_inicio && vendasMeta?.periodo_fim && (
-                <p className="mt-0.5 text-[10px] text-slate-500">
+                <p className="mt-0.5 text-[10px] text-[var(--text-muted)]">
                   Período: {new Date(vendasMeta.periodo_inicio).toLocaleDateString("pt-BR")} → {new Date(vendasMeta.periodo_fim).toLocaleDateString("pt-BR")}
                 </p>
               )}
               {modo === "custos" && custosMeta?.periodo && (
-                <p className="mt-0.5 text-[10px] text-slate-500">{custosMeta.periodo}</p>
+                <p className="mt-0.5 text-[10px] text-[var(--text-muted)]">{custosMeta.periodo}</p>
               )}
             </div>
             {modo !== "estoque" && (
@@ -166,7 +166,7 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
                     else clearCustos();
                   }
                 }}
-                className="shrink-0 rounded px-2 py-0.5 text-[10px] text-slate-500 hover:bg-slate-200 hover:text-slate-700"
+                className="shrink-0 rounded px-2 py-0.5 text-[10px] text-[var(--text-muted)] hover:bg-[var(--bg-app)] hover:text-[var(--text-body)]"
                 title="Limpar histórico acumulado"
               >
                 Limpar histórico
@@ -177,9 +177,9 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
       )}
 
       {fileName && (
-        <div className="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] p-3">
           <div className="flex items-center gap-3">
-            <FileSpreadsheet className="h-4 w-4 text-zinc-500" />
+            <FileSpreadsheet className="h-4 w-4 text-[var(--text-muted)]" />
             <div className="flex-1 min-w-0">
               <p className="truncate text-sm font-medium">{fileName}</p>
               {status === "parsing" && (
@@ -194,14 +194,14 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
                     {cfg.label} importado ({formatInt(resultCount ?? 0)} registros). Você pode subir o próximo arquivo.
                   </p>
                   {mergeFeedback && (
-                    <p className="mt-1 text-[11px] text-slate-500">
+                    <p className="mt-1 text-[11px] text-[var(--text-muted)]">
                       Merge incremental: {mergeFeedback}
                     </p>
                   )}
                   <button
                     type="button"
                     onClick={resetar}
-                    className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-2.5 py-1 text-xs font-medium text-[var(--text-body)] hover:bg-[var(--bg-muted)]"
                   >
                     <RotateCcw className="h-3 w-3" /> Subir outro arquivo
                   </button>
@@ -215,7 +215,7 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
                   <button
                     type="button"
                     onClick={resetar}
-                    className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-2.5 py-1 text-xs font-medium text-[var(--text-body)] hover:bg-[var(--bg-muted)]"
                   >
                     <RotateCcw className="h-3 w-3" /> Tentar novamente
                   </button>

@@ -95,7 +95,7 @@ export function DashboardHome() {
                   />
                 </div>
                 {outrosQt > 0 && (
-                  <p className="mt-3 text-xs text-slate-500">
+                  <p className="mt-3 text-xs text-[var(--text-muted)]">
                     {status.bloqueado.qt > 0 && <>+ {formatInt(status.bloqueado.qt)} bloqueado{status.bloqueado.qt === 1 ? "" : "s"} · </>}
                     {status.oficina.qt > 0 && <>{formatInt(status.oficina.qt)} em oficina externa · </>}
                     {status.documentacao.qt > 0 && <>{formatInt(status.documentacao.qt)} com pendência de documentação · </>}
@@ -139,7 +139,7 @@ export function DashboardHome() {
                   />
                 </div>
                 {vendasMeta?.periodo_inicio && vendasMeta?.periodo_fim && (
-                  <p className="mt-3 text-xs text-slate-500">
+                  <p className="mt-3 text-xs text-[var(--text-muted)]">
                     Período: <strong>{new Date(vendasMeta.periodo_inicio).toLocaleDateString("pt-BR")}</strong> → <strong>{new Date(vendasMeta.periodo_fim).toLocaleDateString("pt-BR")}</strong>
                   </p>
                 )}
@@ -166,9 +166,9 @@ export function DashboardHome() {
 function SectionHeader({ title, link }: { title: string; link?: { href: string; label: string } }) {
   return (
     <div className="mb-3 flex items-end justify-between">
-      <h2 className="text-base font-semibold text-slate-900">{title}</h2>
+      <h2 className="text-base font-semibold text-[var(--text-strong)]">{title}</h2>
       {link && (
-        <Link href={link.href} className="inline-flex items-center gap-1 text-xs font-medium text-[var(--brand-700)] hover:text-[var(--brand-900)]">
+        <Link href={link.href} className="inline-flex items-center gap-1 text-xs font-medium text-[var(--brand-700)] hover:text-[var(--brand-900)] dark:text-[var(--brand-300)] dark:hover:text-[var(--brand-100)]">
           {link.label} <ArrowRight className="h-3 w-3" />
         </Link>
       )}
@@ -178,12 +178,15 @@ function SectionHeader({ title, link }: { title: string; link?: { href: string; 
 
 type Accent = "brand" | "emerald" | "amber" | "red" | "slate";
 
+// Gradiente termina em bg-surface (em light = branco; em dark = surface escuro).
+// Cores semânticas (emerald/amber/red) mantêm os tons -50 do Tailwind como overlay
+// — chama atenção em light, e em dark fica como um tint sutil no surface.
 const ACCENT_STYLES: Record<Accent, { ring: string; valueText: string; label: string }> = {
-  brand:   { ring: "from-[var(--brand-50)] to-white", valueText: "text-slate-900", label: "text-[var(--brand-700)]" },
-  emerald: { ring: "from-emerald-50 to-white",        valueText: "text-emerald-700", label: "text-emerald-700" },
-  amber:   { ring: "from-amber-50 to-white",          valueText: "text-amber-700", label: "text-amber-700" },
-  red:     { ring: "from-red-50 to-white",            valueText: "text-red-700", label: "text-red-700" },
-  slate:   { ring: "from-slate-100 to-white",         valueText: "text-slate-900", label: "text-slate-600" },
+  brand:   { ring: "from-[var(--brand-50)] to-[var(--bg-surface)] dark:from-[var(--brand-900)]/40", valueText: "text-[var(--text-strong)]", label: "text-[var(--brand-700)] dark:text-[var(--brand-300)]" },
+  emerald: { ring: "from-emerald-50 to-[var(--bg-surface)] dark:from-emerald-950/40",                valueText: "text-emerald-700 dark:text-emerald-400", label: "text-emerald-700 dark:text-emerald-400" },
+  amber:   { ring: "from-amber-50 to-[var(--bg-surface)] dark:from-amber-950/40",                    valueText: "text-amber-700 dark:text-amber-400", label: "text-amber-700 dark:text-amber-400" },
+  red:     { ring: "from-red-50 to-[var(--bg-surface)] dark:from-red-950/40",                        valueText: "text-red-700 dark:text-red-400", label: "text-red-700 dark:text-red-400" },
+  slate:   { ring: "from-slate-100 to-[var(--bg-surface)] dark:from-slate-800/40",                   valueText: "text-[var(--text-strong)]", label: "text-[var(--text-body)]" },
 };
 
 function BigKpi({ label, value, sublabel, accent }: { label: string; value: string; sublabel: string; accent: Accent }) {
@@ -192,7 +195,7 @@ function BigKpi({ label, value, sublabel, accent }: { label: string; value: stri
     <div className={cn("relative overflow-hidden rounded-xl border border-[var(--border-soft)] bg-gradient-to-br p-5 shadow-[var(--shadow-sm)]", a.ring)}>
       <p className={cn("text-[10px] font-semibold uppercase tracking-wider", a.label)}>{label}</p>
       <p className={cn("mt-2 text-3xl font-bold tabular-nums tracking-tight", a.valueText)}>{value}</p>
-      <p className="mt-1 text-xs text-slate-500">{sublabel}</p>
+      <p className="mt-1 text-xs text-[var(--text-muted)]">{sublabel}</p>
     </div>
   );
 }
@@ -201,14 +204,14 @@ function QuickCard({ href, icon, title, desc }: { href: string; icon: React.Reac
   return (
     <Link
       href={href}
-      className="group flex flex-col rounded-xl border border-[var(--border-soft)] bg-white p-5 shadow-[var(--shadow-sm)] transition hover:border-[var(--brand-300)] hover:shadow-[var(--shadow-md)]"
+      className="group flex flex-col rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-5 shadow-[var(--shadow-sm)] transition hover:border-[var(--brand-300)] hover:shadow-[var(--shadow-md)]"
     >
-      <div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--brand-50)] text-[var(--brand-700)] group-hover:bg-[var(--brand-100)]">
+      <div className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-lg bg-[var(--brand-50)] text-[var(--brand-700)] group-hover:bg-[var(--brand-100)] dark:bg-[var(--brand-900)]/40 dark:text-[var(--brand-300)] dark:group-hover:bg-[var(--brand-900)]/60">
         {icon}
       </div>
-      <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
-      <p className="mt-1 text-xs text-slate-500">{desc}</p>
-      <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-[var(--brand-700)] opacity-0 transition group-hover:opacity-100">
+      <h3 className="text-sm font-semibold text-[var(--text-strong)]">{title}</h3>
+      <p className="mt-1 text-xs text-[var(--text-muted)]">{desc}</p>
+      <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-[var(--brand-700)] opacity-0 transition group-hover:opacity-100 dark:text-[var(--brand-300)]">
         Abrir <ArrowRight className="h-3 w-3" />
       </span>
     </Link>
@@ -217,12 +220,12 @@ function QuickCard({ href, icon, title, desc }: { href: string; icon: React.Reac
 
 function EmptyState() {
   return (
-    <div className="mx-auto max-w-2xl rounded-2xl border border-dashed border-[var(--border-base)] bg-white p-12 text-center shadow-[var(--shadow-sm)]">
-      <div className="mx-auto mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[var(--brand-100)] to-[var(--brand-50)] text-[var(--brand-700)]">
+    <div className="mx-auto max-w-2xl rounded-2xl border border-dashed border-[var(--border-base)] bg-[var(--bg-surface)] p-12 text-center shadow-[var(--shadow-sm)]">
+      <div className="mx-auto mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-[var(--brand-100)] to-[var(--brand-50)] text-[var(--brand-700)] dark:from-[var(--brand-800)]/60 dark:to-[var(--brand-900)]/40 dark:text-[var(--brand-300)]">
         <Upload className="h-6 w-6" />
       </div>
-      <h2 className="text-xl font-bold text-slate-900">Comece pelo upload</h2>
-      <p className="mt-2 text-sm text-slate-500">
+      <h2 className="text-xl font-bold text-[var(--text-strong)]">Comece pelo upload</h2>
+      <p className="mt-2 text-sm text-[var(--text-muted)]">
         Exporte os relatórios do NBS (Veículos em Estoque e Veículos Vendidos) e suba aqui.
         Tudo é processado no seu navegador — nenhum dado vai pra cloud sem você configurar.
       </p>

@@ -57,20 +57,20 @@ export function ExportExcelButton() {
   if (veiculos.length === 0 && vendas.length === 0) return null;
 
   return (
-    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-[var(--shadow-sm)]">
+    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 shadow-[var(--shadow-sm)] dark:border-emerald-900 dark:bg-emerald-950/30">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex-1">
-          <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-            <Download className="h-4 w-4 text-emerald-700" />
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-[var(--text-strong)]">
+            <Download className="h-4 w-4 text-emerald-700 dark:text-emerald-400" />
             Baixar Excel consolidado
           </h3>
-          <p className="mt-1 text-xs text-slate-600">
+          <p className="mt-1 text-xs text-[var(--text-body)]">
             Gera 1 arquivo .xlsx com 4 abas (Resumo, Estoque, Vendas, Custos) pra
             mandar pro contador/sócio. Já vem com classe Auto Avaliar, FIPE,
             diagnóstico e margem real calculados.
           </p>
           {erro && (
-            <p className="mt-2 text-xs text-red-700">{erro}</p>
+            <p className="mt-2 text-xs text-red-700 dark:text-red-300">{erro}</p>
           )}
         </div>
         <button

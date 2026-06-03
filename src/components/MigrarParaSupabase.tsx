@@ -29,14 +29,14 @@ export function MigrarParaSupabase() {
   }, [rodando]);
 
   return (
-    <div className="rounded-xl border-2 border-dashed border-[var(--brand-300)] bg-[var(--brand-50)] p-4 shadow-[var(--shadow-sm)]">
+    <div className="rounded-xl border-2 border-dashed border-[var(--brand-300)] bg-[var(--brand-50)] p-4 shadow-[var(--shadow-sm)] dark:bg-[var(--brand-950)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex-1">
-          <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-            <Cloud className="h-4 w-4 text-[var(--brand-700)]" />
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-[var(--text-strong)]">
+            <Cloud className="h-4 w-4 text-[var(--brand-700)] dark:text-[var(--brand-300)]" />
             Migrar dados do navegador pro Supabase
           </h3>
-          <p className="mt-1 text-xs text-slate-600">
+          <p className="mt-1 text-xs text-[var(--text-body)]">
             Sobe vendas, custos e estoque atual do localStorage pra nuvem.
             <strong> Não apaga o localStorage</strong> — você pode rodar de novo se precisar.
             Faça <strong>1 vez só</strong> depois de configurar o Supabase.
@@ -53,20 +53,20 @@ export function MigrarParaSupabase() {
       </div>
 
       {progresso && rodando && (
-        <div className="mt-3 rounded-lg bg-white px-3 py-2 text-xs text-slate-700">
+        <div className="mt-3 rounded-lg bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-body)]">
           <span className="inline-flex items-center gap-2">
-            <Loader2 className="h-3 w-3 animate-spin text-[var(--brand-700)]" />
+            <Loader2 className="h-3 w-3 animate-spin text-[var(--brand-700)] dark:text-[var(--brand-300)]" />
             <strong className="capitalize">{progresso.fase.replace("-", " ")}:</strong> {progresso.mensagem}
           </span>
         </div>
       )}
 
       {resultado && (
-        <div className="mt-3 space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs">
-          <p className="flex items-center gap-2 font-semibold text-emerald-900">
+        <div className="mt-3 space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs dark:border-emerald-900 dark:bg-emerald-950/30">
+          <p className="flex items-center gap-2 font-semibold text-emerald-900 dark:text-emerald-200">
             <CheckCircle2 className="h-4 w-4" /> Migração concluída
           </p>
-          <ul className="space-y-0.5 text-emerald-800">
+          <ul className="space-y-0.5 text-emerald-800 dark:text-emerald-300">
             <li>📦 Vendas: <strong>{formatInt(resultado.vendasMigradas)}</strong> subiram (já tinham {formatInt(resultado.jaTinhamNoSupabase.vendas)} antes){resultado.duplicatas.vendas > 0 && <> · {formatInt(resultado.duplicatas.vendas)} duplicatas no localStorage ignoradas</>}</li>
             <li>💰 Custos: <strong>{formatInt(resultado.custosMigrados)}</strong> subiram (já tinham {formatInt(resultado.jaTinhamNoSupabase.custos)} antes){resultado.duplicatas.custos > 0 && <> · {formatInt(resultado.duplicatas.custos)} duplicatas ignoradas</>}</li>
             <li>🚗 Estoque: <strong>{formatInt(resultado.veiculosMigrados)}</strong> veículos no novo snapshot (já tinham {formatInt(resultado.jaTinhamNoSupabase.veiculos)} antes)</li>
@@ -75,7 +75,7 @@ export function MigrarParaSupabase() {
             <li>📸 Fotos KPI: <strong>{formatInt(resultado.snapshotsMigrados)}</strong> fotos (já tinham {formatInt(resultado.jaTinhamNoSupabase.snapshots)} antes)</li>
             <li>💬 Chat: <strong>{formatInt(resultado.chatMensagensMigradas)}</strong> mensagens {resultado.jaTinhamNoSupabase.chat > 0 ? <>(já tinha {formatInt(resultado.jaTinhamNoSupabase.chat)} no Supabase — pulei pra não duplicar)</> : null}</li>
           </ul>
-          <p className="text-[10px] text-emerald-700">
+          <p className="text-[10px] text-emerald-700 dark:text-emerald-400">
             Confira no painel do Supabase em <strong>Database → Tables</strong>.
             O localStorage continua intacto (segurança), você pode limpar depois se quiser.
           </p>
@@ -83,11 +83,11 @@ export function MigrarParaSupabase() {
       )}
 
       {erro && (
-        <div className={cn("mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs")}>
-          <p className="flex items-center gap-2 font-semibold text-red-900">
+        <div className={cn("mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs dark:border-red-900 dark:bg-red-950/30")}>
+          <p className="flex items-center gap-2 font-semibold text-red-900 dark:text-red-200">
             <AlertCircle className="h-4 w-4" /> Erro na migração
           </p>
-          <p className="mt-1 text-red-700">{erro}</p>
+          <p className="mt-1 text-red-700 dark:text-red-300">{erro}</p>
         </div>
       )}
     </div>

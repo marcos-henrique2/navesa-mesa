@@ -25,7 +25,7 @@ export function Numero({
   destaque: boolean;
 }) {
   return (
-    <div className="rounded-lg bg-white/70 px-3 py-2">
+    <div className="rounded-lg bg-[var(--bg-surface)]/70 px-3 py-2">
       <p className="text-[10px] uppercase tracking-wider opacity-70">{label}</p>
       <p className={cn("tabular-nums", destaque ? "text-xl font-bold" : "text-base font-semibold")}>
         {valor}
@@ -46,10 +46,10 @@ export function DiferencaCard({ diagnostico }: { diagnostico: DiagnosticoResult 
     ? "text-red-700"
     : positivo
       ? "text-emerald-700"
-      : "text-slate-600";
+      : "text-current/70";
   const icone = negativo ? "⚠" : positivo ? "↑" : "=";
   return (
-    <div className="rounded-lg bg-white/70 px-3 py-2">
+    <div className="rounded-lg bg-[var(--bg-surface)]/70 px-3 py-2">
       <p className="text-[10px] uppercase tracking-wider opacity-70">Diferença</p>
       <p className={cn("text-xl font-bold tabular-nums", toneClasse)}>
         {pct >= 0 ? "+" : ""}
@@ -87,7 +87,7 @@ export function MarcarButton({
     const quando = new Date(pendente.criado_em).toLocaleDateString("pt-BR");
     return (
       <div className="inline-flex items-center gap-2 text-xs">
-        <span className="rounded-full bg-white/80 px-3 py-1 font-medium">
+        <span className="rounded-full bg-[var(--bg-surface)]/80 px-3 py-1 font-medium">
           ✓ Marcado em {quando}
         </span>
         <button
@@ -108,8 +108,8 @@ export function MarcarButton({
       onClick={onMarcar}
       disabled={salvando || desabilitado}
       className={cn(
-        "inline-flex items-center gap-2 rounded-lg border border-current/30 bg-white/70 px-3 py-2 text-xs font-medium",
-        "hover:bg-white disabled:cursor-not-allowed disabled:opacity-50",
+        "inline-flex items-center gap-2 rounded-lg border border-current/30 bg-[var(--bg-surface)]/70 px-3 py-2 text-xs font-medium",
+        "hover:bg-[var(--bg-surface)] disabled:cursor-not-allowed disabled:opacity-50",
       )}
       aria-label={`Marcar ${veiculoLabel || "veículo"} pra reprecificar`}
       title={desabilitado ? "Sem preço esperado — não dá pra marcar reprecificação" : undefined}
@@ -130,7 +130,7 @@ export function PrecoAlvoIndicador({
 }) {
   const quando = new Date(row.criado_em).toLocaleDateString("pt-BR");
   return (
-    <div className="inline-flex flex-wrap items-center gap-2 rounded-lg bg-white/70 px-3 py-2 text-xs">
+    <div className="inline-flex flex-wrap items-center gap-2 rounded-lg bg-[var(--bg-surface)]/70 px-3 py-2 text-xs">
       <span className="font-medium">
         ✓ Preço-alvo: <span className="tabular-nums">{formatBRL(row.preco_alvo)}</span>{" "}
         <span className="opacity-70">(definido em {quando})</span>

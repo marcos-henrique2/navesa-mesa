@@ -68,14 +68,14 @@ export function StrategySelector({
               "rounded-lg border-2 px-3 py-2.5 text-left transition",
               "focus:outline-none focus:ring-2 focus:ring-[var(--brand-400)]",
               ativo
-                ? "border-[var(--brand-700)] bg-white shadow-[var(--shadow-md)]"
-                : "border-current/15 bg-white/60 hover:border-current/30 hover:bg-white/90",
+                ? "border-[var(--brand-700)] bg-[var(--bg-surface)] shadow-[var(--shadow-md)]"
+                : "border-current/15 bg-[var(--bg-surface)]/60 hover:border-current/30 hover:bg-[var(--bg-surface)]/90",
               // B.2b-F14: ring extra quando a escolha foi manual (sticky).
               ativo && userOverride && "ring-2 ring-emerald-400",
             )}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-700">
+              <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-current/80">
                 <span aria-hidden="true">{e.icone}</span>
                 <span>{e.label}</span>
               </span>
@@ -91,7 +91,7 @@ export function StrategySelector({
             <p
               className={cn(
                 "mt-1.5 text-xl font-bold tabular-nums",
-                ativo ? "text-[var(--brand-900)]" : "text-slate-900",
+                ativo ? "text-[var(--brand-900)] dark:text-[var(--brand-100)]" : "text-current",
               )}
             >
               {formatBRL(e.valor)}
@@ -100,12 +100,12 @@ export function StrategySelector({
               <span
                 className={cn(
                   "tabular-nums",
-                  e.margemPct < 0 ? "text-red-600" : "text-slate-500",
+                  e.margemPct < 0 ? "text-red-600" : "text-current/60",
                 )}
               >
                 margem {e.margemPct.toFixed(1)}%
               </span>
-              <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-medium text-slate-600">
+              <span className="rounded-full bg-[var(--bg-muted)] px-1.5 py-0.5 text-[9px] font-medium text-current/70">
                 {FONTE_LABEL[e.fonte]}
               </span>
             </div>

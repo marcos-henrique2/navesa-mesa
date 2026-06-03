@@ -57,12 +57,12 @@ export function InsightsDashboard() {
     };
   }, [vendas, veiculos, custosPorPlaca]);
 
-  if (!isHydrated) return <div className="p-6 text-sm text-slate-500">Carregando…</div>;
+  if (!isHydrated) return <div className="p-6 text-sm text-[var(--text-muted)]">Carregando…</div>;
   if (!dados) {
     return (
-      <div className="mx-auto max-w-2xl rounded-2xl border border-dashed border-[var(--border-base)] bg-white p-12 text-center shadow-[var(--shadow-sm)]">
-        <h2 className="text-xl font-bold text-slate-900">Sem dados de vendas</h2>
-        <p className="mt-2 text-sm text-slate-500">
+      <div className="mx-auto max-w-2xl rounded-2xl border border-dashed border-[var(--border-base)] bg-[var(--bg-surface)] p-12 text-center shadow-[var(--shadow-sm)]">
+        <h2 className="text-xl font-bold text-[var(--text-strong)]">Sem dados de vendas</h2>
+        <p className="mt-2 text-sm text-[var(--text-muted)]">
           Faça upload do relatório de vendas e custos em{" "}
           <Link href="/upload" className="text-[var(--brand-700)] underline">
             /upload
@@ -148,7 +148,7 @@ export function InsightsDashboard() {
 function Section({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
   return (
     <section>
-      <h2 className="mb-3 flex items-center gap-2 text-base font-semibold text-slate-900">
+      <h2 className="mb-3 flex items-center gap-2 text-base font-semibold text-[var(--text-strong)]">
         <span className="text-[var(--brand-700)]">{icon}</span>
         {title}
       </h2>
@@ -163,22 +163,24 @@ function SectionCriticidade({ sumario }: { sumario: ReturnType<typeof sumarioGlo
     <section
       className={cn(
         "rounded-xl border-2 p-5 shadow-[var(--shadow-md)]",
-        sumario.dependeDeBonus ? "border-red-300 bg-red-50" : "border-emerald-300 bg-emerald-50",
+        sumario.dependeDeBonus
+          ? "border-red-300 bg-red-50 dark:border-red-900/70 dark:bg-red-950/30"
+          : "border-emerald-300 bg-emerald-50 dark:border-emerald-900/70 dark:bg-emerald-950/30",
       )}
     >
       <div className="flex items-start gap-3">
         {sumario.dependeDeBonus ? (
-          <AlertTriangle className="h-6 w-6 shrink-0 text-red-600" />
+          <AlertTriangle className="h-6 w-6 shrink-0 text-red-600 dark:text-red-400" />
         ) : (
-          <TrendingUp className="h-6 w-6 shrink-0 text-emerald-600" />
+          <TrendingUp className="h-6 w-6 shrink-0 text-emerald-600 dark:text-emerald-400" />
         )}
         <div className="flex-1">
-          <h2 className="text-lg font-bold text-slate-900">
+          <h2 className="text-lg font-bold text-[var(--text-strong)]">
             {sumario.dependeDeBonus
               ? "⚠️ A operação depende dos bônus de fábrica"
               : "✓ Operação positiva mesmo sem bônus"}
           </h2>
-          <p className="mt-1 text-sm text-slate-700">
+          <p className="mt-1 text-sm text-[var(--text-body)]">
             Margem atual: <strong>{formatBRL(sumario.margem)}</strong> ({sumario.margemPct.toFixed(2)}%).
             {sumario.dependeDeBonus && (
               <>
@@ -213,21 +215,26 @@ function Kpi({
   sub?: string;
   tone?: "good" | "bad";
 }) {
-  const color = tone === "good" ? "text-emerald-700" : tone === "bad" ? "text-red-700" : "text-slate-900";
+  const color =
+    tone === "good"
+      ? "text-emerald-700 dark:text-emerald-400"
+      : tone === "bad"
+        ? "text-red-700 dark:text-red-400"
+        : "text-[var(--text-strong)]";
   return (
-    <div className="rounded-lg bg-white p-3 shadow-[var(--shadow-sm)]">
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{label}</p>
+    <div className="rounded-lg bg-[var(--bg-surface)] p-3 shadow-[var(--shadow-sm)]">
+      <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">{label}</p>
       <p className={cn("mt-1 text-base font-bold tabular-nums", color)}>{value}</p>
-      {sub && <p className="text-[10px] text-slate-500">{sub}</p>}
+      {sub && <p className="text-[10px] text-[var(--text-muted)]">{sub}</p>}
     </div>
   );
 }
 
 function TabelaLojas({ dados }: { dados: ReturnType<typeof margemPorLoja> }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-[var(--border-soft)] bg-white shadow-[var(--shadow-sm)]">
+    <div className="overflow-x-auto rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] shadow-[var(--shadow-sm)]">
       <table className="w-full text-sm">
-        <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+        <thead className="bg-[var(--bg-muted)] text-left text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
           <tr>
             <th className="px-4 py-2">Loja</th>
             <th className="px-4 py-2 text-right">Vendas</th>
@@ -242,18 +249,18 @@ function TabelaLojas({ dados }: { dados: ReturnType<typeof margemPorLoja> }) {
           {dados.map((r) => {
             const neg = r.margem < 0;
             return (
-              <tr key={r.loja} className="border-t border-[var(--border-soft)] hover:bg-slate-50">
-                <td className="px-4 py-2 font-medium text-slate-900">{r.loja}</td>
+              <tr key={r.loja} className="border-t border-[var(--border-soft)] hover:bg-[var(--bg-muted)]">
+                <td className="px-4 py-2 font-medium text-[var(--text-strong)]">{r.loja}</td>
                 <td className="px-4 py-2 text-right tabular-nums">{formatInt(r.qt)}</td>
-                <td className="px-4 py-2 text-right tabular-nums text-slate-600">{formatBRL(r.faturamento)}</td>
-                <td className={cn("px-4 py-2 text-right tabular-nums font-semibold", neg ? "text-red-700" : "text-emerald-700")}>
+                <td className="px-4 py-2 text-right tabular-nums text-[var(--text-body)]">{formatBRL(r.faturamento)}</td>
+                <td className={cn("px-4 py-2 text-right tabular-nums font-semibold", neg ? "text-red-700 dark:text-red-400" : "text-emerald-700 dark:text-emerald-400")}>
                   {formatBRL(r.margem)}
                 </td>
-                <td className={cn("px-4 py-2 text-right tabular-nums", neg ? "text-red-700" : "text-emerald-700")}>
+                <td className={cn("px-4 py-2 text-right tabular-nums", neg ? "text-red-700 dark:text-red-400" : "text-emerald-700 dark:text-emerald-400")}>
                   {r.margemPct.toFixed(2)}%
                 </td>
-                <td className="px-4 py-2 text-right tabular-nums text-slate-500">{formatBRL(r.ganhosIndiretos)}</td>
-                <td className="px-4 py-2 text-right tabular-nums text-slate-500">{r.giroMedio.toFixed(0)}d</td>
+                <td className="px-4 py-2 text-right tabular-nums text-[var(--text-muted)]">{formatBRL(r.ganhosIndiretos)}</td>
+                <td className="px-4 py-2 text-right tabular-nums text-[var(--text-muted)]">{r.giroMedio.toFixed(0)}d</td>
               </tr>
             );
           })}
@@ -266,21 +273,21 @@ function TabelaLojas({ dados }: { dados: ReturnType<typeof margemPorLoja> }) {
 function TabelaGiro({ dados }: { dados: ReturnType<typeof giroVsMargem> }) {
   const max = Math.max(...dados.map((d) => Math.abs(d.margem)), 1);
   return (
-    <div className="space-y-2 rounded-xl border border-[var(--border-soft)] bg-white p-4 shadow-[var(--shadow-sm)]">
+    <div className="space-y-2 rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4 shadow-[var(--shadow-sm)]">
       {dados.map((b) => {
         const pos = b.margem >= 0;
         const w = (Math.abs(b.margem) / max) * 100;
         return (
           <div key={b.faixa} className="space-y-1">
             <div className="flex items-center justify-between text-sm">
-              <span className="font-medium text-slate-700">{b.faixa}</span>
-              <span className="text-xs text-slate-500">
+              <span className="font-medium text-[var(--text-body)]">{b.faixa}</span>
+              <span className="text-xs text-[var(--text-muted)]">
                 {formatInt(b.qt)} vendas · Mg/un{" "}
-                <span className={pos ? "text-emerald-700" : "text-red-700"}>{formatBRL(b.margemPorUnidade)}</span>
+                <span className={pos ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}>{formatBRL(b.margemPorUnidade)}</span>
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="relative h-2.5 flex-1 overflow-hidden rounded bg-slate-100">
+              <div className="relative h-2.5 flex-1 overflow-hidden rounded bg-[var(--bg-muted)]">
                 <div
                   className={cn("absolute h-full rounded", pos ? "left-0 bg-emerald-500" : "left-0 bg-red-500")}
                   style={{ width: `${w}%` }}
@@ -289,7 +296,7 @@ function TabelaGiro({ dados }: { dados: ReturnType<typeof giroVsMargem> }) {
               <span
                 className={cn(
                   "w-32 shrink-0 text-right text-xs tabular-nums font-semibold",
-                  pos ? "text-emerald-700" : "text-red-700",
+                  pos ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400",
                 )}
               >
                 {formatBRL(b.margem)} ({b.margemPct.toFixed(1)}%)
@@ -325,9 +332,9 @@ function EstoqueRiscoCard({ dados }: { dados: ReturnType<typeof estoqueEmRisco> 
         />
       </div>
       {dados.itens.length > 0 && (
-        <div className="overflow-x-auto rounded-xl border border-[var(--border-soft)] bg-white shadow-[var(--shadow-sm)]">
+        <div className="overflow-x-auto rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] shadow-[var(--shadow-sm)]">
           <table className="w-full text-sm">
-            <thead className="bg-red-50 text-left text-xs font-semibold uppercase tracking-wider text-red-700">
+            <thead className="bg-red-50 text-left text-xs font-semibold uppercase tracking-wider text-red-700 dark:bg-red-950/30 dark:text-red-300">
               <tr>
                 <th className="px-4 py-2">Modelo</th>
                 <th className="px-4 py-2">Placa</th>
@@ -339,15 +346,15 @@ function EstoqueRiscoCard({ dados }: { dados: ReturnType<typeof estoqueEmRisco> 
             </thead>
             <tbody>
               {dados.itens.map((i, idx) => (
-                <tr key={`${i.placa}-${idx}`} className="border-t border-[var(--border-soft)] hover:bg-slate-50">
+                <tr key={`${i.placa}-${idx}`} className="border-t border-[var(--border-soft)] hover:bg-[var(--bg-muted)]">
                   <td className="px-4 py-2 text-xs">{i.modelo}</td>
                   <td className="px-4 py-2 font-mono text-xs">{i.placa}</td>
                   <td className="px-4 py-2 text-right tabular-nums">{formatBRL(i.preco)}</td>
-                  <td className="px-4 py-2 text-right tabular-nums font-semibold text-red-700">
+                  <td className="px-4 py-2 text-right tabular-nums font-semibold text-red-700 dark:text-red-400">
                     {formatBRL(i.margemHistoricaMedia)}
                   </td>
-                  <td className="px-4 py-2 text-right tabular-nums text-slate-500">{i.vendasHistoricas}</td>
-                  <td className="px-4 py-2 text-right tabular-nums text-slate-500">
+                  <td className="px-4 py-2 text-right tabular-nums text-[var(--text-muted)]">{i.vendasHistoricas}</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-[var(--text-muted)]">
                     {i.diasNoPatio != null ? `${i.diasNoPatio}d` : "—"}
                   </td>
                 </tr>
@@ -388,20 +395,20 @@ function ClassificacaoCard({ dados }: { dados: ReturnType<typeof distribuicaoCla
                 <div className={cn("flex h-7 w-7 items-center justify-center rounded text-sm font-black", cor.bg, cor.text)}>
                   {c.classe}
                 </div>
-                <p className="text-[10px] text-slate-600">{CLASSE_DESC[c.classe]}</p>
+                <p className="text-[10px] text-[var(--text-body)]">{CLASSE_DESC[c.classe]}</p>
               </div>
-              <p className="mt-2 text-xl font-bold tabular-nums text-slate-900">{formatInt(c.qt)}</p>
-              <p className="text-[10px] text-slate-500">{pct.toFixed(1)}% · {formatBRL(c.valor)}</p>
+              <p className="mt-2 text-xl font-bold tabular-nums text-[var(--text-strong)]">{formatInt(c.qt)}</p>
+              <p className="text-[10px] text-[var(--text-muted)]">{pct.toFixed(1)}% · {formatBRL(c.valor)}</p>
             </div>
           );
         })}
       </div>
       {dados.rebaixadosPorEstoque > 0 && (
-        <p className="text-xs text-slate-600">
+        <p className="text-xs text-[var(--text-body)]">
           ⚠️ <strong>{formatInt(dados.rebaixadosPorEstoque)} carros</strong> seriam Show Room pela política, mas viraram Repasse por estarem parados +30 dias ou ter ≥5 iguais no estoque.
         </p>
       )}
-      <p className="text-[10px] text-slate-500">
+      <p className="text-[10px] text-[var(--text-muted)]">
         Classificação automática com base em idade, KM/ano, dias de pátio e repetição. Avarias, sinistro, modificações documentais e histórico de táxi precisam ser validados manualmente pelo avaliador.
       </p>
     </div>
@@ -410,9 +417,9 @@ function ClassificacaoCard({ dados }: { dados: ReturnType<typeof distribuicaoCla
 
 function TabelaMarcas({ dados }: { dados: ReturnType<typeof margemPorMarca> }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-[var(--border-soft)] bg-white shadow-[var(--shadow-sm)]">
+    <div className="overflow-x-auto rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] shadow-[var(--shadow-sm)]">
       <table className="w-full text-sm">
-        <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+        <thead className="bg-[var(--bg-muted)] text-left text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
           <tr>
             <th className="px-4 py-2">Marca</th>
             <th className="px-4 py-2 text-right">Vendas</th>
@@ -426,17 +433,17 @@ function TabelaMarcas({ dados }: { dados: ReturnType<typeof margemPorMarca> }) {
           {dados.map((r) => {
             const neg = r.margem < 0;
             return (
-              <tr key={r.marca} className="border-t border-[var(--border-soft)] hover:bg-slate-50">
-                <td className="px-4 py-2 font-medium text-slate-900">{r.marca}</td>
+              <tr key={r.marca} className="border-t border-[var(--border-soft)] hover:bg-[var(--bg-muted)]">
+                <td className="px-4 py-2 font-medium text-[var(--text-strong)]">{r.marca}</td>
                 <td className="px-4 py-2 text-right tabular-nums">{formatInt(r.qt)}</td>
-                <td className="px-4 py-2 text-right tabular-nums text-slate-600">{formatBRL(r.faturamento)}</td>
-                <td className={cn("px-4 py-2 text-right tabular-nums font-semibold", neg ? "text-red-700" : "text-emerald-700")}>
+                <td className="px-4 py-2 text-right tabular-nums text-[var(--text-body)]">{formatBRL(r.faturamento)}</td>
+                <td className={cn("px-4 py-2 text-right tabular-nums font-semibold", neg ? "text-red-700 dark:text-red-400" : "text-emerald-700 dark:text-emerald-400")}>
                   {formatBRL(r.margem)}
                 </td>
-                <td className={cn("px-4 py-2 text-right tabular-nums", neg ? "text-red-700" : "text-emerald-700")}>
+                <td className={cn("px-4 py-2 text-right tabular-nums", neg ? "text-red-700 dark:text-red-400" : "text-emerald-700 dark:text-emerald-400")}>
                   {r.margemPct.toFixed(2)}%
                 </td>
-                <td className="px-4 py-2 text-right tabular-nums text-slate-500">{formatBRL(r.ganhosIndiretos)}</td>
+                <td className="px-4 py-2 text-right tabular-nums text-[var(--text-muted)]">{formatBRL(r.ganhosIndiretos)}</td>
               </tr>
             );
           })}
@@ -448,9 +455,9 @@ function TabelaMarcas({ dados }: { dados: ReturnType<typeof margemPorMarca> }) {
 
 function TabelaModelos({ dados }: { dados: ReturnType<typeof margemPorModelo> }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-[var(--border-soft)] bg-white shadow-[var(--shadow-sm)]">
+    <div className="overflow-x-auto rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] shadow-[var(--shadow-sm)]">
       <table className="w-full text-sm">
-        <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+        <thead className="bg-[var(--bg-muted)] text-left text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
           <tr>
             <th className="px-4 py-2">Modelo</th>
             <th className="px-4 py-2 text-right">Vendas</th>
@@ -461,12 +468,12 @@ function TabelaModelos({ dados }: { dados: ReturnType<typeof margemPorModelo> })
         </thead>
         <tbody>
           {dados.map((r) => (
-            <tr key={r.modelo} className="border-t border-[var(--border-soft)] hover:bg-slate-50">
-              <td className="px-4 py-2 text-xs text-slate-900">{r.modelo}</td>
+            <tr key={r.modelo} className="border-t border-[var(--border-soft)] hover:bg-[var(--bg-muted)]">
+              <td className="px-4 py-2 text-xs text-[var(--text-strong)]">{r.modelo}</td>
               <td className="px-4 py-2 text-right tabular-nums">{r.qt}</td>
-              <td className="px-4 py-2 text-right tabular-nums text-slate-600">{formatBRL(r.faturamento)}</td>
-              <td className="px-4 py-2 text-right tabular-nums font-semibold text-red-700">{formatBRL(r.margem)}</td>
-              <td className="px-4 py-2 text-right tabular-nums text-red-700">{r.margemPct.toFixed(2)}%</td>
+              <td className="px-4 py-2 text-right tabular-nums text-[var(--text-body)]">{formatBRL(r.faturamento)}</td>
+              <td className="px-4 py-2 text-right tabular-nums font-semibold text-red-700 dark:text-red-400">{formatBRL(r.margem)}</td>
+              <td className="px-4 py-2 text-right tabular-nums text-red-700 dark:text-red-400">{r.margemPct.toFixed(2)}%</td>
             </tr>
           ))}
         </tbody>
@@ -477,25 +484,25 @@ function TabelaModelos({ dados }: { dados: ReturnType<typeof margemPorModelo> })
 
 function TrocasBox({ titulo, d }: { titulo: string; d: ReturnType<typeof trocasVsSem>["comTroca"] }) {
   return (
-    <div className="rounded-xl border border-[var(--border-soft)] bg-white p-4 shadow-[var(--shadow-sm)]">
-      <p className="text-sm font-semibold text-slate-900">{titulo}</p>
+    <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4 shadow-[var(--shadow-sm)]">
+      <p className="text-sm font-semibold text-[var(--text-strong)]">{titulo}</p>
       <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
         <div>
-          <p className="text-slate-500">Vendas</p>
-          <p className="text-base font-bold tabular-nums text-slate-900">{formatInt(d.qt)}</p>
+          <p className="text-[var(--text-muted)]">Vendas</p>
+          <p className="text-base font-bold tabular-nums text-[var(--text-strong)]">{formatInt(d.qt)}</p>
         </div>
         <div>
-          <p className="text-slate-500">Ticket médio</p>
-          <p className="text-base font-bold tabular-nums text-slate-900">{formatBRL(d.ticketMedio)}</p>
+          <p className="text-[var(--text-muted)]">Ticket médio</p>
+          <p className="text-base font-bold tabular-nums text-[var(--text-strong)]">{formatBRL(d.ticketMedio)}</p>
         </div>
         <div>
-          <p className="text-slate-500">Margem total</p>
+          <p className="text-[var(--text-muted)]">Margem total</p>
           <p className={cn("text-base font-bold tabular-nums", d.margem >= 0 ? "text-emerald-700" : "text-red-700")}>
             {formatBRL(d.margem)}
           </p>
         </div>
         <div>
-          <p className="text-slate-500">Margem/un</p>
+          <p className="text-[var(--text-muted)]">Margem/un</p>
           <p className={cn("text-base font-bold tabular-nums", d.margemPorUnidade >= 0 ? "text-emerald-700" : "text-red-700")}>
             {formatBRL(d.margemPorUnidade)}
           </p>
@@ -524,12 +531,12 @@ function TabelaVendedores({
   highlight: "positivo" | "negativo";
 }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-[var(--border-soft)] bg-white shadow-[var(--shadow-sm)]">
-      <div className="border-b border-[var(--border-soft)] bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-900">
+    <div className="overflow-x-auto rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] shadow-[var(--shadow-sm)]">
+      <div className="border-b border-[var(--border-soft)] bg-[var(--bg-muted)] px-4 py-2 text-sm font-semibold text-[var(--text-strong)]">
         {titulo}
       </div>
       <table className="w-full text-sm">
-        <thead className="text-left text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+        <thead className="text-left text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
           <tr>
             <th className="px-4 py-1.5">Vendedor</th>
             <th className="px-4 py-1.5 text-right">Vendas</th>
@@ -540,14 +547,14 @@ function TabelaVendedores({
         </thead>
         <tbody>
           {dados.map((r) => (
-            <tr key={r.vendedor} className="border-t border-[var(--border-soft)] hover:bg-slate-50">
-              <td className="px-4 py-1.5 text-xs text-slate-900">{r.vendedor}</td>
+            <tr key={r.vendedor} className="border-t border-[var(--border-soft)] hover:bg-[var(--bg-muted)]">
+              <td className="px-4 py-1.5 text-xs text-[var(--text-strong)]">{r.vendedor}</td>
               <td className="px-4 py-1.5 text-right tabular-nums text-xs">{r.qt}</td>
-              <td className="px-4 py-1.5 text-right tabular-nums text-xs text-slate-600">{formatBRL(r.faturamento)}</td>
-              <td className={cn("px-4 py-1.5 text-right tabular-nums text-xs font-semibold", highlight === "negativo" ? "text-red-700" : "text-emerald-700")}>
+              <td className="px-4 py-1.5 text-right tabular-nums text-xs text-[var(--text-body)]">{formatBRL(r.faturamento)}</td>
+              <td className={cn("px-4 py-1.5 text-right tabular-nums text-xs font-semibold", highlight === "negativo" ? "text-red-700 dark:text-red-400" : "text-emerald-700 dark:text-emerald-400")}>
                 {formatBRL(r.margem)}
               </td>
-              <td className={cn("px-4 py-1.5 text-right tabular-nums text-xs", highlight === "negativo" ? "text-red-700" : "text-emerald-700")}>
+              <td className={cn("px-4 py-1.5 text-right tabular-nums text-xs", highlight === "negativo" ? "text-red-700 dark:text-red-400" : "text-emerald-700 dark:text-emerald-400")}>
                 {r.margemPct.toFixed(2)}%
               </td>
             </tr>
@@ -568,24 +575,24 @@ function TabelaOutliers({
   cor: "emerald" | "red";
 }) {
   return (
-    <div className="rounded-xl border border-[var(--border-soft)] bg-white p-4 shadow-[var(--shadow-sm)]">
-      <p className="mb-3 text-sm font-semibold text-slate-900">{titulo}</p>
+    <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4 shadow-[var(--shadow-sm)]">
+      <p className="mb-3 text-sm font-semibold text-[var(--text-strong)]">{titulo}</p>
       <ul className="space-y-2">
         {dados.map((o, idx) => (
           <li key={`${o.placa}-${idx}`} className="flex items-start justify-between gap-3 text-xs">
             <div className="min-w-0 flex-1">
-              <p className="font-mono text-slate-500">{o.placa}</p>
-              <p className="truncate text-slate-900">{o.modelo}</p>
-              <p className="truncate text-[10px] text-slate-400">
+              <p className="font-mono text-[var(--text-muted)]">{o.placa}</p>
+              <p className="truncate text-[var(--text-strong)]">{o.modelo}</p>
+              <p className="truncate text-[10px] text-[var(--text-subtle)]">
                 {o.loja ?? "—"} · {o.vendedor ?? "—"}
               </p>
             </div>
             <div className="text-right">
-              <p className="tabular-nums text-slate-600">{formatBRL(o.valor)}</p>
-              <p className={cn("tabular-nums font-bold", cor === "emerald" ? "text-emerald-700" : "text-red-700")}>
+              <p className="tabular-nums text-[var(--text-body)]">{formatBRL(o.valor)}</p>
+              <p className={cn("tabular-nums font-bold", cor === "emerald" ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400")}>
                 {formatBRL(o.margem)}
               </p>
-              <p className={cn("text-[10px]", cor === "emerald" ? "text-emerald-700" : "text-red-700")}>
+              <p className={cn("text-[10px]", cor === "emerald" ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400")}>
                 {o.margemPct.toFixed(1)}%
               </p>
             </div>
@@ -598,9 +605,9 @@ function TabelaOutliers({
 
 function TabelaClientes({ dados }: { dados: ReturnType<typeof clientesRecorrentes> }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-[var(--border-soft)] bg-white shadow-[var(--shadow-sm)]">
+    <div className="overflow-x-auto rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] shadow-[var(--shadow-sm)]">
       <table className="w-full text-sm">
-        <thead className="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
+        <thead className="bg-[var(--bg-muted)] text-left text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
           <tr>
             <th className="px-4 py-2">Cliente</th>
             <th className="px-4 py-2 text-center">Tipo</th>
@@ -611,15 +618,15 @@ function TabelaClientes({ dados }: { dados: ReturnType<typeof clientesRecorrente
         </thead>
         <tbody>
           {dados.map((c) => (
-            <tr key={c.codigo ?? c.nome} className="border-t border-[var(--border-soft)] hover:bg-slate-50">
-              <td className="px-4 py-2 text-slate-900">{c.nome}</td>
-              <td className="px-4 py-2 text-center text-xs text-slate-500">{c.tipo}</td>
+            <tr key={c.codigo ?? c.nome} className="border-t border-[var(--border-soft)] hover:bg-[var(--bg-muted)]">
+              <td className="px-4 py-2 text-[var(--text-strong)]">{c.nome}</td>
+              <td className="px-4 py-2 text-center text-xs text-[var(--text-muted)]">{c.tipo}</td>
               <td className="px-4 py-2 text-right tabular-nums">{c.qt}</td>
-              <td className="px-4 py-2 text-right tabular-nums text-slate-600">{formatBRL(c.faturamento)}</td>
+              <td className="px-4 py-2 text-right tabular-nums text-[var(--text-body)]">{formatBRL(c.faturamento)}</td>
               <td
                 className={cn(
                   "px-4 py-2 text-right tabular-nums font-semibold",
-                  c.margem >= 0 ? "text-emerald-700" : "text-red-700",
+                  c.margem >= 0 ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400",
                 )}
               >
                 {formatBRL(c.margem)}

@@ -53,20 +53,20 @@ function LoginForm() {
           <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-[var(--brand-700)] to-[var(--brand-900)] text-white shadow-sm">
             <span className="text-lg font-bold tracking-tight">N</span>
           </div>
-          <h1 className="text-lg font-bold text-slate-900">Navesa Mesa</h1>
-          <p className="mt-0.5 text-sm text-slate-500">Precificação de Seminovos</p>
+          <h1 className="text-lg font-bold text-[var(--text-strong)]">Navesa Mesa</h1>
+          <p className="mt-0.5 text-sm text-[var(--text-muted)]">Precificação de Seminovos</p>
         </div>
 
         {/* Card */}
-        <div className="rounded-2xl border border-[var(--border-soft)] bg-white p-6 shadow-sm">
-          <h2 className="text-base font-semibold text-slate-900">Entrar</h2>
-          <p className="mt-1 text-xs text-slate-500">
+        <div className="rounded-2xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-6 shadow-sm">
+          <h2 className="text-base font-semibold text-[var(--text-strong)]">Entrar</h2>
+          <p className="mt-1 text-xs text-[var(--text-muted)]">
             Use suas credenciais Navesa. Contas são criadas pelos administradores.
           </p>
 
           <form onSubmit={handleSubmit} className="mt-5 space-y-4" noValidate>
             <div>
-              <label htmlFor="email" className="block text-xs font-medium text-slate-700">
+              <label htmlFor="email" className="block text-xs font-medium text-[var(--text-body)]">
                 E-mail
               </label>
               <input
@@ -78,13 +78,13 @@ function LoginForm() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={submitting}
-                className="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-[var(--brand-600)] focus:ring-2 focus:ring-[var(--brand-100)] disabled:bg-slate-50"
+                className="mt-1 block w-full rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-strong)] shadow-sm outline-none transition focus:border-[var(--brand-600)] focus:ring-2 focus:ring-[var(--brand-100)] disabled:bg-[var(--bg-muted)]"
                 placeholder="seu.email@navesa.com.br"
               />
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-xs font-medium text-slate-700">
+              <label htmlFor="password" className="block text-xs font-medium text-[var(--text-body)]">
                 Senha
               </label>
               <input
@@ -96,7 +96,7 @@ function LoginForm() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={submitting}
-                className="mt-1 block w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-[var(--brand-600)] focus:ring-2 focus:ring-[var(--brand-100)] disabled:bg-slate-50"
+                className="mt-1 block w-full rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-strong)] shadow-sm outline-none transition focus:border-[var(--brand-600)] focus:ring-2 focus:ring-[var(--brand-100)] disabled:bg-[var(--bg-muted)]"
                 placeholder="••••••••"
               />
             </div>
@@ -104,7 +104,7 @@ function LoginForm() {
             {erro && (
               <div
                 role="alert"
-                className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700"
+                className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-300"
               >
                 <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                 <span>{erro}</span>
@@ -131,7 +131,7 @@ function LoginForm() {
           </form>
         </div>
 
-        <p className="mt-6 text-center text-[11px] text-slate-400">
+        <p className="mt-6 text-center text-[11px] text-[var(--text-subtle)]">
           Mesa de Precificação · Versão MVP · {new Date().getFullYear()}
         </p>
       </div>

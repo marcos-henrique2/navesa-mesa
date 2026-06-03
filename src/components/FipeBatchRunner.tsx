@@ -55,13 +55,13 @@ export function FipeBatchRunner() {
   // Banner inicial (sem batch ou batch antigo)
   if (!batch && !rodando) {
     return (
-      <div className="rounded-xl border-2 border-dashed border-[var(--brand-300)] bg-[var(--brand-50)] p-4 shadow-[var(--shadow-sm)]">
+      <div className="rounded-xl border-2 border-dashed border-[var(--brand-300)] bg-[var(--brand-50)] p-4 shadow-[var(--shadow-sm)] dark:bg-[var(--brand-950)]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex-1">
-            <h3 className="text-sm font-semibold text-slate-900">
+            <h3 className="text-sm font-semibold text-[var(--text-strong)]">
               💰 Buscar preços FIPE do estoque
             </h3>
-            <p className="mt-0.5 text-xs text-slate-600">
+            <p className="mt-0.5 text-xs text-[var(--text-body)]">
               Vamos comparar cada um dos {formatInt(veiculos.length)} carros com a FIPE atual — leva ~2 minutos.
             </p>
           </div>
@@ -80,15 +80,15 @@ export function FipeBatchRunner() {
   if (rodando && progresso) {
     const pct = progresso.total > 0 ? (progresso.atual / progresso.total) * 100 : 0;
     return (
-      <div className="rounded-xl border border-[var(--brand-300)] bg-[var(--brand-50)] p-4">
-        <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-          <Loader2 className="h-4 w-4 animate-spin text-[var(--brand-700)]" />
+      <div className="rounded-xl border border-[var(--brand-300)] bg-[var(--brand-50)] p-4 dark:bg-[var(--brand-950)]">
+        <div className="flex items-center gap-2 text-sm font-semibold text-[var(--text-strong)]">
+          <Loader2 className="h-4 w-4 animate-spin text-[var(--brand-700)] dark:text-[var(--brand-300)]" />
           Buscando FIPE...
         </div>
-        <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-[var(--bg-muted)]">
           <div className="h-full bg-[var(--brand-700)] transition-all" style={{ width: `${pct}%` }} />
         </div>
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--text-body)]">
           <span>{progresso.mensagem}</span>
           <span className="tabular-nums">
             {progresso.atual}/{progresso.total} grupos · {progresso.matchesAteAgora} matches
@@ -104,15 +104,15 @@ export function FipeBatchRunner() {
     const erros = batch.erros.length;
     const cobertura = batch.totalVeiculos > 0 ? (totalComFipe / batch.totalVeiculos) * 100 : 0;
     return (
-      <div className="rounded-xl border border-[var(--border-soft)] bg-white p-4 shadow-[var(--shadow-sm)]">
+      <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4 shadow-[var(--shadow-sm)]">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-start gap-3">
             <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
             <div>
-              <h3 className="text-sm font-semibold text-slate-900">
+              <h3 className="text-sm font-semibold text-[var(--text-strong)]">
                 FIPE buscada · {formatInt(totalComFipe)} de {formatInt(batch.totalVeiculos)} carros ({cobertura.toFixed(0)}%)
               </h3>
-              <p className="mt-0.5 text-xs text-slate-500">
+              <p className="mt-0.5 text-xs text-[var(--text-muted)]">
                 Última busca: {idadeLabel} · {formatInt(batch.totalGrupos)} grupos consultados
                 {erros > 0 && <span className="text-amber-700"> · {erros} sem match</span>}
               </p>
@@ -121,13 +121,13 @@ export function FipeBatchRunner() {
           <div className="flex items-center gap-2">
             <button
               onClick={rodar}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-soft)] bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] px-3 py-1.5 text-xs font-medium text-[var(--text-body)] transition hover:bg-[var(--bg-muted)]"
             >
               <RefreshCw className="h-3 w-3" /> Atualizar
             </button>
             <button
               onClick={limpar}
-              className="inline-flex items-center gap-1 rounded-lg p-1.5 text-xs text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+              className="inline-flex items-center gap-1 rounded-lg p-1.5 text-xs text-[var(--text-subtle)] transition hover:bg-[var(--bg-muted)] hover:text-[var(--text-body)]"
               title="Limpar cache"
             >
               <X className="h-3 w-3" />
@@ -140,11 +140,11 @@ export function FipeBatchRunner() {
 
   if (erro) {
     return (
-      <div className="rounded-xl border border-red-300 bg-red-50 p-4">
-        <div className="flex items-center gap-2 text-sm font-semibold text-red-900">
+      <div className="rounded-xl border border-red-300 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950/30">
+        <div className="flex items-center gap-2 text-sm font-semibold text-red-900 dark:text-red-200">
           <AlertCircle className="h-4 w-4" /> Erro na busca FIPE
         </div>
-        <p className="mt-1 text-xs text-red-700">{erro}</p>
+        <p className="mt-1 text-xs text-red-700 dark:text-red-300">{erro}</p>
         <button
           onClick={rodar}
           className={cn(

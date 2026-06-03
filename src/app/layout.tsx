@@ -19,6 +19,11 @@ export const metadata: Metadata = {
   description: "Plataforma interna de precificação e análise de vendas de seminovos do Grupo Navesa.",
 };
 
+// Script inline que aplica o tema ANTES do React montar — evita flash light → dark.
+// Lê localStorage e media query; se resultado for dark, adiciona .dark no <html>.
+// Em try/catch porque localStorage pode lançar em modo privado.
+const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem('navesa-mesa:tema')||'system';var d=t==='dark'||(t==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d)document.documentElement.classList.add('dark');}catch(e){}})();`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -26,7 +31,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <body className="min-h-full bg-[var(--bg-app)] text-slate-700">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
+      <body className="min-h-full bg-[var(--bg-app)] text-[var(--text-body)]">
         <InventoryProvider>
           <AppShell>{children}</AppShell>
         </InventoryProvider>

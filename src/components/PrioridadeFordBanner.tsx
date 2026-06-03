@@ -203,7 +203,7 @@ export function PrioridadeFordBanner({ onAtivarFiltro }: PrioridadeFordBannerPro
     <section
       role="region"
       aria-label="Banner de prioridade Ford"
-      className="overflow-hidden rounded-xl border-2 border-red-200 bg-gradient-to-br from-red-50 to-white shadow-sm dark:border-red-900/50 dark:from-red-950/20 dark:to-zinc-900"
+      className="overflow-hidden rounded-xl border-2 border-red-200 bg-gradient-to-br from-red-50 to-white shadow-sm dark:border-red-900/50 dark:from-red-950/20 dark:to-[var(--bg-surface)]"
     >
       <div className="flex items-start justify-between gap-3 border-b border-red-200/60 px-4 py-3 dark:border-red-900/40">
         <div className="flex items-start gap-2.5">
@@ -242,7 +242,7 @@ export function PrioridadeFordBanner({ onAtivarFiltro }: PrioridadeFordBannerPro
         </button>
         <button
           onClick={handleDispensar}
-          className="inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-800 hover:bg-red-50 dark:border-red-900/60 dark:bg-zinc-900 dark:text-red-200 dark:hover:bg-red-950/30"
+          className="inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-medium text-red-800 hover:bg-red-50 dark:border-red-900/60 dark:bg-[var(--bg-surface)] dark:text-red-200 dark:hover:bg-red-950/30"
         >
           Esconder banner
         </button>
@@ -254,13 +254,13 @@ export function PrioridadeFordBanner({ onAtivarFiltro }: PrioridadeFordBannerPro
 function CardLoja({ loja }: { loja: DadosLoja }) {
   return (
     <div className={cn(
-      "flex items-start justify-between gap-3 rounded-lg border border-red-200/70 bg-white p-3 dark:border-red-900/40 dark:bg-zinc-900",
+      "flex items-start justify-between gap-3 rounded-lg border border-red-200/70 bg-white p-3 dark:border-red-900/40 dark:bg-[var(--bg-surface)]",
     )}>
       <div className="min-w-0">
-        <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100" title={loja.nome}>
+        <p className="truncate text-sm font-semibold text-[var(--text-strong)]" title={loja.nome}>
           {loja.nome}
         </p>
-        <p className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">
+        <p className="mt-0.5 text-xs text-[var(--text-body)]">
           {formatInt(loja.qtCarros)} carro{loja.qtCarros === 1 ? "" : "s"}
           {loja.qtGraves > 0 && (
             <>

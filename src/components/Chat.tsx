@@ -249,19 +249,19 @@ export function Chat() {
     }
   }
 
-  if (!isHydrated || carregandoHistorico) return <div className="p-6 text-sm text-slate-500">Carregando…</div>;
+  if (!isHydrated || carregandoHistorico) return <div className="p-6 text-sm text-[var(--text-muted)]">Carregando…</div>;
 
   return (
     <div className="mx-auto flex h-[calc(100vh-9rem)] max-w-4xl flex-col">
       {/* Header de status */}
-      <div className="flex items-center justify-between border-b border-[var(--border-soft)] bg-white px-4 py-2 text-xs text-slate-500">
+      <div className="flex items-center justify-between border-b border-[var(--border-soft)] bg-[var(--bg-surface)] px-4 py-2 text-xs text-[var(--text-muted)]">
         <div className="flex items-center gap-2">
           <Sparkles className="h-3.5 w-3.5 text-[var(--brand-700)]" />
           {bundle ? (
             <span>
-              <strong className="text-slate-900">{bundle.sumario.qt}</strong> vendas · período{" "}
-              <strong className="text-slate-900">{periodo.inicio}</strong> →{" "}
-              <strong className="text-slate-900">{periodo.fim}</strong>
+              <strong className="text-[var(--text-strong)]">{bundle.sumario.qt}</strong> vendas · período{" "}
+              <strong className="text-[var(--text-strong)]">{periodo.inicio}</strong> →{" "}
+              <strong className="text-[var(--text-strong)]">{periodo.fim}</strong>
             </span>
           ) : (
             <span className="text-amber-700">
@@ -275,7 +275,7 @@ export function Chat() {
         {messages.length > 0 && (
           <button
             onClick={reset}
-            className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-slate-500 hover:bg-slate-100"
+            className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-[var(--text-muted)] hover:bg-[var(--bg-muted)]"
           >
             <RotateCcw className="h-3 w-3" /> Limpar
           </button>
@@ -292,7 +292,7 @@ export function Chat() {
               <MessageBubble key={m.id != null ? `db-${m.id}` : `local-${i}`} role={m.role} content={m.content} streaming={streaming && i === messages.length - 1 && m.role === "assistant"} />
             ))}
             {streaming && messages[messages.length - 1]?.role === "user" && (
-              <div className="flex items-center gap-2 text-xs text-slate-500">
+              <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
                 <Loader2 className="h-3 w-3 animate-spin" /> Claude está pensando…
               </div>
             )}
@@ -300,7 +300,7 @@ export function Chat() {
         )}
 
         {error && (
-          <div className="mx-auto mt-4 max-w-3xl rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <div className="mx-auto mt-4 max-w-3xl rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-300">
             <p className="flex items-center gap-2 font-semibold">
               <AlertCircle className="h-4 w-4" /> Erro
             </p>
@@ -315,7 +315,7 @@ export function Chat() {
           e.preventDefault();
           send(input);
         }}
-        className="border-t border-[var(--border-soft)] bg-white p-3"
+        className="border-t border-[var(--border-soft)] bg-[var(--bg-surface)] p-3"
       >
         <div className="mx-auto flex max-w-3xl items-end gap-2">
           <textarea
@@ -336,12 +336,12 @@ export function Chat() {
                 : "Suba os relatórios primeiro"
             }
             rows={1}
-            className="flex-1 resize-none rounded-lg border border-[var(--border-soft)] bg-white px-3 py-2 text-sm placeholder:text-slate-400 focus:border-[var(--brand-500)] focus:outline-none disabled:bg-slate-50 disabled:text-slate-400"
+            className="flex-1 resize-none rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] px-3 py-2 text-sm placeholder:text-[var(--text-subtle)] focus:border-[var(--brand-500)] focus:outline-none disabled:bg-[var(--bg-muted)] disabled:text-[var(--text-subtle)]"
           />
           <button
             type="submit"
             disabled={!bundle || streaming || !input.trim() || bloqueioSeg > 0}
-            className="inline-flex h-9 items-center gap-1 rounded-lg bg-[var(--brand-700)] px-3 text-sm font-medium text-white shadow-sm transition hover:bg-[var(--brand-800)] disabled:bg-slate-300 disabled:text-slate-500"
+            className="inline-flex h-9 items-center gap-1 rounded-lg bg-[var(--brand-700)] px-3 text-sm font-medium text-white shadow-sm transition hover:bg-[var(--brand-800)] disabled:bg-[var(--bg-muted)] disabled:text-[var(--text-subtle)]"
           >
             <Send className="h-4 w-4" />
             {bloqueioSeg > 0 ? `${bloqueioSeg}s` : "Enviar"}
@@ -364,9 +364,9 @@ function MessageBubble({ role, content, streaming }: { role: "user" | "assistant
   }
   return (
     <div className="flex justify-start">
-      <div className="max-w-[85%] rounded-2xl rounded-bl-sm border border-[var(--border-soft)] bg-white px-4 py-3 text-sm text-slate-800 shadow-sm">
+      <div className="max-w-[85%] rounded-2xl rounded-bl-sm border border-[var(--border-soft)] bg-[var(--bg-surface)] px-4 py-3 text-sm text-[var(--text-body)] shadow-sm">
         <FormattedMarkdown content={content} />
-        {streaming && content && <span className="ml-1 inline-block h-3 w-1.5 animate-pulse bg-slate-400" />}
+        {streaming && content && <span className="ml-1 inline-block h-3 w-1.5 animate-pulse bg-[var(--text-subtle)]" />}
       </div>
     </div>
   );
@@ -393,7 +393,7 @@ function FormattedMarkdown({ content }: { content: string }) {
         if (b.type === "heading") {
           const Tag = (b.level === 1 ? "h2" : b.level === 2 ? "h3" : "h4") as keyof React.JSX.IntrinsicElements;
           return (
-            <Tag key={i} className={cn("font-bold text-slate-900", b.level === 1 ? "text-base" : "text-sm")}
+            <Tag key={i} className={cn("font-bold text-[var(--text-strong)]", b.level === 1 ? "text-base" : "text-sm")}
                  dangerouslySetInnerHTML={{ __html: inline(b.text) }} />
           );
         }
@@ -473,7 +473,7 @@ function inline(text: string): string {
   // *italic*
   s = s.replace(/\*([^*]+)\*/g, "<em>$1</em>");
   // `code`
-  s = s.replace(/`([^`]+)`/g, '<code class="rounded bg-slate-100 px-1 py-0.5 text-xs font-mono text-slate-700">$1</code>');
+  s = s.replace(/`([^`]+)`/g, '<code class="rounded bg-[var(--bg-muted)] px-1 py-0.5 text-xs font-mono text-[var(--text-body)]">$1</code>');
   return s;
 }
 
@@ -484,17 +484,17 @@ function MdTable({ rows }: { rows: string[][] }) {
     <div className="overflow-x-auto">
       <table className="min-w-full border-collapse text-xs">
         <thead>
-          <tr className="border-b border-slate-300">
+          <tr className="border-b border-[var(--border-base)]">
             {header.map((h, i) => (
-              <th key={i} className="px-2 py-1.5 text-left font-semibold text-slate-700" dangerouslySetInnerHTML={{ __html: inline(h) }} />
+              <th key={i} className="px-2 py-1.5 text-left font-semibold text-[var(--text-body)]" dangerouslySetInnerHTML={{ __html: inline(h) }} />
             ))}
           </tr>
         </thead>
         <tbody>
           {body.map((r, i) => (
-            <tr key={i} className="border-b border-slate-200">
+            <tr key={i} className="border-b border-[var(--border-soft)]">
               {r.map((c, j) => (
-                <td key={j} className="px-2 py-1.5 text-slate-700" dangerouslySetInnerHTML={{ __html: inline(c) }} />
+                <td key={j} className="px-2 py-1.5 text-[var(--text-body)]" dangerouslySetInnerHTML={{ __html: inline(c) }} />
               ))}
             </tr>
           ))}
@@ -507,11 +507,11 @@ function MdTable({ rows }: { rows: string[][] }) {
 function EmptyState({ onPick, disabled }: { onPick: (q: string) => void; disabled: boolean }) {
   return (
     <div className="mx-auto max-w-2xl text-center">
-      <div className="mx-auto mb-3 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[var(--brand-100)] to-[var(--brand-50)] text-[var(--brand-700)]">
+      <div className="mx-auto mb-3 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[var(--brand-100)] to-[var(--brand-50)] text-[var(--brand-700)] dark:from-[var(--brand-800)]/60 dark:to-[var(--brand-900)]/40 dark:text-[var(--brand-300)]">
         <Sparkles className="h-6 w-6" />
       </div>
-      <h2 className="text-xl font-bold text-slate-900">Pergunte sobre seus dados</h2>
-      <p className="mt-2 text-sm text-slate-500">
+      <h2 className="text-xl font-bold text-[var(--text-strong)]">Pergunte sobre seus dados</h2>
+      <p className="mt-2 text-sm text-[var(--text-muted)]">
         Eu uso os 3 relatórios que você já subiu (estoque, vendas, custos) pra responder em linguagem natural.
       </p>
       {!disabled && (
@@ -520,7 +520,7 @@ function EmptyState({ onPick, disabled }: { onPick: (q: string) => void; disable
             <button
               key={s}
               onClick={() => onPick(s)}
-              className="rounded-lg border border-[var(--border-soft)] bg-white px-3 py-2 text-sm text-slate-700 shadow-sm transition hover:border-[var(--brand-300)] hover:bg-[var(--brand-50)]"
+              className="rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-body)] shadow-sm transition hover:border-[var(--brand-300)] hover:bg-[var(--brand-50)]"
             >
               {s}
             </button>

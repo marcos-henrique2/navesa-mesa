@@ -21,12 +21,12 @@ export default function UploadPage() {
           <UploadDropzone modo="custos" />
         </div>
 
-        <div className="mt-8 rounded-xl border border-[var(--border-soft)] bg-white p-5 shadow-[var(--shadow-sm)]">
-          <p className="text-sm font-semibold text-slate-900">📋 Qual é qual?</p>
-          <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-slate-600">
-            <li><strong className="text-blue-700">Estoque</strong> — &quot;Veículos em Estoque&quot;. Mostra o que está no pátio agora.</li>
-            <li><strong className="text-purple-700">Vendas</strong> — &quot;Veículos Vendidos&quot;. Histórico de vendas com cliente, vendedor, dias de giro.</li>
-            <li><strong className="text-emerald-700">Custos</strong> — &quot;Relatório de Custos&quot; (.xls). Tem a margem oficial NBS centavo-a-centavo: Nota Fábrica, Forplan, Impostos, Comissões, Ganhos Indiretos (bônus de fábrica). <strong>Sem ele, a margem usa estimativa.</strong></li>
+        <div className="mt-8 rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-5 shadow-[var(--shadow-sm)]">
+          <p className="text-sm font-semibold text-[var(--text-strong)]">📋 Qual é qual?</p>
+          <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-[var(--text-body)]">
+            <li><strong className="text-blue-700 dark:text-blue-400">Estoque</strong> — &quot;Veículos em Estoque&quot;. Mostra o que está no pátio agora.</li>
+            <li><strong className="text-purple-700 dark:text-purple-400">Vendas</strong> — &quot;Veículos Vendidos&quot;. Histórico de vendas com cliente, vendedor, dias de giro.</li>
+            <li><strong className="text-emerald-700 dark:text-emerald-400">Custos</strong> — &quot;Relatório de Custos&quot; (.xls). Tem a margem oficial NBS centavo-a-centavo: Nota Fábrica, Forplan, Impostos, Comissões, Ganhos Indiretos (bônus de fábrica). <strong>Sem ele, a margem usa estimativa.</strong></li>
           </ul>
         </div>
 

@@ -106,14 +106,14 @@ export function CautelarBatchActions() {
   const cobertura = veiculos.length > 0 ? (totalComCautelar / veiculos.length) * 100 : 0;
 
   return (
-    <div className="rounded-xl border border-[var(--border-soft)] bg-white p-4 shadow-[var(--shadow-sm)]">
+    <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4 shadow-[var(--shadow-sm)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-            <ClipboardCheck className="h-4 w-4 text-[var(--brand-700)]" />
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-[var(--text-strong)]">
+            <ClipboardCheck className="h-4 w-4 text-[var(--brand-700)] dark:text-[var(--brand-300)]" />
             Status do laudo cautelar
           </h3>
-          <p className="mt-0.5 text-xs text-slate-600">
+          <p className="mt-0.5 text-xs text-[var(--text-body)]">
             <strong>{formatInt(totalComCautelar)}</strong> de {formatInt(veiculos.length)} carros
             com cautelar definida ({cobertura.toFixed(0)}% de cobertura)
             {semCautelar > 0 && (
@@ -121,7 +121,7 @@ export function CautelarBatchActions() {
             )}
           </p>
           {totalComCautelar > 0 && (
-            <p className="mt-1 flex flex-wrap gap-2 text-[11px] text-slate-500">
+            <p className="mt-1 flex flex-wrap gap-2 text-[11px] text-[var(--text-muted)]">
               {(["aprovado", "com_restricao", "reprovado"] as StatusCautelar[]).map((s) =>
                 porStatus[s] > 0 ? (
                   <span key={s} className="inline-flex items-center gap-1">
@@ -137,7 +137,7 @@ export function CautelarBatchActions() {
           <button
             onClick={onPickFile}
             disabled={importando}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-soft)] bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] px-3 py-1.5 text-xs font-medium text-[var(--text-body)] transition hover:bg-[var(--bg-muted)] disabled:opacity-50"
           >
             <FileUp className="h-3.5 w-3.5" />
             {importando ? "Importando..." : "Importar de planilha"}
@@ -163,8 +163,8 @@ export function CautelarBatchActions() {
           className={cn(
             "mt-3 rounded-lg border px-3 py-2 text-xs",
             feedback.tipo === "sucesso"
-              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-              : "border-red-200 bg-red-50 text-red-800",
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300"
+              : "border-red-200 bg-red-50 text-red-800 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300",
           )}
         >
           <span className="inline-flex items-start gap-1">

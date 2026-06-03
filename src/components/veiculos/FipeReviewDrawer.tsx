@@ -181,15 +181,15 @@ export function FipeReviewDrawer({ veiculo, open, onClose }: Props) {
         aria-hidden="true"
       />
       {/* Drawer */}
-      <aside className="absolute right-0 top-0 flex h-full w-full max-w-[480px] flex-col bg-white shadow-2xl">
+      <aside className="absolute right-0 top-0 flex h-full w-full max-w-[480px] flex-col bg-[var(--bg-surface)] shadow-2xl">
         {/* Header */}
-        <header className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-          <h2 className="text-base font-semibold text-slate-900">Revisar match FIPE</h2>
+        <header className="flex items-center justify-between border-b border-[var(--border-soft)] px-5 py-4">
+          <h2 className="text-base font-semibold text-[var(--text-strong)]">Revisar match FIPE</h2>
           <button
             ref={fecharBtn}
             type="button"
             onClick={onClose}
-            className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-[var(--brand-400)]"
+            className="rounded-md p-1.5 text-[var(--text-muted)] hover:bg-[var(--bg-muted)] hover:text-[var(--text-strong)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-400)]"
             aria-label="Fechar"
           >
             <X className="h-4 w-4" aria-hidden="true" />
@@ -198,22 +198,22 @@ export function FipeReviewDrawer({ veiculo, open, onClose }: Props) {
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 text-sm">
-          <div className="rounded-lg bg-slate-50 p-3">
-            <p className="text-[10px] uppercase tracking-wider text-slate-500">Modelo NBS</p>
-            <p className="font-mono text-xs text-slate-800">{veiculo.modelo}</p>
-            <p className="mt-1 text-[11px] text-slate-500">
+          <div className="rounded-lg bg-[var(--bg-muted)] p-3">
+            <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Modelo NBS</p>
+            <p className="font-mono text-xs text-[var(--text-body)]">{veiculo.modelo}</p>
+            <p className="mt-1 text-[11px] text-[var(--text-muted)]">
               {veiculo.marca ?? "—"} · {veiculo.ano_modelo ?? "—"} · {veiculo.combustivel ?? "—"}
             </p>
           </div>
 
           {load.kind === "loading" && (
-            <p className="mt-4 flex items-center gap-2 text-xs text-slate-500">
+            <p className="mt-4 flex items-center gap-2 text-xs text-[var(--text-muted)]">
               <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" /> {load.msg}
             </p>
           )}
 
           {load.kind === "error" && (
-            <div className="mt-4 rounded-md bg-red-50 p-3 text-xs text-red-700">
+            <div className="mt-4 rounded-md bg-red-50 p-3 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-300">
               <p>{load.message}</p>
               <button
                 type="button"
@@ -229,7 +229,7 @@ export function FipeReviewDrawer({ veiculo, open, onClose }: Props) {
             <div className="mt-4 space-y-4">
               {load.sugeridos.length > 0 && (
                 <section>
-                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                     Sugestões automáticas
                   </p>
                   <ul className="space-y-1">
@@ -246,7 +246,7 @@ export function FipeReviewDrawer({ veiculo, open, onClose }: Props) {
               )}
 
               <section>
-                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
                   Buscar manualmente
                 </label>
                 <input
@@ -254,7 +254,7 @@ export function FipeReviewDrawer({ veiculo, open, onClose }: Props) {
                   value={busca}
                   onChange={(e) => setBusca(e.target.value)}
                   placeholder={`Buscar nos ${load.modelos.length} modelos ${load.marca.nome}…`}
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-xs focus:border-[var(--brand-400)] focus:outline-none focus:ring-1 focus:ring-[var(--brand-400)]"
+                  className="w-full rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-3 py-2 text-xs focus:border-[var(--brand-400)] focus:outline-none focus:ring-1 focus:ring-[var(--brand-400)]"
                 />
                 {modelosFiltrados.length > 0 && (
                   <ul className="mt-2 max-h-64 space-y-1 overflow-y-auto">
@@ -269,7 +269,7 @@ export function FipeReviewDrawer({ veiculo, open, onClose }: Props) {
                   </ul>
                 )}
                 {busca && modelosFiltrados.length === 0 && (
-                  <p className="mt-2 text-[11px] text-slate-500">Nenhum modelo bate com &quot;{busca}&quot;.</p>
+                  <p className="mt-2 text-[11px] text-[var(--text-muted)]">Nenhum modelo bate com &quot;{busca}&quot;.</p>
                 )}
               </section>
             </div>
@@ -278,9 +278,9 @@ export function FipeReviewDrawer({ veiculo, open, onClose }: Props) {
 
         {/* Footer */}
         {load.kind === "ready" && (
-          <footer className="border-t border-slate-200 bg-slate-50 px-5 py-4">
+          <footer className="border-t border-[var(--border-soft)] bg-[var(--bg-muted)] px-5 py-4">
             {similares > 0 && (
-              <label className="flex items-start gap-2 text-xs text-slate-700">
+              <label className="flex items-start gap-2 text-xs text-[var(--text-body)]">
                 <input
                   type="checkbox"
                   checked={aplicarTodos}
@@ -290,7 +290,7 @@ export function FipeReviewDrawer({ veiculo, open, onClose }: Props) {
                 <span>
                   Aplicar pra todos os <span className="font-semibold">{veiculo.modelo}</span> no estoque
                   {" "}
-                  <span className="text-slate-500">({similares + 1} carros)</span>
+                  <span className="text-[var(--text-muted)]">({similares + 1} carros)</span>
                 </span>
               </label>
             )}
@@ -298,7 +298,7 @@ export function FipeReviewDrawer({ veiculo, open, onClose }: Props) {
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-md px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-200"
+                className="rounded-md px-3 py-2 text-xs font-medium text-[var(--text-body)] hover:bg-[var(--bg-app)]"
                 disabled={confirmando}
               >
                 Cancelar
@@ -347,12 +347,12 @@ function ModeloOption({
         className={cn(
           "flex w-full items-center justify-between gap-2 rounded-md border px-3 py-1.5 text-left text-xs",
           selecionado
-            ? "border-[var(--brand-700)] bg-[var(--brand-50)] text-[var(--brand-900)]"
-            : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50",
+            ? "border-[var(--brand-700)] bg-[var(--brand-50)] text-[var(--brand-900)] dark:bg-[var(--brand-950)] dark:text-[var(--brand-100)]"
+            : "border-[var(--border-soft)] bg-[var(--bg-surface)] hover:border-[var(--border-base)] hover:bg-[var(--bg-muted)]",
         )}
       >
         <span>{modelo.nome}</span>
-        <span className="font-mono text-[10px] text-slate-500">{modelo.codigo}</span>
+        <span className="font-mono text-[10px] text-[var(--text-muted)]">{modelo.codigo}</span>
       </button>
     </li>
   );
