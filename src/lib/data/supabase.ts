@@ -1,6 +1,4 @@
-"use client";
-
-import { createBrowserClient } from "@supabase/ssr";
+import { createClient } from "@/lib/supabase/client";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
@@ -9,10 +7,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * retornam a mesma instância.
  */
 export function getSupabase(): SupabaseClient {
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  );
+  return createClient();
 }
 
 /**
