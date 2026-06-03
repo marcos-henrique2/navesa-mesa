@@ -8,6 +8,7 @@ import { classificarPatio, type StatusVeiculo } from "@/lib/inventory/status";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
 import { PageHeader } from "./AppShell";
 import { AlertasOperacionais } from "./AlertasOperacionais";
+import { ComparativoMesAnterior } from "./ComparativoMesAnterior";
 import { HeatmapLojas } from "./HeatmapLojas";
 
 export function DashboardHome() {
@@ -105,6 +106,11 @@ export function DashboardHome() {
                   </p>
                 )}
               </section>
+            )}
+
+            {/* Comparativo mês atual vs anterior — bate olho e vê se está melhorando */}
+            {isHydrated && vendas.length > 0 && (
+              <ComparativoMesAnterior />
             )}
 
             {/* Vendas */}

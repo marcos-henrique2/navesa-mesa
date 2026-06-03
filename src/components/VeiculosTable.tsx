@@ -10,6 +10,7 @@ import {
   flexRender,
   type ColumnDef,
   type SortingState,
+  type RowSelectionState,
 } from "@tanstack/react-table";
 import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, Search, SlidersHorizontal, X, ClipboardCheck, BarChart3 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -103,6 +104,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
   const [diasMin, setDiasMin] = usePersistedState<string>("veiculos:diasMin", "");
   const [diasMax, setDiasMax] = usePersistedState<string>("veiculos:diasMax", "");
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
 
   const lojasCods = useMemo(() => [...new Set(veiculos.map((v) => v.cod_empresa))].sort((a, b) => a - b), [veiculos]);
   const marcas = useMemo(() => [...new Set(veiculos.map((v) => v.marca).filter((m): m is string => !!m))].sort(), [veiculos]);
@@ -270,6 +272,34 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
   }, [filteredExceptStatus]);
 
   const columns = useMemo<ColumnDef<VeiculoParsed>[]>(() => [
+    {
+      id: "select",
+      header: ({ table }) => (
+        <input
+          type="checkbox"
+          checked={table.getIsAllPageRowsSelected()}
+          ref={(el) => {
+            if (el) el.indeterminate = table.getIsSomePageRowsSelected() && !table.getIsAllPageRowsSelected();
+          }}
+          onChange={table.getToggleAllPageRowsSelectedHandler()}
+          onClick={(e) => e.stopPropagation()}
+          aria-label="Selecionar todos da página"
+          className="h-4 w-4 cursor-pointer rounded border-[var(--border-base)] accent-[var(--brand-700)]"
+        />
+      ),
+      cell: ({ row }) => (
+        <input
+          type="checkbox"
+          checked={row.getIsSelected()}
+          onChange={row.getToggleSelectedHandler()}
+          onClick={(e) => e.stopPropagation()}
+          aria-label="Selecionar veículo"
+          className="h-4 w-4 cursor-pointer rounded border-[var(--border-base)] accent-[var(--brand-700)]"
+        />
+      ),
+      size: 32,
+      enableSorting: false,
+    },
     {
       header: "",
       id: "warn",
@@ -445,8 +475,12 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
   const table = useReactTable({
     data: filtered,
     columns,
-    state: { sorting },
+    state: { sorting, rowSelection },
     onSortingChange: setSorting,
+    onRowSelectionChange: setRowSelection,
+    enableRowSelection: true,
+    // chassi é único e estável — sobrevive a re-filtragem/re-ordenação
+    getRowId: (row) => row.chassi,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -461,6 +495,49 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
     setAnoMin(""); setAnoMax(""); setKmMin(""); setKmMax("");
     setPrecoMin(""); setPrecoMax(""); setDiasMin(""); setDiasMax("");
     setModoPrioridade(null);
+  };
+
+  // ─── Bulk actions ────────────────────────────────────────────────────────
+  // Trabalha em cima do row model PÓS-filtro (não confia em IDs órfãos)
+  const selecionados = useMemo(
+    () => table.getSelectedRowModel().rows.map((r) => r.original),
+    // table é referência estável; rowSelection muda → recalcula
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rowSelection, filtered],
+  );
+  const qtSelecionados = selecionados.length;
+
+  const copiarPlacas = async () => {
+    const placas = selecionados.map((v) => v.placa).filter((p): p is string => !!p);
+    if (placas.length === 0) {
+      showErrorToast("Nenhuma placa válida nos selecionados");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(placas.join("\n"));
+      showSuccessToast(`✓ ${placas.length} placa${placas.length === 1 ? "" : "s"} copiada${placas.length === 1 ? "" : "s"}`);
+    } catch {
+      showErrorToast("Falha ao copiar — permissão de clipboard negada");
+    }
+  };
+
+  const [exportandoSelecao, setExportandoSelecao] = useState(false);
+  const exportarSelecionados = async () => {
+    if (exportandoSelecao || qtSelecionados === 0) return;
+    setExportandoSelecao(true);
+    try {
+      const enriched = selecionados.map((v) => ({
+        ...v,
+        empresa_nome: lojas[v.cod_empresa]?.nome?.trim() ?? null,
+      }));
+      await baixarRelatorioGerencial({ veiculos: enriched, filtroLoja: "selecionados" });
+      showSuccessToast(`✓ ${qtSelecionados} carro${qtSelecionados === 1 ? "" : "s"} exportado${qtSelecionados === 1 ? "" : "s"}`);
+    } catch (err) {
+      console.error("Falha ao exportar selecionados:", err);
+      showErrorToast("Erro ao gerar relatório dos selecionados. Tente novamente.");
+    } finally {
+      setExportandoSelecao(false);
+    }
   };
 
   const [exportandoConf, setExportandoConf] = useState(false);
@@ -760,6 +837,39 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
           )}
         </p>
       </div>
+
+      {/* Barra de ações em massa — aparece quando há carros selecionados */}
+      {qtSelecionados > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--brand-300)] bg-[var(--brand-50)] px-4 py-2.5 text-sm dark:border-[var(--brand-700)] dark:bg-[var(--brand-900)]/30">
+          <span className="font-medium text-[var(--text-strong)]">
+            {formatInt(qtSelecionados)} carro{qtSelecionados === 1 ? "" : "s"} selecionado{qtSelecionados === 1 ? "" : "s"}
+          </span>
+          <div className="ml-auto flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={copiarPlacas}
+              className="rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-3 py-1.5 text-xs font-medium text-[var(--text-body)] hover:bg-[var(--bg-muted)]"
+            >
+              Copiar placas
+            </button>
+            <button
+              type="button"
+              onClick={exportarSelecionados}
+              disabled={exportandoSelecao}
+              className="rounded-md bg-emerald-700 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {exportandoSelecao ? "Gerando…" : "Exportar selecionados"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setRowSelection({})}
+              className="rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--bg-muted)]"
+            >
+              Limpar
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Tabela */}
       <div className="overflow-hidden rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)]">
