@@ -29,6 +29,17 @@ import { CautelarBatchActions } from "./CautelarBatchActions";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import { baixarConferenciaEstoque } from "@/lib/export/conferencia-estoque";
 import { baixarRelatorioGerencial } from "@/lib/export/relatorio-gerencial-estoque";
+import { showSuccessToast, showErrorToast } from "./ui/Toast";
+
+// Mesma lógica de todayISO() usada pelos módulos de export — espelhada aqui
+// só pra exibir o nome correto no toast de sucesso.
+function todayISOLocal(): string {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
 
 type StatusFiltro = "all" | "real" | "prep";
 
@@ -469,9 +480,10 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
         veiculos: veiculosComLoja,
         filtroLoja: filtroLojaNome,
       });
+      showSuccessToast(`conferencia-estoque-${todayISOLocal()}.xlsx baixada`);
     } catch (err) {
       console.error("Falha ao gerar planilha de conferência:", err);
-      alert("Não foi possível gerar a planilha de conferência. Tente novamente ou contate o suporte.");
+      showErrorToast("Erro ao gerar planilha de conferência. Tente novamente.");
     } finally {
       setExportandoConf(false);
     }
@@ -494,9 +506,10 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
         veiculos: veiculosComLoja,
         filtroLoja: filtroLojaNome,
       });
+      showSuccessToast(`relatorio-gerencial-estoque-${todayISOLocal()}.xlsx baixado`);
     } catch (err) {
       console.error("Falha ao gerar relatório gerencial:", err);
-      alert("Não foi possível gerar o relatório gerencial. Tente novamente ou contate o suporte.");
+      showErrorToast("Erro ao gerar relatório gerencial. Tente novamente.");
     } finally {
       setExportandoGerencial(false);
     }

@@ -7,6 +7,8 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { DataGate } from "./DataGate";
 import { ThemeToggle } from "./ThemeToggle";
+import { ToastContainer } from "./ui/Toast";
+import { Tooltip } from "./ui/Tooltip";
 import { createClient } from "@/lib/supabase/client";
 
 const COLLAPSED_KEY = "navesa-mesa:sidebar-collapsed";
@@ -54,7 +56,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // /login não tem shell — renderiza children direto (sem sidebar, sem DataGate).
   // Mantido após os hooks acima pra respeitar rules-of-hooks.
   if (pathname === "/login") {
-    return <>{children}</>;
+    return (
+      <>
+        {children}
+        <ToastContainer />
+      </>
+    );
   }
 
   const toggle = () => setCollapsed((c) => !c);
@@ -100,6 +107,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <main className="flex-1 min-w-0"><DataGate>{children}</DataGate></main>
       </div>
+
+      {/* Toasts globais — montado 1x no shell, fora do <main> pra não afetar layout/scroll */}
+      <ToastContainer />
     </div>
   );
 }
@@ -222,28 +232,36 @@ function SidebarContent({
         <ul className="space-y-1">
           {NAV.map((item) => {
             const active = item.match ? item.match(pathname) : pathname.startsWith(item.href);
+            const link = (
+              <Link
+                href={item.href}
+                onClick={onItemClick}
+                className={cn(
+                  "flex items-center rounded-lg text-sm font-medium transition",
+                  collapsed ? "justify-center px-2 py-2" : "gap-2.5 px-3 py-2",
+                  active
+                    ? "bg-gradient-to-r from-[var(--brand-50)] to-transparent text-[var(--brand-900)] shadow-sm dark:from-[var(--brand-900)]/30 dark:text-[var(--brand-100)]"
+                    : "text-[var(--text-body)] hover:bg-[var(--bg-muted)] hover:text-[var(--text-strong)]",
+                )}
+              >
+                <span className={active ? "text-[var(--brand-700)] dark:text-[var(--brand-300)]" : "text-[var(--text-subtle)]"}>{item.icon}</span>
+                {!collapsed && (
+                  <>
+                    <span className="truncate">{item.label}</span>
+                    {active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[var(--brand-600)]" />}
+                  </>
+                )}
+              </Link>
+            );
             return (
               <li key={item.href}>
-                <Link
-                  href={item.href}
-                  onClick={onItemClick}
-                  title={collapsed ? item.label : undefined}
-                  className={cn(
-                    "flex items-center rounded-lg text-sm font-medium transition",
-                    collapsed ? "justify-center px-2 py-2" : "gap-2.5 px-3 py-2",
-                    active
-                      ? "bg-gradient-to-r from-[var(--brand-50)] to-transparent text-[var(--brand-900)] shadow-sm dark:from-[var(--brand-900)]/30 dark:text-[var(--brand-100)]"
-                      : "text-[var(--text-body)] hover:bg-[var(--bg-muted)] hover:text-[var(--text-strong)]",
-                  )}
-                >
-                  <span className={active ? "text-[var(--brand-700)] dark:text-[var(--brand-300)]" : "text-[var(--text-subtle)]"}>{item.icon}</span>
-                  {!collapsed && (
-                    <>
-                      <span className="truncate">{item.label}</span>
-                      {active && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-[var(--brand-600)]" />}
-                    </>
-                  )}
-                </Link>
+                {collapsed ? (
+                  <Tooltip content={item.label} side="right">
+                    {link}
+                  </Tooltip>
+                ) : (
+                  link
+                )}
               </li>
             );
           })}
