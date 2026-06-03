@@ -14,6 +14,7 @@ import { mergeVendas, mergeCustos, type MergeResultVendas, type MergeResultCusto
 import { listVendas, upsertVendas, clearVendas as sbClearVendas } from "@/lib/data/vendas";
 import { listCustos, upsertCustos, clearCustos as sbClearCustos } from "@/lib/data/custos";
 import { listVeiculosAtual, getMetaAtual, inserirEstoqueSnapshot, clearEstoque } from "@/lib/data/veiculos";
+import { getSupabase } from "@/lib/data/supabase";
 
 export type LojaInfo = {
   cod_empresa: number;
@@ -160,13 +161,52 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
 
     (async () => {
       try {
-        const [vendasDb, custosDb, veiculosDb, metaDb] = await Promise.all([
+        // 1. Aguarda sessão Supabase estabelecida antes de qualquer query.
+        //    Sem isso, RLS pode bloquear leituras e devolver array vazio
+        //    sem erro — race típico em new tab / cold start.
+        const sb = getSupabase();
+        const { data: { user }, error: authErr } = await sb.auth.getUser();
+        if (cancelado) return;
+        if (authErr || !user) {
+          setLoadError(authErr?.message ?? "Sessão não estabelecida. Recarregue a página.");
+          setLoadingState("error");
+          return;
+        }
+
+        // 2. Carga inicial. (vendasDb/custosDb são let pra eventual retry abaixo)
+        const [vendasInicial, custosInicial, veiculosDb, metaDb] = await Promise.all([
           listVendas(),
           listCustos(),
           listVeiculosAtual(),
           getMetaAtual(),
         ]);
         if (cancelado) return;
+        let vendasDb = vendasInicial;
+        let custosDb = custosInicial;
+
+        // 3. Detecta "carga falsa": view de veículos veio populada mas vendas
+        //    E custos vieram vazias. É o sintoma exato do race de RLS
+        //    (sessão estabelecida pra view mas não pras tabelas filtradas).
+        //    Retry único após 1s. Se na 2ª tentativa ainda vier vazio,
+        //    aceita (pode ser banco realmente sem dados).
+        const isSuspiciousResult =
+          vendasDb.length === 0 && custosDb.length === 0 && veiculosDb.length > 0;
+        if (isSuspiciousResult) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 1000));
+          if (cancelado) return;
+          const [vendasRetry, custosRetry] = await Promise.all([
+            listVendas(),
+            listCustos(),
+          ]);
+          if (cancelado) return;
+          if (vendasRetry.length > 0 || custosRetry.length > 0) {
+            console.warn(
+              "[inventory] Sessão race detectado — vendas/custos vazias na 1ª tentativa, retry recuperou dados",
+            );
+            vendasDb = vendasRetry;
+            custosDb = custosRetry;
+          }
+        }
 
         // Vendas
         setVendas(vendasDb);
