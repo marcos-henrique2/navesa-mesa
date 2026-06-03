@@ -390,7 +390,7 @@ function ClassificacaoCard({ dados }: { dados: ReturnType<typeof distribuicaoCla
           const cor = CLASSE_COR[c.classe];
           const pct = total > 0 ? (c.qt / total) * 100 : 0;
           return (
-            <div key={c.classe} className={cn("rounded-lg border p-3 shadow-[var(--shadow-sm)]", cor.border, cor.bg.replace("bg-", "bg-").replace("100", "50"))}>
+            <div key={c.classe} className={cn("rounded-lg border p-3 shadow-[var(--shadow-sm)]", cor.border, cor.bgSoft)}>
               <div className="flex items-center gap-2">
                 <div className={cn("flex h-7 w-7 items-center justify-center rounded text-sm font-black", cor.bg, cor.text)}>
                   {c.classe}

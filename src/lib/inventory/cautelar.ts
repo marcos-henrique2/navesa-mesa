@@ -201,7 +201,19 @@ export const CAUTELAR_ICONE: Record<StatusCautelar, string> = {
 };
 
 export const CAUTELAR_COR: Record<StatusCautelar, { bg: string; text: string; border: string }> = {
-  aprovado: { bg: "bg-emerald-100", text: "text-emerald-800", border: "border-emerald-300" },
-  com_restricao: { bg: "bg-amber-100", text: "text-amber-800", border: "border-amber-300" },
-  reprovado: { bg: "bg-red-100", text: "text-red-800", border: "border-red-300" },
+  aprovado: {
+    bg: "bg-emerald-100 dark:bg-emerald-900/40",
+    text: "text-emerald-800 dark:text-emerald-300",
+    border: "border-emerald-300 dark:border-emerald-800",
+  },
+  com_restricao: {
+    bg: "bg-amber-100 dark:bg-amber-900/40",
+    text: "text-amber-800 dark:text-amber-300",
+    border: "border-amber-300 dark:border-amber-800",
+  },
+  reprovado: {
+    bg: "bg-red-100 dark:bg-red-900/40",
+    text: "text-red-800 dark:text-red-300",
+    border: "border-red-300 dark:border-red-800",
+  },
 };

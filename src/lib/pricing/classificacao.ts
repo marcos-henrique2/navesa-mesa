@@ -208,12 +208,37 @@ export const CLASSE_DESC: Record<Classe, string> = {
   E: "Repasse / sinistro",
 };
 
-export const CLASSE_COR: Record<Classe, { bg: string; text: string; border: string }> = {
-  A: { bg: "bg-emerald-100", text: "text-emerald-800", border: "border-emerald-300" },
-  B: { bg: "bg-blue-100", text: "text-blue-800", border: "border-blue-300" },
-  C: { bg: "bg-amber-100", text: "text-amber-800", border: "border-amber-300" },
-  D: { bg: "bg-orange-100", text: "text-orange-800", border: "border-orange-300" },
-  E: { bg: "bg-red-100", text: "text-red-800", border: "border-red-300" },
+export const CLASSE_COR: Record<Classe, { bg: string; bgSoft: string; text: string; border: string }> = {
+  A: {
+    bg: "bg-emerald-100 dark:bg-emerald-900/40",
+    bgSoft: "bg-emerald-50 dark:bg-emerald-950/30",
+    text: "text-emerald-800 dark:text-emerald-300",
+    border: "border-emerald-300 dark:border-emerald-800",
+  },
+  B: {
+    bg: "bg-blue-100 dark:bg-blue-900/40",
+    bgSoft: "bg-blue-50 dark:bg-blue-950/30",
+    text: "text-blue-800 dark:text-blue-300",
+    border: "border-blue-300 dark:border-blue-800",
+  },
+  C: {
+    bg: "bg-amber-100 dark:bg-amber-900/40",
+    bgSoft: "bg-amber-50 dark:bg-amber-950/30",
+    text: "text-amber-800 dark:text-amber-300",
+    border: "border-amber-300 dark:border-amber-800",
+  },
+  D: {
+    bg: "bg-orange-100 dark:bg-orange-900/40",
+    bgSoft: "bg-orange-50 dark:bg-orange-950/30",
+    text: "text-orange-800 dark:text-orange-300",
+    border: "border-orange-300 dark:border-orange-800",
+  },
+  E: {
+    bg: "bg-red-100 dark:bg-red-900/40",
+    bgSoft: "bg-red-50 dark:bg-red-950/30",
+    text: "text-red-800 dark:text-red-300",
+    border: "border-red-300 dark:border-red-800",
+  },
 };
 
 export const CANAL_LABEL: Record<Canal, string> = {

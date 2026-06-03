@@ -182,7 +182,7 @@ function ClassificacaoBox({
 }) {
   const cor = CLASSE_COR[classif.classe];
   return (
-    <div className={cn("rounded-xl border-2 p-5 shadow-[var(--shadow-sm)]", cor.border, cor.bg.replace("bg-", "bg-").replace("100", "50"))}>
+    <div className={cn("rounded-xl border-2 p-5 shadow-[var(--shadow-sm)]", cor.border, cor.bgSoft)}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className={cn("flex h-12 w-12 items-center justify-center rounded-xl text-xl font-black", cor.bg, cor.text)}>
@@ -197,7 +197,9 @@ function ClassificacaoBox({
         </div>
         <span className={cn(
           "rounded-full px-3 py-1 text-xs font-semibold",
-          classif.canal === "showroom" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800",
+          classif.canal === "showroom"
+            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
+            : "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
         )}>
           → {CANAL_LABEL[classif.canal]}
           {classif.rebaixadoPorEstoque && " (rebaixado)"}
