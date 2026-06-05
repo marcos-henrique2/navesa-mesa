@@ -170,7 +170,7 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
 
       <SimuladorPreco veiculo={veiculo} />
 
-      <DemonstrativoLucro veiculo={veiculo} precoSim={veiculo.preco_venda} />
+      <DemonstrativoLucro veiculo={veiculo} />
 
       <EstatisticasModelo veiculo={veiculo} />
 

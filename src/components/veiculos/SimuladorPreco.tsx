@@ -22,12 +22,13 @@
  * o usuário continua usando o PrecificacaoBlock.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Calculator, ClipboardCopy, RotateCcw, AlertTriangle, TrendingUp, TrendingDown, Sparkles, Info, Plus, Minus, SlidersHorizontal } from "lucide-react";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import type { CustoEstoqueDetalhado } from "@/lib/parsers/nbs-custos-estoque-pdf";
 import { useFipeBatch } from "@/lib/fipe/useFipeBatch";
 import { useInventory } from "@/lib/store/inventory";
+import { setPrecoSimulado } from "@/lib/store/simulador-preco";
 import { normalizarPlaca } from "@/lib/utils/placa";
 import { cn, formatBRL, formatBRLCents } from "@/lib/utils";
 import { showSuccessToast } from "@/components/ui/Toast";
@@ -108,6 +109,15 @@ function SimuladorView({
 
   // Preço efetivo que alimenta todos os cálculos abaixo.
   const precoSim = modoDecomposto ? composto.precoFinal : precoSimples;
+
+  // Propaga o preço simulado pro store global — assim o Demonstrativo de Lucro
+  // e outros componentes da página reagem em tempo real às mudanças do Simulador.
+  useEffect(() => {
+    setPrecoSimulado(veiculo.chassi, precoSim);
+    return () => {
+      setPrecoSimulado(veiculo.chassi, null);
+    };
+  }, [veiculo.chassi, precoSim]);
 
   function toggleModo() {
     if (!modoDecomposto) {
