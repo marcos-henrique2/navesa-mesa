@@ -7,6 +7,7 @@ import { useInventory, nomeOuCodigo } from "@/lib/store/inventory";
 import { normalizarPlaca } from "@/lib/utils/placa";
 import { classificarPatio, STATUS_LABEL } from "@/lib/inventory/status";
 import { PrecificacaoBlock } from "./veiculos/PrecificacaoBlock";
+import { SimuladorPreco } from "./veiculos/SimuladorPreco";
 import { ComposicaoCustos } from "./ComposicaoCustos";
 import { ComposicaoCustosEstoque } from "./ComposicaoCustosEstoque";
 import {
@@ -163,6 +164,8 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
       )}
 
       <PrecificacaoBlock veiculo={veiculo} />
+
+      <SimuladorPreco veiculo={veiculo} />
     </div>
   );
 }
