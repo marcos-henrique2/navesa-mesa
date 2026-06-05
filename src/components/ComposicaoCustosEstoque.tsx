@@ -11,6 +11,8 @@ type LineItem = {
   color: string;
   /** Se true, é descontado do custo (Ganhos Indiretos, Bônus, HoldBack). */
   redutor?: boolean;
+  /** Texto exibido no tooltip (hover do mouse) explicando o que é a linha. */
+  tooltip: string;
 };
 
 /**
@@ -24,17 +26,61 @@ type LineItem = {
  */
 export function ComposicaoCustosEstoque({ custo }: { custo: CustoEstoqueDetalhado }) {
   const itens: LineItem[] = [
-    { label: "Aquisição (Nota Fábrica)", icon: <ShoppingCart className="h-3.5 w-3.5" />, value: custo.nota_fabrica, color: "bg-blue-500" },
-    { label: "Revisões", icon: <Wrench className="h-3.5 w-3.5" />, value: custo.revisoes, color: "bg-slate-400" },
-    { label: "Floor Plan (sem HB)", icon: <Banknote className="h-3.5 w-3.5" />, value: custo.forplan, color: "bg-purple-500" },
-    { label: "(−) HoldBack", icon: <Gift className="h-3.5 w-3.5" />, value: custo.holdback, color: "bg-emerald-500", redutor: true },
-    { label: "Acessórios", icon: <Package className="h-3.5 w-3.5" />, value: custo.acessorios, color: "bg-indigo-500" },
-    { label: "ADM", icon: <Briefcase className="h-3.5 w-3.5" />, value: custo.adm, color: "bg-slate-600" },
-    { label: "Impostos", icon: <Landmark className="h-3.5 w-3.5" />, value: custo.impostos, color: "bg-rose-500" },
-    { label: "Comissões", icon: <UserSquare2 className="h-3.5 w-3.5" />, value: custo.comissoes, color: "bg-teal-500" },
-    { label: "Despesas Gerais", icon: <FileText className="h-3.5 w-3.5" />, value: custo.desp_gerais, color: "bg-amber-500" },
-    { label: "(−) Bônus de Fábrica", icon: <Star className="h-3.5 w-3.5" />, value: custo.bonus, color: "bg-emerald-500", redutor: true },
-    { label: "(−) Ganhos Indiretos", icon: <Gift className="h-3.5 w-3.5" />, value: custo.ganhos_indiretos, color: "bg-emerald-500", redutor: true },
+    {
+      label: "Aquisição (Nota Fábrica)",
+      icon: <ShoppingCart className="h-3.5 w-3.5" />, value: custo.nota_fabrica, color: "bg-blue-500",
+      tooltip: "Valor pago à fábrica pela aquisição do veículo — base do custo (nota fiscal de compra).",
+    },
+    {
+      label: "Revisões",
+      icon: <Wrench className="h-3.5 w-3.5" />, value: custo.revisoes, color: "bg-slate-400",
+      tooltip: "Custos de revisão, retífica e recondicionamento aplicados ao veículo antes de entrar no estoque.",
+    },
+    {
+      label: "Floor Plan (sem HB)",
+      icon: <Banknote className="h-3.5 w-3.5" />, value: custo.forplan, color: "bg-purple-500",
+      tooltip: "Custo financeiro do financiamento de estoque (juros pagos ao banco/financeira por manter o carro no pátio). Já líquido do HoldBack.",
+    },
+    {
+      label: "(−) HoldBack",
+      icon: <Gift className="h-3.5 w-3.5" />, value: custo.holdback, color: "bg-emerald-500", redutor: true,
+      tooltip: "ABATIMENTO. Reserva que a fábrica devolve ao concessionário após determinado prazo ou venda. Reduz o custo final do veículo.",
+    },
+    {
+      label: "Acessórios",
+      icon: <Package className="h-3.5 w-3.5" />, value: custo.acessorios, color: "bg-indigo-500",
+      tooltip: "Itens opcionais instalados no veículo após a chegada (multimídia, película, engate, alarme, etc.).",
+    },
+    {
+      label: "ADM",
+      icon: <Briefcase className="h-3.5 w-3.5" />, value: custo.adm, color: "bg-slate-600",
+      tooltip: "Despesas administrativas rateadas ao veículo (estrutura, sistemas, RH, escritório).",
+    },
+    {
+      label: "Impostos",
+      icon: <Landmark className="h-3.5 w-3.5" />, value: custo.impostos, color: "bg-rose-500",
+      tooltip: "Impostos diretos incidentes sobre o veículo (PIS/COFINS, ICMS Substituição Tributária, etc.).",
+    },
+    {
+      label: "Comissões",
+      icon: <UserSquare2 className="h-3.5 w-3.5" />, value: custo.comissoes, color: "bg-teal-500",
+      tooltip: "Comissões pagas a vendedor e gerente pela venda do veículo.",
+    },
+    {
+      label: "Despesas Gerais",
+      icon: <FileText className="h-3.5 w-3.5" />, value: custo.desp_gerais, color: "bg-amber-500",
+      tooltip: "Demais despesas operacionais alocadas ao veículo (limpeza, transporte interno, despachante, etc.).",
+    },
+    {
+      label: "(−) Bônus de Fábrica",
+      icon: <Star className="h-3.5 w-3.5" />, value: custo.bonus, color: "bg-emerald-500", redutor: true,
+      tooltip: "ABATIMENTO. Bonificação especial da fábrica (campanha, meta atingida, prêmio de mix). Reduz o custo final.",
+    },
+    {
+      label: "(−) Ganhos Indiretos",
+      icon: <Gift className="h-3.5 w-3.5" />, value: custo.ganhos_indiretos, color: "bg-emerald-500", redutor: true,
+      tooltip: "ABATIMENTO. Ganhos auxiliares vinculados ao veículo (verba de marketing, comissão de financeira parceira, prêmio de seguradora, recuperação tributária). Reduz o custo final.",
+    },
   ];
 
   // Soma dos itens não-redutores (denominador da barra)
@@ -62,7 +108,11 @@ export function ComposicaoCustosEstoque({ custo }: { custo: CustoEstoqueDetalhad
               ? Math.min(100, (item.value / somaAbsoluta) * 100)
               : (item.value / somaAbsoluta) * 100;
             return (
-              <div key={item.label}>
+              <div
+                key={item.label}
+                title={item.tooltip}
+                className="cursor-help rounded px-1 -mx-1 py-0.5 transition hover:bg-[var(--bg-muted)]/60"
+              >
                 <div className="flex items-center justify-between gap-3 text-sm">
                   <span className={cn("inline-flex items-center gap-2", item.redutor ? "text-emerald-700 dark:text-emerald-400 font-medium" : "text-[var(--text-body)]")}>
                     {item.icon} {item.label}
@@ -81,7 +131,10 @@ export function ComposicaoCustosEstoque({ custo }: { custo: CustoEstoqueDetalhad
             );
           })}
 
-          <div className="border-t border-[var(--border-soft)] pt-3">
+          <div
+            className="cursor-help rounded border-t border-[var(--border-soft)] pt-3 transition hover:bg-[var(--bg-muted)]/40"
+            title="Custo total final do veículo conforme calculado pelo NBS DMS. Fórmula: soma dos custos (Nota Fábrica + Revisões + Floor Plan + Acessórios + ADM + Impostos + Comissões + Despesas Gerais) menos os abatimentos (HoldBack + Bônus de Fábrica + Ganhos Indiretos)."
+          >
             <div className="flex items-center justify-between text-sm">
               <span className="font-semibold text-[var(--text-strong)]">Custo total NBS</span>
               <span className="tabular-nums font-bold text-[var(--text-strong)]">{formatBRL(custo.custo_total)}</span>
