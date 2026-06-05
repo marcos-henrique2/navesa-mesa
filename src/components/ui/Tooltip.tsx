@@ -1,19 +1,48 @@
 "use client";
 
-import { ReactNode, useState } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 
 type Side = "right" | "top" | "bottom" | "left";
 
+/**
+ * Tooltip que funciona em hover (desktop) E tap (mobile/touch).
+ *
+ * - Desktop: hover/focus mostra com delay curto; click também abre ("fixa").
+ * - Mobile: tap toggleia. Tap fora ou ESC fecha. Sem delay.
+ * - Texto pode ser multi-linha (até max-w-xs); permite quebra.
+ * - Posição padrão "top" cabe melhor em listas.
+ */
 export function Tooltip({
   content,
   children,
-  side = "right",
+  side = "top",
+  className,
 }: {
-  content: string;
+  content: ReactNode;
   children: ReactNode;
   side?: Side;
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLSpanElement | null>(null);
+
+  // Fecha ao clicar fora (necessário pra fluxo touch — depois do tap, sai daí).
+  useEffect(() => {
+    if (!open) return;
+    function onPointer(e: PointerEvent) {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
 
   const pos =
     side === "right"
@@ -26,20 +55,30 @@ export function Tooltip({
 
   return (
     <span
-      className="relative inline-flex"
+      ref={wrapRef}
+      className={cn("relative inline-flex cursor-help", className)}
       onMouseEnter={() => setOpen(true)}
       onMouseLeave={() => setOpen(false)}
       onFocus={() => setOpen(true)}
       onBlur={() => setOpen(false)}
+      onClick={(e) => {
+        // Em mobile (sem hover real), o tap dispara click. Toggle aqui resolve.
+        // Em desktop o hover já abriu, então toggle apenas serve pra "fixar/fechar".
+        e.stopPropagation();
+        setOpen((v) => !v);
+      }}
+      tabIndex={0}
+      role="button"
+      aria-expanded={open}
     >
       {children}
       {open && (
         <span
           role="tooltip"
-          className={
-            "pointer-events-none absolute z-50 whitespace-nowrap rounded-md border border-[var(--border-soft)] bg-[var(--bg-surface)] px-2 py-1 text-xs text-[var(--text-strong)] shadow-md dark:bg-zinc-800 dark:text-white " +
-            pos
-          }
+          className={cn(
+            "absolute z-50 max-w-[280px] whitespace-normal rounded-md border border-[var(--border-soft)] bg-[var(--bg-surface)] px-2.5 py-1.5 text-xs leading-snug text-[var(--text-strong)] shadow-lg dark:bg-zinc-800 dark:text-white",
+            pos,
+          )}
         >
           {content}
         </span>

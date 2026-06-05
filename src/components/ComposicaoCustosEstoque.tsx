@@ -1,8 +1,9 @@
 "use client";
 
-import { Receipt, ShoppingCart, Banknote, Wrench, UserSquare2, Landmark, Briefcase, FileText, Gift, Star, Package } from "lucide-react";
+import { Receipt, ShoppingCart, Banknote, Wrench, UserSquare2, Landmark, Briefcase, FileText, Gift, Star, Package, Info } from "lucide-react";
 import type { CustoEstoqueDetalhado } from "@/lib/parsers/nbs-custos-estoque-pdf";
 import { formatBRL, cn } from "@/lib/utils";
+import { Tooltip } from "./ui/Tooltip";
 
 type LineItem = {
   label: string;
@@ -110,12 +111,14 @@ export function ComposicaoCustosEstoque({ custo }: { custo: CustoEstoqueDetalhad
             return (
               <div
                 key={item.label}
-                title={item.tooltip}
-                className="cursor-help rounded px-1 -mx-1 py-0.5 transition hover:bg-[var(--bg-muted)]/60"
+                className="rounded px-1 -mx-1 py-0.5 transition hover:bg-[var(--bg-muted)]/60"
               >
                 <div className="flex items-center justify-between gap-3 text-sm">
                   <span className={cn("inline-flex items-center gap-2", item.redutor ? "text-emerald-700 dark:text-emerald-400 font-medium" : "text-[var(--text-body)]")}>
                     {item.icon} {item.label}
+                    <Tooltip content={item.tooltip} side="top" className="ml-0.5">
+                      <Info className="h-3 w-3 text-[var(--text-subtle)] opacity-60 hover:opacity-100" aria-label={`Sobre ${item.label}`} />
+                    </Tooltip>
                   </span>
                   <span className={cn("tabular-nums font-semibold", item.redutor && "text-emerald-700 dark:text-emerald-400")}>
                     {item.redutor && item.value > 0 ? "−" : ""}{formatBRL(item.value)}
@@ -131,12 +134,17 @@ export function ComposicaoCustosEstoque({ custo }: { custo: CustoEstoqueDetalhad
             );
           })}
 
-          <div
-            className="cursor-help rounded border-t border-[var(--border-soft)] pt-3 transition hover:bg-[var(--bg-muted)]/40"
-            title="Custo total final do veículo conforme calculado pelo NBS DMS. Fórmula: soma dos custos (Nota Fábrica + Revisões + Floor Plan + Acessórios + ADM + Impostos + Comissões + Despesas Gerais) menos os abatimentos (HoldBack + Bônus de Fábrica + Ganhos Indiretos)."
-          >
+          <div className="rounded border-t border-[var(--border-soft)] pt-3 transition hover:bg-[var(--bg-muted)]/40">
             <div className="flex items-center justify-between text-sm">
-              <span className="font-semibold text-[var(--text-strong)]">Custo total NBS</span>
+              <span className="inline-flex items-center gap-1.5 font-semibold text-[var(--text-strong)]">
+                Custo total NBS
+                <Tooltip
+                  content="Custo final do veículo conforme calculado pelo NBS DMS. Fórmula: soma dos custos (Nota Fábrica + Revisões + Floor Plan + Acessórios + ADM + Impostos + Comissões + Despesas Gerais) menos os abatimentos (HoldBack + Bônus de Fábrica + Ganhos Indiretos)."
+                  side="top"
+                >
+                  <Info className="h-3 w-3 text-[var(--text-subtle)] opacity-60 hover:opacity-100" aria-label="Sobre custo total NBS" />
+                </Tooltip>
+              </span>
               <span className="tabular-nums font-bold text-[var(--text-strong)]">{formatBRL(custo.custo_total)}</span>
             </div>
             <p className="mt-1 text-[10px] text-[var(--text-muted)]">
