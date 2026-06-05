@@ -115,12 +115,12 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
       const cod = info.getValue<number>();
       const nome = lojas[cod]?.nome?.trim();
       return (
-        <span className="text-xs">
+        <span className="text-xs whitespace-nowrap">
           {nome ? <span title={`Cód: ${cod}`}>{nome}</span> : <span className="text-[var(--text-muted)] italic">Loja {cod}</span>}
         </span>
       );
     } },
-    { accessorKey: "placa", header: "Placa", cell: (info) => <span className="font-mono text-xs">{info.getValue<string>()}</span> },
+    { accessorKey: "placa", header: "Placa", cell: (info) => <span className="font-mono text-xs whitespace-nowrap">{info.getValue<string>()}</span> },
     {
       id: "classe",
       header: "Classe",
@@ -150,9 +150,17 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
       },
       size: 80,
     },
-    { accessorKey: "marca", header: "Marca" },
-    { accessorKey: "modelo", header: "Modelo", cell: (info) => <span className="text-xs">{info.getValue<string>()}</span> },
-    { accessorKey: "ano_modelo", header: "Ano", cell: (info) => info.getValue<number | null>() ?? "—" },
+    { accessorKey: "marca", header: "Marca", cell: (info) => <span className="text-xs whitespace-nowrap">{info.getValue<string>()}</span> },
+    {
+      accessorKey: "modelo",
+      header: "Modelo",
+      cell: (info) => {
+        const v = info.getValue<string>();
+        return <span className="block max-w-[220px] truncate text-xs" title={v}>{v}</span>;
+      },
+      size: 220,
+    },
+    { accessorKey: "ano_modelo", header: "Ano", cell: (info) => <span className="tabular-nums text-xs">{info.getValue<number | null>() ?? "—"}</span>, size: 50 },
     { accessorKey: "km", header: "KM", cell: (info) => {
       const km = info.getValue<number | null>();
       if (km === null) return <span className="text-[var(--text-subtle)]">—</span>;
@@ -160,12 +168,12 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
         : km < 80000 ? ""
         : km < 150000 ? "text-amber-700 dark:text-amber-400"
         : "text-red-700 dark:text-red-400";
-      return <span className={cn("tabular-nums", tone)}>{formatInt(km)}</span>;
-    } },
-    { accessorKey: "cor_externa", header: "Cor" },
-    { accessorKey: "combustivel", header: "Comb" },
-    { accessorKey: "patio", header: "Pátio", cell: (info) => <span className="text-xs">{info.getValue<string>().trim()}</span> },
-    { accessorKey: "preco_venda", header: "Preço Venda", cell: (info) => <span className="tabular-nums">{formatBRL(info.getValue<number | null>())}</span> },
+      return <span className={cn("tabular-nums whitespace-nowrap text-xs", tone)}>{formatInt(km)}</span>;
+    }, size: 70 },
+    { accessorKey: "cor_externa", header: "Cor", cell: (info) => <span className="text-xs whitespace-nowrap">{info.getValue<string>()}</span> },
+    { accessorKey: "combustivel", header: "Comb", cell: (info) => <span className="text-xs whitespace-nowrap">{info.getValue<string>()}</span> },
+    { accessorKey: "patio", header: "Pátio", cell: (info) => <span className="text-xs whitespace-nowrap">{info.getValue<string>().trim()}</span> },
+    { accessorKey: "preco_venda", header: "Preço", cell: (info) => <span className="tabular-nums whitespace-nowrap text-xs" title="Preço de venda">{formatBRL(info.getValue<number | null>())}</span> },
     {
       id: "fipe_pct",
       header: "vs FIPE",
@@ -184,23 +192,23 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
       },
       size: 80,
     },
-    { accessorKey: "valor_aquisicao", header: "Aquisição", cell: (info) => <span className="tabular-nums text-[var(--text-body)]">{formatBRL(info.getValue<number | null>())}</span> },
+    { accessorKey: "valor_aquisicao", header: "Aquis.", cell: (info) => <span className="tabular-nums whitespace-nowrap text-xs text-[var(--text-body)]" title="Valor de aquisição">{formatBRL(info.getValue<number | null>())}</span> },
     {
       id: "gasto_pos_entrada",
-      header: "Gasto pós-entrada",
+      header: "Gasto pós",
       cell: ({ row }) => {
         const v = row.original;
         if (v.custo_total == null || v.valor_aquisicao == null) return <span className="tabular-nums text-[var(--text-subtle)] opacity-60">—</span>;
         const diff = v.custo_total - v.valor_aquisicao;
         if (diff === 0) return <span className="tabular-nums text-[var(--text-subtle)] opacity-60">—</span>;
-        if (diff < 0) return <span className="tabular-nums text-red-700 dark:text-red-400" title="atenção: custo inferior à aquisição">{formatBRL(diff)}</span>;
-        return <span className="tabular-nums text-[var(--text-body)]">{formatBRL(diff)}</span>;
+        if (diff < 0) return <span className="tabular-nums whitespace-nowrap text-xs text-red-700 dark:text-red-400" title="atenção: custo inferior à aquisição (gasto pós-entrada negativo)">{formatBRL(diff)}</span>;
+        return <span className="tabular-nums whitespace-nowrap text-xs text-[var(--text-body)]" title="Gasto pós-entrada">{formatBRL(diff)}</span>;
       },
     },
-    { accessorKey: "custo_total", header: "Custo total", cell: (info) => <span className="tabular-nums text-[var(--text-body)]">{formatBRL(info.getValue<number | null>())}</span> },
+    { accessorKey: "custo_total", header: "Custo", cell: (info) => <span className="tabular-nums whitespace-nowrap text-xs text-[var(--text-body)]" title="Custo total">{formatBRL(info.getValue<number | null>())}</span> },
     {
       id: "margem_teorica_pct",
-      header: "Margem teórica %",
+      header: "Margem",
       cell: ({ row }) => {
         const v = row.original;
         if (v.preco_venda == null || v.custo_total == null || v.preco_venda === 0) return <span className="tabular-nums text-xs text-[var(--text-subtle)] opacity-60">—</span>;
@@ -210,22 +218,23 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
         const marker = pct >= 5 ? "✓" : pct >= 0 ? "⚠" : "✗";
         const titleText = pct >= 5 ? "margem saudável" : pct >= 0 ? "atenção" : "prejuízo";
         const formatted = pct.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1, signDisplay: "exceptZero" });
-        return <span className={cn("tabular-nums text-xs font-medium", tone)} title={titleText}>{marker} {formatted}%</span>;
+        return <span className={cn("tabular-nums whitespace-nowrap text-xs font-medium", tone)} title={`Margem teórica · ${titleText}`}>{marker} {formatted}%</span>;
       },
-      size: 90,
+      size: 80,
     },
     {
       id: "custo_por_dia",
-      header: "Custo/dia (R$)",
+      header: "$/dia",
       cell: ({ row }) => {
         const v = row.original;
         if (v.custo_total == null || v.valor_aquisicao == null || v.dias_patio == null) return <span className="tabular-nums text-[var(--text-subtle)] opacity-60">—</span>;
         const gasto = v.custo_total - v.valor_aquisicao;
         if (gasto <= 0 || v.dias_patio <= 0) return <span className="tabular-nums text-[var(--text-subtle)] opacity-60">—</span>;
-        return <span className="tabular-nums text-[var(--text-body)]">{formatBRL(gasto / v.dias_patio)}</span>;
+        return <span className="tabular-nums whitespace-nowrap text-xs text-[var(--text-body)]" title="Custo médio por dia parado">{formatBRL(gasto / v.dias_patio)}</span>;
       },
+      size: 70,
     },
-    { accessorKey: "dias_patio", header: "Dias", cell: (info) => <span className="tabular-nums">{info.getValue<number | null>() ?? "—"}</span> },
+    { accessorKey: "dias_patio", header: "Dias", cell: (info) => <span className="tabular-nums whitespace-nowrap text-xs">{info.getValue<number | null>() ?? "—"}</span>, size: 50 },
   ], [lojas, classifMap, cautelares, fipeBatch]);
 
   const table = useReactTable({
@@ -337,12 +346,12 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
 
       <div className="overflow-hidden rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)]">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-[13px]">
             <thead className="border-b border-[var(--border-soft)] bg-[var(--bg-muted)]">
               {table.getHeaderGroups().map((hg) => (
                 <tr key={hg.id}>
                   {hg.headers.map((h) => (
-                    <th key={h.id} style={{ width: h.column.columnDef.size }} className="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-[var(--text-body)]">
+                    <th key={h.id} style={{ width: h.column.columnDef.size }} className="px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wide text-[var(--text-body)] whitespace-nowrap">
                       {h.column.getCanSort() ? (
                         <button onClick={h.column.getToggleSortingHandler()} className="inline-flex items-center gap-1 hover:text-[var(--text-strong)]">
                           {flexRender(h.column.columnDef.header, h.getContext())}
@@ -358,7 +367,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
               {table.getRowModel().rows.map((row) => (
                 <tr key={row.id} onClick={() => router.push(`/veiculos/${row.original.chassi}`)} className="cursor-pointer border-b border-[var(--border-soft)] last:border-0 hover:bg-[var(--bg-muted)]" title="Ver detalhe">
                   {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className="px-3 py-2 align-middle">{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>
+                    <td key={cell.id} className="px-2 py-1.5 align-middle">{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>
                   ))}
                 </tr>
               ))}
