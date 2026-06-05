@@ -8,6 +8,7 @@ import { normalizarPlaca } from "@/lib/utils/placa";
 import { classificarPatio, STATUS_LABEL } from "@/lib/inventory/status";
 import { PrecificacaoBlock } from "./veiculos/PrecificacaoBlock";
 import { SimuladorPreco } from "./veiculos/SimuladorPreco";
+import { DemonstrativoLucro } from "./veiculos/DemonstrativoLucro";
 import { EstatisticasModelo } from "./veiculos/EstatisticasModelo";
 import { FlagsVeiculo } from "./veiculos/FlagsVeiculo";
 import { ComposicaoCustos } from "./ComposicaoCustos";
@@ -168,6 +169,8 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
       <PrecificacaoBlock veiculo={veiculo} />
 
       <SimuladorPreco veiculo={veiculo} />
+
+      <DemonstrativoLucro veiculo={veiculo} precoSim={veiculo.preco_venda} />
 
       <EstatisticasModelo veiculo={veiculo} />
 
