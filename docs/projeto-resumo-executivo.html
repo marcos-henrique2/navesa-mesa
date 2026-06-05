@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Navesa Mesa — Resumo do Projeto</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 11pt;
+    line-height: 1.55;
+    color: #1F2937;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+    background: #fff;
+  }
+
+  /* ============ CAPA — White paper corporativo ============ */
+  .capa {
+    height: 100vh;
+    min-height: 950px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 70px 60px;
+    page-break-after: always;
+    background: #FAFBFD;
+    color: #0F2542;
+    margin: -20px -20px 0 -20px;
+    position: relative;
+    overflow: hidden;
+  }
+  /* Faixa azul decorativa lateral */
+  .capa::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 6px;
+    height: 100%;
+    background: linear-gradient(180deg, #234876 0%, #2F5E96 100%);
+  }
+  /* Faixa azul fina no rodapé */
+  .capa::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 8px;
+    background: linear-gradient(90deg, #234876 0%, #2F5E96 100%);
+  }
+  .capa-logo-img {
+    display: block;
+    max-width: 280px;
+    max-height: 100px;
+    width: auto;
+    height: auto;
+    margin-bottom: 4px;
+  }
+  .capa-titulo-area {
+    margin: 90px 0 40px;
+  }
+  .capa-eyebrow {
+    font-size: 10pt;
+    text-transform: uppercase;
+    letter-spacing: 4px;
+    color: #2F5E96;
+    font-weight: 600;
+    margin-bottom: 16px;
+  }
+  .capa-titulo {
+    font-size: 56pt;
+    font-weight: 900;
+    margin: 0;
+    letter-spacing: -2px;
+    line-height: 0.95;
+    color: #0F2542;
+  }
+  .capa-subtitulo {
+    font-size: 16pt;
+    font-weight: 300;
+    margin-top: 22px;
+    color: #334155;
+    line-height: 1.3;
+    max-width: 520px;
+  }
+  .capa-divider {
+    width: 80px;
+    height: 4px;
+    background: #234876;
+    border-radius: 2px;
+    margin: 28px 0;
+  }
+  .capa-tag {
+    display: inline-block;
+    background: #EFF4FB;
+    border: 1px solid #B7CBE5;
+    padding: 6px 16px;
+    border-radius: 4px;
+    font-size: 10pt;
+    color: #234876;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  .capa-stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    margin: 50px 0 40px;
+    border-top: 1px solid #E2E8F0;
+    border-bottom: 1px solid #E2E8F0;
+    padding: 24px 0;
+  }
+  .capa-stat {
+    text-align: center;
+    border-right: 1px solid #E2E8F0;
+    padding: 0 16px;
+  }
+  .capa-stat:last-child {
+    border-right: none;
+  }
+  .capa-stat-num {
+    font-size: 32pt;
+    font-weight: 800;
+    line-height: 1;
+    color: #234876;
+    letter-spacing: -1px;
+  }
+  .capa-stat-label {
+    font-size: 8.5pt;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: #64748B;
+    margin-top: 8px;
+    font-weight: 500;
+  }
+  .capa-meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 32px;
+    padding-top: 20px;
+  }
+  .capa-meta-bloco {
+    font-size: 10pt;
+  }
+  .capa-meta-label {
+    text-transform: uppercase;
+    font-size: 8pt;
+    letter-spacing: 2px;
+    color: #64748B;
+    margin-bottom: 6px;
+    font-weight: 600;
+  }
+  .capa-meta-valor {
+    font-size: 12pt;
+    font-weight: 700;
+    color: #0F2542;
+  }
+  .capa-meta-sub {
+    font-size: 9pt;
+    color: #64748B;
+    margin-top: 2px;
+  }
+  .capa-rodape {
+    font-size: 8.5pt;
+    color: #94A3B8;
+    text-align: center;
+    margin-top: 24px;
+    letter-spacing: 0.5px;
+  }
+  .capa-rodape code {
+    background: #F1F4FA;
+    color: #2F5E96;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 8pt;
+  }
+
+  /* ============ CONTEÚDO ============ */
+  h1 {
+    color: #234876;
+    border-bottom: 3px solid #234876;
+    padding-bottom: 8px;
+    font-size: 22pt;
+    margin-top: 0;
+  }
+  h2 {
+    color: #234876;
+    margin-top: 32px;
+    padding-bottom: 4px;
+    border-bottom: 2px solid #DBE5F2;
+    font-size: 16pt;
+    page-break-after: avoid;
+  }
+  h3 {
+    color: #2F5E96;
+    margin-top: 22px;
+    font-size: 13pt;
+    page-break-after: avoid;
+  }
+  .intro-box {
+    background: #EFF4FB;
+    border-left: 4px solid #234876;
+    padding: 14px 18px;
+    margin: 18px 0 24px;
+    font-size: 10.5pt;
+    color: #18345A;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    font-size: 10pt;
+    page-break-inside: avoid;
+  }
+  th {
+    background: #234876;
+    color: #fff;
+    text-align: left;
+    padding: 8px 12px;
+    font-weight: 600;
+  }
+  td {
+    border-bottom: 1px solid #E2E8F0;
+    padding: 8px 12px;
+  }
+  tr:last-child td { border-bottom: none; }
+  code {
+    background: #F1F4FA;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 9.5pt;
+    color: #18345A;
+  }
+  pre {
+    background: #0F172A;
+    color: #F1F5F9;
+    padding: 14px 18px;
+    border-radius: 6px;
+    font-family: 'Consolas', monospace;
+    font-size: 9pt;
+    overflow-x: auto;
+    line-height: 1.4;
+    page-break-inside: avoid;
+  }
+  ul, ol { padding-left: 22px; }
+  li { margin-bottom: 4px; }
+  strong { color: #18345A; }
+  .badge-ok { color: #047857; font-weight: 600; }
+  .footnote {
+    background: #FFFBEB;
+    border-left: 4px solid #B45309;
+    padding: 10px 14px;
+    margin: 14px 0;
+    font-size: 10pt;
+    color: #78350F;
+  }
+  .highlight {
+    background: #ECFDF5;
+    border-left: 4px solid #047857;
+    padding: 12px 16px;
+    margin: 14px 0;
+    font-size: 10pt;
+  }
+  hr {
+    border: none;
+    border-top: 1px solid #CBD5E1;
+    margin: 28px 0;
+  }
+  .horas-grafico {
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 6px;
+    padding: 18px;
+    font-family: 'Consolas', monospace;
+    font-size: 9pt;
+    line-height: 1.7;
+    margin: 14px 0;
+  }
+  .horas-total-card {
+    background: linear-gradient(135deg, #234876 0%, #2F5E96 100%);
+    color: #fff;
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin: 18px 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  .horas-total-card .horas-bloco {
+    text-align: center;
+  }
+  .horas-total-card .horas-num {
+    font-size: 32pt;
+    font-weight: 900;
+    line-height: 1;
+  }
+  .horas-total-card .horas-label {
+    font-size: 10pt;
+    opacity: 0.85;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-top: 6px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ====================== CAPA — White paper corporativo ====================== -->
+<div class="capa">
+  <div>
+    <img src="GRUPO-NAVESA.AZUL.png" alt="Grupo Navesa" class="capa-logo-img" />
+
+    <div class="capa-titulo-area">
+      <div class="capa-eyebrow">Resumo Executivo do Projeto</div>
+      <h1 class="capa-titulo" style="border: none;">Navesa Mesa</h1>
+      <div class="capa-divider"></div>
+      <div class="capa-subtitulo">
+        Sistema interno de Mesa de Precificação de Seminovos — automação completa do ciclo de análise de margem, alertas operacionais e exportação de relatórios.
+      </div>
+      <div style="margin-top: 24px;">
+        <span class="capa-tag">v1.0 · MVP em Produção</span>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="capa-stats">
+      <div class="capa-stat">
+        <div class="capa-stat-num">11</div>
+        <div class="capa-stat-label">dias corridos</div>
+      </div>
+      <div class="capa-stat">
+        <div class="capa-stat-num">~52h</div>
+        <div class="capa-stat-label">trabalhadas</div>
+      </div>
+      <div class="capa-stat">
+        <div class="capa-stat-num">77</div>
+        <div class="capa-stat-label">commits</div>
+      </div>
+      <div class="capa-stat">
+        <div class="capa-stat-num">~23,9k</div>
+        <div class="capa-stat-label">linhas TS</div>
+      </div>
+    </div>
+
+    <div class="capa-meta">
+      <div class="capa-meta-bloco">
+        <div class="capa-meta-label">Construído por</div>
+        <div class="capa-meta-valor">Marcos Henrique</div>
+        <div class="capa-meta-sub">Solo founder + Claude Code + squad AIOX</div>
+      </div>
+      <div class="capa-meta-bloco">
+        <div class="capa-meta-label">Período</div>
+        <div class="capa-meta-valor">25/mai – 04/jun · 2026</div>
+        <div class="capa-meta-sub">Em produção: navesa-mesa.vercel.app</div>
+      </div>
+    </div>
+
+    <div class="capa-rodape">
+      Documento gerado em 2026-06-04 · Branch <code>main</code> · Commit <code>ee4711b</code>
+    </div>
+  </div>
+</div>
+
+<!-- ====================== CONTEÚDO ====================== -->
+
+<h1>navesa-mesa — Material descritivo do projeto</h1>
+
+<div class="intro-box">
+Documento panorâmico do projeto: o que é, por que existe, como foi construído, quanto tempo e esforço custou, e onde está hoje. Gerado a partir de dados reais do repositório (git, código, testes, docs) em <strong>2026-06-04</strong>. Versão atual: <strong>v1.0</strong> — MVP completo em produção na Vercel com integração Supabase, autenticação, RLS e 4 fontes de dados do NBS DMS.
+</div>
+
+<h2>1. O que é o projeto</h2>
+
+<p><strong>navesa-mesa</strong> é um sistema interno do Grupo Navesa para automatizar a <strong>mesa de precificação de seminovos</strong>. Substitui a planilha Excel que era usada pelos gerentes pra precificar carros, analisar margem e produzir relatórios pra contador/sócios/diretoria.</p>
+
+<p><strong>O problema de negócio:</strong> a precificação manual em Excel sofria de 4 problemas crônicos: (1) cada loja fazia a sua planilha, sem padrão; (2) margens REAIS só apareciam no fechamento do mês, tarde demais; (3) impossível bater olho e descobrir "carro venenoso" ou "subprecificado"; (4) sem audit trail de quem decidiu o quê. O sistema resolve os 4 com fonte única do NBS DMS + análises automáticas + UI densa pra uso diário.</p>
+
+<h3>Fluxo de ponta a ponta</h3>
+
+<ol>
+<li><strong>Login</strong> — autenticação Supabase Auth com email+senha (sem signup público; contas criadas pelo admin).</li>
+<li><strong>Upload de relatórios</strong> — o operador sobe 4 arquivos do NBS DMS na tela <code>/upload</code>:
+  <ul>
+    <li>Estoque XLSX (veículos atuais no pátio)</li>
+    <li>Vendas XLSX (vendas fechadas — histórico acumulado)</li>
+    <li>Custos detalhados XLS (custos por placa pós-venda)</li>
+    <li>Custos de Estoque PDF (breakdown completo dos carros em estoque)</li>
+  </ul>
+</li>
+<li><strong>Processamento automático</strong> — parsers validam, normalizam, deduplicam, fazem merge por chassi/placa e persistem no Supabase. Sistema detecta "race de sessão" e faz retry automático se RLS bloquear na primeira tentativa.</li>
+<li><strong>Visualização densa</strong> — 11 páginas operacionais: Dashboard com KPIs e comparativo mensal automático, Estoque com 19 filtros + tabela TanStack + bulk actions, Análise de Vendas com rankings, Insights com cards clicáveis pra drill-down, Detalhe de cada carro com composição financeira, Chat IA, Histórico de snapshots.</li>
+<li><strong>Exportadores corporativos</strong> — 3 relatórios XLSX (fórmulas + cores + totalizadores) e 3 versões PDF: Análise Navesa (38 colunas + KPIs), Conferência de Estoque Físico (paisagem A4 pra impressão + assinatura) e Relatório Gerencial (visão executiva).</li>
+<li><strong>Observabilidade</strong> — dashboard de alertas operacionais clicáveis com drill-down, heatmap por loja, comparativo mês a mês automático, integração FIPE em batch pra calcular subprecificação.</li>
+</ol>
+
+<h3>Princípio de segurança central</h3>
+
+<p>O sistema <strong>exige autenticação em todas as rotas</strong> via middleware (proxy.ts) — sem cookies de sessão, qualquer request vai pra <code>/login</code>. As 15 tabelas no Supabase têm RLS <code>authenticated_all_access</code> (auth.uid obrigatório). Em junho/2026 foi adicionada camada extra: CSP completo + HSTS + X-Frame-Options DENY + Permissions-Policy zerada (câmera, microfone, geolocalização). Audit do Cyber Chief (advisory-board) deu score 8,5/10.</p>
+
+<hr>
+
+<h2>2. Linha do tempo e esforço</h2>
+
+<h3>Janela de desenvolvimento</h3>
+
+<table>
+<tr><th>Marco</th><th>Data</th></tr>
+<tr><td>Primeiro commit (<code>Initial commit from Create Next App</code>)</td><td><strong>2026-05-25</strong></td></tr>
+<tr><td>Último commit (<code>feat(security): CSP + security headers</code>)</td><td><strong>2026-06-04</strong></td></tr>
+<tr><td><strong>Duração total</strong></td><td><strong>~11 dias corridos</strong> (25/mai a 04/jun)</td></tr>
+</table>
+
+<h3>Horas trabalhadas — análise por timestamp dos commits</h3>
+
+<p>Cálculo baseado no <strong>primeiro e último commit de cada dia</strong>. Apresentado em 2 visões: <em>janela total</em> (do 1º ao último commit, pode incluir pausas) e <em>realista</em> (com cap de 10h/dia, evita superestimar dias com commits noturnos + manhã seguinte).</p>
+
+<table>
+<tr>
+  <th>Data</th>
+  <th>1º commit</th>
+  <th>Último commit</th>
+  <th>Janela</th>
+  <th>Realista</th>
+  <th>Foco principal</th>
+</tr>
+<tr>
+  <td>2026-05-25</td><td>22:30</td><td>23:15</td><td>0h45m</td><td>1h</td>
+  <td>Bootstrap + scaffold Next.js</td>
+</tr>
+<tr>
+  <td><strong>2026-05-26</strong></td><td>00:08</td><td>19:03</td><td>18h55m*</td><td><strong>10h</strong></td>
+  <td>Sprint 0 + 1: parsers NBS + Dashboard (20 commits!)</td>
+</tr>
+<tr>
+  <td>2026-05-27</td><td>16:02</td><td>16:02</td><td>0h</td><td>1h</td>
+  <td>Polish (1 commit)</td>
+</tr>
+<tr>
+  <td>2026-05-30</td><td>08:10</td><td>15:12</td><td>7h02m</td><td>7h</td>
+  <td>Análise de Vendas + rankings</td>
+</tr>
+<tr>
+  <td><strong>2026-05-31</strong></td><td>00:13</td><td>15:41</td><td>15h28m*</td><td><strong>10h</strong></td>
+  <td>Sprint 3: FIPE em tempo real + tela detalhe + Auth/RLS</td>
+</tr>
+<tr>
+  <td>2026-06-01</td><td>13:13</td><td>17:19</td><td>4h06m</td><td>4h</td>
+  <td>Deploy Vercel + features de export</td>
+</tr>
+<tr>
+  <td>2026-06-02</td><td>08:42</td><td>17:31</td><td>8h49m</td><td>9h</td>
+  <td>Modo dark completo + Ctrl+K + Heatmap</td>
+</tr>
+<tr>
+  <td>2026-06-03</td><td>08:29</td><td>17:44</td><td>9h15m</td><td>9h</td>
+  <td>Parser PDF markup + integrações</td>
+</tr>
+<tr>
+  <td>2026-06-04</td><td>08:16</td><td>08:16</td><td>0h</td><td>1h</td>
+  <td>CSP + security headers</td>
+</tr>
+</table>
+
+<p style="font-size: 9pt; color: #64748B;"><em>* dias com asterisco: janela inclui commit noturno tarde + retomada de manhã. Realista aplica cap de 10h/dia (limite saudável pra dev solo).</em></p>
+
+<div class="horas-total-card">
+  <div class="horas-bloco">
+    <div class="horas-num">64h20m</div>
+    <div class="horas-label">Janela total<br>(1º → último commit)</div>
+  </div>
+  <div class="horas-bloco">
+    <div class="horas-num">~52h</div>
+    <div class="horas-label">Estimativa realista<br>(cap 10h/dia)</div>
+  </div>
+</div>
+
+<p><strong>Em horas-padrão de trabalho (8h/dia):</strong> equivale a <strong>~6,5 dias de trabalho</strong> condensados em 11 dias corridos. Produtividade horária: <strong>~458 linhas de TS/TSX por hora trabalhada</strong> (incluindo refatorações, fixes e re-trabalho).</p>
+
+<div class="highlight">
+<strong>Observação metodológica:</strong> esses números refletem horas <em>com mãos no teclado</em> (commits) — não incluem tempo gasto pensando, lendo docs, conversando com agentes IA pra refinar prompts, ou testando manualmente no navegador. O esforço real total provavelmente é 20-30% acima — entre 65 e 75 horas — mas é difícil medir objetivamente sem tracker de tempo dedicado.
+</div>
+
+<h3>Intensidade — commits por dia (visual)</h3>
+
+<pre>2026-05-25 ▓▓▓▓▓                    5  (bootstrap + setup)
+2026-05-26 ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓    20  (Sprint 0 + 1: parser + dashboard)
+2026-05-27 ▓                         1
+2026-05-30 ▓▓▓▓                      4  (Sprint 2: análise vendas)
+2026-05-31 ▓▓▓▓▓▓▓▓▓▓▓▓▓            13  (Sprint 3: FIPE + tela detalhe)
+2026-06-01 ▓▓▓▓▓▓▓▓▓▓▓▓             12  (Auth + RLS + deploy Vercel)
+2026-06-02 ▓▓▓▓▓▓▓▓▓                 9  (Modo dark + UX polish)
+2026-06-03 ▓▓▓▓▓▓▓▓▓▓▓▓             12  (Parser PDF markup + heatmap)
+2026-06-04 ▓                         1  (CSP + security headers)
+</pre>
+
+<p><strong>77 commits em 11 dias</strong> — média de ~7 commits/dia, com 3 picos: o Sprint 0+1 (26/mai), o Sprint 3 FIPE+detalhe (31/mai) e a fase de produção/auth (01-03/jun).</p>
+
+<h3>Volume de trabalho produzido</h3>
+
+<table>
+<tr><th>Métrica</th><th>Valor</th></tr>
+<tr><td>Commits totais</td><td><strong>77</strong></td></tr>
+<tr><td>Arquivos versionados</td><td><strong>160</strong></td></tr>
+<tr><td>Arquivos TypeScript/React (src/)</td><td><strong>110 arquivos</strong></td></tr>
+<tr><td>Código de aplicação (TS/TSX)</td><td><strong>~23.870 linhas</strong></td></tr>
+<tr><td>Código de teste (Node native test)</td><td><strong>~780 linhas</strong></td></tr>
+<tr><td>Documentação (Markdown)</td><td><strong>~1.500 linhas</strong></td></tr>
+<tr><td>Testes automatizados</td><td><strong>42 testes (suíte verde)</strong></td></tr>
+<tr><td>Migrations Supabase</td><td><strong>6 (idempotentes)</strong></td></tr>
+<tr><td>Páginas Next.js (App Router)</td><td><strong>11 rotas</strong></td></tr>
+<tr><td>Componentes React</td><td><strong>27 componentes principais</strong></td></tr>
+<tr><td>Parsers NBS</td><td><strong>4 (XLSX estoque/vendas, XLS custos, PDF markup)</strong></td></tr>
+<tr><td>Exportadores</td><td><strong>7 (3 XLSX + 3 PDF + Excel consolidado)</strong></td></tr>
+</table>
+
+<div class="highlight">
+<strong>Observação:</strong> projeto entrega ~23.870 linhas de código de aplicação real em ~52h de trabalho efetivo com 1 dev solo apoiado por IA — produtividade ~460 linhas/hora. Mais relevante que volume: cada feature passou por workflow estruturado (PM → SM → PO → Architect → Data Engineer → Dev → QA → DevOps) via squad AIOX, com quality gates explícitos antes do push.
+</div>
+
+<h3>Distribuição do tipo de trabalho (por commit)</h3>
+
+<table>
+<tr><th>Tipo</th><th>Commits</th><th>O que representa</th></tr>
+<tr><td><code>feat</code></td><td><strong>32</strong></td><td>Novas funcionalidades</td></tr>
+<tr><td><code>fix</code></td><td>13</td><td>Correções (hydration, FIPE, sessão race, formatação placa)</td></tr>
+<tr><td>Sprints (estilo livre)</td><td>5</td><td>Marcos iniciais (Sprint 0/1/2/3 + analytical pivot)</td></tr>
+<tr><td><code>chore</code></td><td>3</td><td>Infra (gitignore, deps)</td></tr>
+<tr><td><code>refactor</code></td><td>1</td><td>Refatoração técnica (Context → Zustand)</td></tr>
+<tr><td><code>docs</code></td><td>1</td><td>Documentação</td></tr>
+</table>
+
+<hr>
+
+<h2>3. Como foi construído — metodologia AIOX</h2>
+
+<p>O projeto foi conduzido com o <strong>squad AIOX</strong> (project-local em <code>.claude/agents/</code>), em que 10 agentes especializados colaboram via handoffs estruturados:</p>
+
+<ul>
+<li><code>@morgan-pm</code> (PM) — estratégia, RICE, prioridade</li>
+<li><code>@river-sm</code> (Scrum Master) — redige stories estruturadas com AC</li>
+<li><code>@pax-po</code> (Product Owner) — valida via 10-point checklist</li>
+<li><code>@aria-architect</code> — decisões arquiteturais e tradeoffs</li>
+<li><code>@dara-data-engineer</code> — schema Supabase, RLS, índices, migrations</li>
+<li><code>@uma-ux</code> — design de fluxo/tela, estados, acessibilidade</li>
+<li><code>@dex-dev</code> — implementação</li>
+<li><code>@quinn-qa</code> — quality gate técnico (PASS/CONCERNS/FAIL)</li>
+<li><code>@alex-analyst</code> — pesquisa de dados internos</li>
+<li><code>@gage-devops</code> — exclusivo pra push, PR, deploy, infra</li>
+</ul>
+
+<p>Adicionalmente, foram convocados squads externos sob demanda:</p>
+<ul>
+<li><strong>cybersecurity</strong> (Cyber Chief) — audit de segurança defensivo</li>
+<li><strong>design-squad</strong> (Design Chief) — audit de UX e maturidade visual</li>
+<li><strong>advisory-board</strong> (Munger, Naval, Thiel, Hoffman) — análise estratégica de viabilidade como SaaS</li>
+<li><strong>hormozi-squad</strong> — pricing e Grand Slam Offer hipotéticos</li>
+</ul>
+
+<h3>Princípios transversais aplicados</h3>
+
+<ol>
+<li><strong>pt-BR em toda UI</strong> — microcopy de qualidade, sem traduções literais</li>
+<li><strong>Precisão centavo-perfect</strong> vs NBS — divergência R$ 0,01 é bug crítico</li>
+<li><strong>Sem <code>any</code></strong> — TypeScript estrito, <code>unknown</code> + type guard quando necessário</li>
+<li><strong>Imports absolutos</strong> com <code>@/</code></li>
+<li><strong>Trunk-based</strong> em <code>main</code> — sem PR review pra time de 1, mas com quality gate Quinn-QA</li>
+<li><strong>Idempotência</strong> em migrations Supabase</li>
+<li><strong>Testes nativos Node 22</strong> — sem framework de teste extra</li>
+</ol>
+
+<hr>
+
+<h2>4. Arquitetura e stack técnica</h2>
+
+<h3>Stack pinada</h3>
+
+<p><strong>Next.js 16 · React 19 · TypeScript 5 · Tailwind 4 · Supabase (Postgres 17) · @supabase/ssr · Zustand · TanStack Table · AI SDK 6 (multi-provider) · ExcelJS · jsPDF + autoTable · pdfjs-dist · xlsx 0.20.3 · react-dropzone · lucide-react · zod · date-fns · @upstash/redis + @upstash/ratelimit · Node.js 22</strong></p>
+
+<h3>Decisões arquiteturais</h3>
+
+<ul>
+<li><strong>AR-1</strong> — Next.js App Router server-rendered + Client Components. SSR rápido, SEO inerte (app interno).</li>
+<li><strong>AR-2</strong> — Supabase como backend único: Auth + Postgres + RLS. Sem servidor próprio.</li>
+<li><strong>AR-3</strong> — Multi-provider AI no <code>/api/chat</code>: fallback automático DeepSeek → Groq → Gemini → Anthropic. Auth check antes do rate limit.</li>
+<li><strong>AR-4</strong> — Camadas: <code>app/</code> (pages) → <code>components/</code> → <code>lib/store/</code> (Zustand) → <code>lib/data/</code> (Supabase repos) → <code>lib/parsers/</code> + <code>lib/export/</code>.</li>
+<li><strong>AR-5</strong> — Estado global via <strong>Zustand</strong> (refatoração de React Context em 03/jun) — performance superior, sem re-renders cascateados.</li>
+<li><strong>AR-6</strong> — Filtros persistidos em <code>sessionStorage</code> via hook <code>usePersistedState</code> com <code>useSyncExternalStore</code>.</li>
+<li><strong>AR-7</strong> — Dark mode com CSS variables sobrescritas via classe <code>.dark</code>; script inline anti-flicker antes do React montar.</li>
+<li><strong>AR-8</strong> — Rate limit Upstash Redis fail-open (se Upstash cair, libera o chat — graceful degradation).</li>
+<li><strong>AR-9</strong> — Filtro central <code>LOJAS_IGNORADAS</code> aplicado no store antes de expor dados — todos os componentes downstream automaticamente ignoram lojas blacklistadas.</li>
+<li><strong>AR-10</strong> — Helper <code>normalizarPlaca()</code> resolve mismatch entre placas com e sem hífen (XLSX × PDF).</li>
+</ul>
+
+<h3>Estrutura da aplicação</h3>
+
+<pre>src/
+├── app/                       11 rotas (login, dashboard, vendas, veiculos,
+│                              insights, historico, chat, upload, lojas,
+│                              [chassi] de detalhe estoque e venda)
+├── components/                27 componentes principais
+│   ├── ui/                    Toast, Tooltip, ExportDropdown
+│   ├── veiculos/              hooks + filtros + precificação
+│   └── vendas/                hooks de análise
+├── lib/
+│   ├── analytics/             margem, insights, clientes
+│   ├── config/                lojas-ignoradas (blacklist central)
+│   ├── data/                  repos Supabase (vendas, custos, veiculos,
+│                              custos-estoque, fipe-batch, preco-alvo, lojas)
+│   ├── export/                7 exportadores (XLSX + PDF)
+│   ├── fipe/                  integração API parallelum.com.br
+│   ├── hooks/                 usePersistedState (sessionStorage reativo)
+│   ├── navigation/            drill-down (CustomEvent + sessionStorage)
+│   ├── parsers/               4 parsers (XLSX/XLS/PDF)
+│   ├── pricing/               classificação Auto Avaliar (A-E + canal)
+│   ├── store/                 Zustand store unificado
+│   ├── supabase/              client browser + server (SSR)
+│   └── utils/                 placa.ts (normalização), formatadores
+└── proxy.ts                   middleware de auth (Next 16 file convention)</pre>
+
+<hr>
+
+<h2>5. Integração real com 4 fontes de dados</h2>
+
+<p>O sistema integra com <strong>4 fontes externas reais</strong>, cada uma com seus desafios:</p>
+
+<h3>5.1 NBS DMS (sistema de gestão da concessionária)</h3>
+
+<p>Origem dos dados financeiros. Não tem API — apenas exporta relatórios manualmente. O sistema processa 4 formatos:</p>
+<ul>
+<li><strong>Estoque XLSX</strong> (<code>nbs-xlsx.ts</code>) — 1.220+ veículos no pátio atual</li>
+<li><strong>Vendas XLSX</strong> (<code>nbs-vendas-xlsx.ts</code>) — 1.637 vendas históricas (6 meses)</li>
+<li><strong>Custos detalhados XLS</strong> (<code>nbs-custos-xls.ts</code>) — 1.638 placas com breakdown pós-venda (9 categorias)</li>
+<li><strong>Custos de Estoque PDF</strong> (<code>nbs-custos-estoque-pdf.ts</code>) — 328 carros por loja com markup completo. Parser via pdfjs-dist com análise posicional X-empírica. <strong>Validação centavo-perfect</strong>: R$ 56.454.469,02 total bateu exato com o relatório do NBS.</li>
+</ul>
+
+<h3>5.2 Supabase (Postgres + Auth + RLS)</h3>
+
+<p>Backend único. 15 tabelas com RLS <code>authenticated_all_access</code>. Cliente browser via <code>@supabase/ssr</code> com cookie automático. Middleware <code>proxy.ts</code> protege todas as rotas exceto <code>/login</code> e <code>/api/auth/*</code>.</p>
+
+<h3>5.3 API FIPE (parallelum.com.br)</h3>
+
+<p>Tabela FIPE oficial pra cálculo de subprecificação. Cache em 3 camadas: localStorage (TTL 30 dias) + tabela <code>fipe_cache</code> + tabela <code>fipe_batch</code> (cache de match por chassi). Batch runner processa 1.200+ veículos em ~2min com rate limit nativo da API.</p>
+
+<h3>5.4 AI Providers (chat de análise)</h3>
+
+<p>Fallback automático em 4 níveis: <strong>DeepSeek</strong> (free 50 req/dia) → <strong>Groq Llama 3.1</strong> (free 30k tokens/min) → <strong>Gemini 2.5 Flash</strong> (free 250k tokens/min) → <strong>Anthropic Claude Haiku</strong> (pago — só se todos free falharem). Cada provider tem error capture via <code>onError</code> callback do AI SDK.</p>
+
+<h3>Gotchas reais enfrentados (lições caras)</h3>
+
+<ol>
+<li><strong>Hydration mismatch</strong> em SidebarContent: <code>useState</code> lazy lia localStorage no client mas servidor renderizava com default. Resultado: <code>justify-between</code> no SSR vs <code>justify-center</code> no client → React error.</li>
+<li><strong>Sessão race</strong> no carregamento inicial: Promise.all disparado antes do cookie de sessão estabelecer → RLS bloqueava silenciosamente → array vazio. Fix: <code>auth.getUser()</code> antes do Promise.all + retry detection.</li>
+<li><strong>Placa hífen vs sem hífen</strong>: XLSX salva "FPJ-6653", PDF salva "FPJ6653" → 16 placas antigas não casavam. Fix: helper <code>normalizarPlaca()</code> aplicado nos 3 pontos de lookup.</li>
+<li><strong>xlsx 0.18.5 CVE</strong>: prototype pollution + ReDoS conhecidos. Upgrade pra 0.20.3 via CDN do SheetJS (não está no npm registry).</li>
+<li><strong>Heatmap agrupava lojas duplicadas</strong>: estoque tinha só <code>cod_empresa</code>, vendas tinham <code>empresa_nome</code> → 2 grupos por loja. Fix: chave canônica em <code>cod_empresa</code>, resolve nome via store.</li>
+<li><strong>Cores semânticas em dark mode</strong>: <code>CLASSE_COR</code> e <code>CAUTELAR_COR</code> só tinham variants light. Fundo branco com texto invisível em dark. Fix: adicionou variants <code>dark:bg-*-900/40</code> em todas as 5 classes + 3 cautelares.</li>
+<li><strong>Force light mode global</strong>: ignorava <code>prefers-color-scheme</code> — feedback do design-squad audit. Migrado pra <code>useSyncExternalStore</code> com toggle Sistema/Light/Dark.</li>
+<li><strong>Bug "só hoje aparece"</strong> em /vendas no Vercel: combinação de race de sessão + filtros persistidos. Resolvido com fix de race em <code>load()</code>.</li>
+<li><strong>HoldBack vs ADM</strong> no parser PDF: header visual do NBS dizia uma coisa, mas valores caíam em ordem diferente. Parser confia no cluster X observado empiricamente, não no header.</li>
+</ol>
+
+<hr>
+
+<h2>6. Onde está hoje</h2>
+
+<div class="highlight">
+🎉 <strong>MVP completo e em produção</strong> no Vercel.
+<ul style="margin-top: 8px;">
+<li>Site no ar: <strong>https://navesa-mesa.vercel.app</strong></li>
+<li>Auth ativo, RLS authenticated, sessões persistentes via cookies SSR</li>
+<li>Suíte de <strong>42 testes verde</strong>, typecheck limpo, build verde no Vercel auto-deploy</li>
+<li>4 fontes de dados NBS processáveis, todas com validação centavo-perfect</li>
+<li>3 exportadores em XLSX (com fórmulas Excel + cores condicionais + totalizadores) e 3 em PDF</li>
+<li>Chat IA multi-provider funcionando</li>
+<li>Modo dark completo com toggle Sistema/Light/Dark</li>
+<li>CSP + 5 security headers ativos</li>
+<li>Audit de segurança Cyber Chief: score <strong>8,5/10</strong></li>
+<li>Audit de UX Design Chief: maturidade <strong>⭐⭐⭐⭐</strong> em design system, ⭐⭐⭐⭐ em microcopy</li>
+</ul>
+</div>
+
+<h3>Pendências conhecidas (backlog opcional)</h3>
+
+<ul>
+<li><strong>Issue #1</strong> — repo público (decisão pessoal — pode tornar privado a qualquer momento)</li>
+<li><strong>Issue #3</strong> — RLS por role (gerente vs vendedor) — adiada conscientemente até virar SaaS ou crescer time</li>
+<li><strong>Issue #5</strong> — hardening do <code>/api/chat</code>: sanitizar logs, validar schema com zod, prevenir prompt injection</li>
+<li><strong>Mobile-first</strong> — tabelas em cards no celular (CRITICAL UX do audit; pulado conscientemente)</li>
+<li><strong>Upstash rate limit</strong> — código pronto, aguardando ativação quando precisar (sem IA paga atualmente)</li>
+<li><strong>Dashboards adicionais</strong> — capital travado em Forplan, lucro potencial não realizado, alertas operacionais novos baseados no markup PDF</li>
+</ul>
+
+<h3>Próximas evoluções planejadas (Fase 3)</h3>
+
+<ul>
+<li>Métricas derivadas do markup PDF no dashboard (capital travado Forplan, lucro potencial)</li>
+<li>Alertas operacionais novos baseados em Lucro Bruto negativo</li>
+<li>Onboarding/tour pra primeiro acesso de novos sócios</li>
+<li>Loading states padronizados (skeleton + barra de progresso)</li>
+</ul>
+
+<hr>
+
+<h2>7. Documentação de apoio</h2>
+
+<table>
+<tr><th>Documento</th><th>Conteúdo</th></tr>
+<tr><td><code>AGENTS.md</code></td><td>Squad AIOX project-local — 10 agentes, workflow, regras</td></tr>
+<tr><td><code>CLAUDE.md</code></td><td>Aponta pro AGENTS.md (compatibilidade Claude Code)</td></tr>
+<tr><td><code>README.md</code></td><td>Setup, scripts, deploy</td></tr>
+<tr><td><code>docs/SETUP.md</code></td><td>Configuração de ambiente local + Supabase</td></tr>
+<tr><td><code>docs/pitch-deck-gerente-2026-06-01.md</code></td><td>Pitch deck pra gerente novo: análise da operação, lições, plano 90 dias</td></tr>
+<tr><td><code>supabase/migrations/*.sql</code></td><td>6 migrations idempotentes (schema + RLS + tabelas adicionais)</td></tr>
+<tr><td>GitHub Issues</td><td>5 issues de security hardening abertas (label <code>security</code>, milestone Security Hardening)</td></tr>
+</table>
+
+<hr>
+
+<p style="text-align: center; color: #64748B; font-size: 9pt; margin-top: 30px;">
+<em>Documento gerado em 2026-06-04 a partir do estado real do repositório (branch <code>main</code>, último commit <code>ee4711b</code>).<br>
+Construído por Marcos Henrique com assistência intensiva de IA via Claude Code + squad AIOX.<br>
+~52h de trabalho efetivo · 77 commits · 11 dias corridos · 1 dev solo.</em>
+</p>
+
+</body>
+</html>
