@@ -1,6 +1,7 @@
 "use client";
 
-import { Receipt, ShoppingCart, Banknote, Wrench, UserSquare2, Landmark, Briefcase, FileText, Gift, Star, Package, Info } from "lucide-react";
+import { useState } from "react";
+import { Receipt, ShoppingCart, Banknote, Wrench, UserSquare2, Landmark, Briefcase, FileText, Gift, Star, Package, Info, ChevronDown, ChevronUp } from "lucide-react";
 import type { CustoEstoqueDetalhado } from "@/lib/parsers/nbs-custos-estoque-pdf";
 import { formatBRL, cn } from "@/lib/utils";
 import { Tooltip } from "./ui/Tooltip";
@@ -26,6 +27,8 @@ type LineItem = {
  * (-)Ganhos Indiretos → Custo Total → Tabela (preço de venda) → Lucro Bruto.
  */
 export function ComposicaoCustosEstoque({ custo }: { custo: CustoEstoqueDetalhado }) {
+  const [mostrarZerados, setMostrarZerados] = useState(false);
+
   const itens: LineItem[] = [
     {
       label: "Aquisição (Nota Fábrica)",
@@ -84,8 +87,15 @@ export function ComposicaoCustosEstoque({ custo }: { custo: CustoEstoqueDetalhad
     },
   ];
 
-  // Soma dos itens não-redutores (denominador da barra)
+  // Soma dos itens não-redutores (denominador da barra) — sempre considera TODOS,
+  // mesmo zerados, pra manter o percentual fiel ao total.
   const somaAbsoluta = itens.reduce((s, i) => s + (i.redutor ? 0 : i.value), 0) || 1;
+
+  // Separa itens em "com valor" vs "zerados". Por padrão escondemos os zerados
+  // pra reduzir poluição visual (carros tipicamente têm 5+ campos em R$ 0).
+  const itensComValor = itens.filter((i) => i.value !== 0);
+  const itensZerados = itens.filter((i) => i.value === 0);
+  const itensVisiveis = mostrarZerados ? itens : itensComValor;
 
   const positivaMargem = custo.lucro_bruto > 0;
   const margemPct = custo.tabela > 0 ? (custo.lucro_bruto / custo.tabela) * 100 : 0;
@@ -104,7 +114,7 @@ export function ComposicaoCustosEstoque({ custo }: { custo: CustoEstoqueDetalhad
       <div className="grid gap-6 p-5 lg:grid-cols-[1fr,280px]">
         {/* Coluna 1: Itens de custo */}
         <div className="space-y-3">
-          {itens.map((item) => {
+          {itensVisiveis.map((item) => {
             const pctBar = item.redutor
               ? Math.min(100, (item.value / somaAbsoluta) * 100)
               : (item.value / somaAbsoluta) * 100;
@@ -133,6 +143,25 @@ export function ComposicaoCustosEstoque({ custo }: { custo: CustoEstoqueDetalhad
               </div>
             );
           })}
+
+          {/* Toggle pra mostrar/esconder itens R$ 0 */}
+          {itensZerados.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setMostrarZerados((v) => !v)}
+              className="inline-flex items-center gap-1 rounded-md border border-dashed border-[var(--border-soft)] bg-[var(--bg-app)] px-2.5 py-1 text-[11px] font-medium text-[var(--text-muted)] transition hover:border-[var(--border-base)] hover:bg-[var(--bg-muted)] hover:text-[var(--text-body)]"
+            >
+              {mostrarZerados ? (
+                <>
+                  <ChevronUp className="h-3 w-3" /> Ocultar {itensZerados.length} {itensZerados.length === 1 ? "item zerado" : "itens zerados"}
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="h-3 w-3" /> Ver {itensZerados.length} {itensZerados.length === 1 ? "item zerado" : "itens zerados"}
+                </>
+              )}
+            </button>
+          )}
 
           <div className="rounded border-t border-[var(--border-soft)] pt-3 transition hover:bg-[var(--bg-muted)]/40">
             <div className="flex items-center justify-between text-sm">

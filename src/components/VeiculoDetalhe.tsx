@@ -150,6 +150,14 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
         </Card>
       </div>
 
+      {/* Ferramentas ativas — onde o gerente toma decisão */}
+      <SimuladorPreco veiculo={veiculo} />
+
+      <DemonstrativoLucro veiculo={veiculo} />
+
+      <PrecificacaoBlock veiculo={veiculo} />
+
+      {/* Referência detalhada — anatomia do custo e histórico */}
       {custoDetalhado && vendasDaPlaca.length > 0 && (
         <ComposicaoCustos vendas={vendasDaPlaca} />
       )}
@@ -165,12 +173,6 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
           onCautelarChange={(s) => setCautelar(veiculo.chassi, s)}
         />
       )}
-
-      <PrecificacaoBlock veiculo={veiculo} />
-
-      <SimuladorPreco veiculo={veiculo} />
-
-      <DemonstrativoLucro veiculo={veiculo} />
 
       <EstatisticasModelo veiculo={veiculo} />
 
