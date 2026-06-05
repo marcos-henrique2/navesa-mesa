@@ -9,6 +9,7 @@ import { classificarPatio, STATUS_LABEL } from "@/lib/inventory/status";
 import { PrecificacaoBlock } from "./veiculos/PrecificacaoBlock";
 import { SimuladorPreco } from "./veiculos/SimuladorPreco";
 import { EstatisticasModelo } from "./veiculos/EstatisticasModelo";
+import { FlagsVeiculo } from "./veiculos/FlagsVeiculo";
 import { ComposicaoCustos } from "./ComposicaoCustos";
 import { ComposicaoCustosEstoque } from "./ComposicaoCustosEstoque";
 import {
@@ -169,6 +170,8 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
       <SimuladorPreco veiculo={veiculo} />
 
       <EstatisticasModelo veiculo={veiculo} />
+
+      <FlagsVeiculo chassi={veiculo.chassi} />
     </div>
   );
 }
