@@ -206,16 +206,15 @@ function SidebarContent({
           collapsed ? "justify-center px-2" : "justify-between px-5",
         )}
       >
-        <Link href="/" onClick={onItemClick} className="flex items-center gap-2.5 text-[var(--brand-900)] min-w-0">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-[var(--brand-700)] to-[var(--brand-900)] text-white shadow-sm">
-            <span className="text-sm font-bold tracking-tight">N</span>
-          </div>
-          {!collapsed && (
-            <div className="min-w-0">
-              <p className="truncate text-sm font-bold leading-none text-[var(--text-strong)]">Navesa Mesa</p>
-              <p className="mt-0.5 truncate text-[11px] text-[var(--text-muted)]">Precificação de Seminovos</p>
-            </div>
-          )}
+        <Link href="/" onClick={onItemClick} className="flex items-center min-w-0">
+          <img
+            src="/logo-navesa.png"
+            alt="Grupo Navesa"
+            className={cn(
+              "shrink-0 object-contain dark:brightness-0 dark:invert",
+              collapsed ? "h-9 w-9" : "h-10 w-auto max-w-[170px]",
+            )}
+          />
         </Link>
         {onToggle && !collapsed && (
           <button

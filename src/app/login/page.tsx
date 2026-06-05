@@ -48,13 +48,14 @@ function LoginForm() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--bg-app)] px-4 py-12">
       <div className="w-full max-w-sm">
-        {/* Logo + título */}
+        {/* Logo */}
         <div className="mb-8 flex flex-col items-center text-center">
-          <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-[var(--brand-700)] to-[var(--brand-900)] text-white shadow-sm">
-            <span className="text-lg font-bold tracking-tight">N</span>
-          </div>
-          <h1 className="text-lg font-bold text-[var(--text-strong)]">Navesa Mesa</h1>
-          <p className="mt-0.5 text-sm text-[var(--text-muted)]">Precificação de Seminovos</p>
+          <img
+            src="/logo-navesa.png"
+            alt="Grupo Navesa"
+            className="h-16 object-contain dark:brightness-0 dark:invert"
+          />
+          <p className="mt-3 text-sm text-[var(--text-muted)]">Mesa de Precificação · Seminovos</p>
         </div>
 
         {/* Card */}
