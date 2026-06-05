@@ -23,18 +23,34 @@
  */
 
 import { useMemo, useState } from "react";
-import { Calculator, ClipboardCopy, RotateCcw, AlertTriangle, TrendingUp, TrendingDown, Sparkles, Info } from "lucide-react";
+import { Calculator, ClipboardCopy, RotateCcw, AlertTriangle, TrendingUp, TrendingDown, Sparkles, Info, Plus, Minus, SlidersHorizontal } from "lucide-react";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
+import type { CustoEstoqueDetalhado } from "@/lib/parsers/nbs-custos-estoque-pdf";
 import { useFipeBatch } from "@/lib/fipe/useFipeBatch";
+import { useInventory } from "@/lib/store/inventory";
+import { normalizarPlaca } from "@/lib/utils/placa";
 import { cn, formatBRL, formatBRLCents } from "@/lib/utils";
 import { showSuccessToast } from "@/components/ui/Toast";
 import { Tooltip } from "@/components/ui/Tooltip";
 
 type StatusSemaforo = "lucro" | "atencao" | "prejuizo";
 
+type Composicao = {
+  precoBasico: number;
+  acessorios: number;
+  frete: number;
+  outros: number;
+  descontoTipo: "valor" | "pct";
+  descontoValor: number; // R$ quando "valor", % quando "pct"
+};
+
 export function SimuladorPreco({ veiculo }: { veiculo: VeiculoParsed }) {
   const fipeBatch = useFipeBatch();
+  const { custosEstoquePorPlaca } = useInventory();
   const precoFipe = fipeBatch?.items[veiculo.chassi]?.precoFipe ?? null;
+  const custoEstoque = veiculo.placa
+    ? custosEstoquePorPlaca[normalizarPlaca(veiculo.placa)] ?? null
+    : null;
 
   // Sem custo total → não dá pra simular, mas explica em vez de sumir silenciosamente.
   if (veiculo.custo_total == null) {
@@ -51,20 +67,86 @@ export function SimuladorPreco({ veiculo }: { veiculo: VeiculoParsed }) {
     );
   }
 
-  return <SimuladorView veiculo={veiculo} precoFipe={precoFipe} custoTotal={veiculo.custo_total} />;
+  return <SimuladorView veiculo={veiculo} precoFipe={precoFipe} custoTotal={veiculo.custo_total} custoEstoque={custoEstoque} />;
 }
 
 function SimuladorView({
   veiculo,
   precoFipe,
   custoTotal,
+  custoEstoque,
 }: {
   veiculo: VeiculoParsed;
   precoFipe: number | null;
   custoTotal: number;
+  custoEstoque: CustoEstoqueDetalhado | null;
 }) {
   const precoAtual = veiculo.preco_venda;
-  const [precoSim, setPrecoSim] = useState<number | null>(precoAtual);
+  const [modoDecomposto, setModoDecomposto] = useState(false);
+  const [precoSimples, setPrecoSimples] = useState<number | null>(precoAtual);
+  const [composicao, setComposicao] = useState<Composicao>({
+    precoBasico: precoAtual ?? 0,
+    acessorios: 0,
+    frete: 0,
+    outros: 0,
+    descontoTipo: "valor",
+    descontoValor: 0,
+  });
+
+  // Cálculo do preço composto (só importa quando modoDecomposto=true).
+  const composto = useMemo(() => {
+    const subtotal =
+      composicao.precoBasico + composicao.acessorios + composicao.frete + composicao.outros;
+    const descontoEmReais =
+      composicao.descontoTipo === "valor"
+        ? composicao.descontoValor
+        : (subtotal * composicao.descontoValor) / 100;
+    const descontoEmPct = subtotal > 0 ? (descontoEmReais / subtotal) * 100 : 0;
+    const precoFinal = Math.max(0, subtotal - descontoEmReais);
+    return { subtotal, descontoEmReais, descontoEmPct, precoFinal };
+  }, [composicao]);
+
+  // Preço efetivo que alimenta todos os cálculos abaixo.
+  const precoSim = modoDecomposto ? composto.precoFinal : precoSimples;
+
+  function toggleModo() {
+    if (!modoDecomposto) {
+      // Entrando no modo decomposto: leva precoSimples atual pro precoBasico, zera complementos.
+      setComposicao({
+        precoBasico: precoSimples ?? precoAtual ?? 0,
+        acessorios: 0,
+        frete: 0,
+        outros: 0,
+        descontoTipo: "valor",
+        descontoValor: 0,
+      });
+    } else {
+      // Saindo: leva o preço composto pro modo simples (mantém o valor entre alternâncias).
+      setPrecoSimples(composto.precoFinal);
+    }
+    setModoDecomposto((v) => !v);
+  }
+
+  // Separação Custo Fixo vs Variável pra calcular Margem de Contribuição.
+  //
+  // Classificação adotada:
+  //   FIXO (rateado da operação)   = ADM + Despesas Gerais
+  //   VARIÁVEL (específico do carro) = todo o resto que compõe o custo total
+  //
+  // Observação importante sobre abatimentos (HoldBack, Bônus Fábrica, Ganhos
+  // Indiretos): o NBS já os subtrai do `custo_total`. Portanto NÃO os tratamos
+  // separadamente aqui — ficam "embutidos" no custoVariavel (que é derivado
+  // como custoTotal − custoFixo). Isso é consistente com o conceito de
+  // "Custo Variável Líquido" no NBS Markup.
+  //
+  // Se a classificação contábil real da Navesa for diferente (ex: tratar
+  // comissões variáveis como parte do custo fixo), revisitar aqui.
+  const custoFixo = useMemo(() => {
+    if (!custoEstoque) return null;
+    return custoEstoque.adm + custoEstoque.desp_gerais;
+  }, [custoEstoque]);
+
+  const custoVariavel = custoFixo != null ? custoTotal - custoFixo : null;
 
   const calc = useMemo(() => {
     if (precoSim == null || precoSim <= 0) return null;
@@ -80,8 +162,15 @@ function SimuladorView({
     const difAtualPct = precoAtual != null && precoAtual > 0 ? ((precoSim - precoAtual) / precoAtual) * 100 : null;
     const desvioFipePct = precoFipe != null && precoFipe > 0 ? ((precoSim - precoFipe) / precoFipe) * 100 : null;
 
-    return { lucroBruto, margemPct, status, difAtual, difAtualPct, desvioFipePct };
-  }, [precoSim, custoTotal, precoAtual, precoFipe]);
+    // Margem de contribuição: (preço − custo variável) ÷ preço.
+    // Só calcula se temos o detalhe da composição (CustoEstoqueDetalhado).
+    const margemContribRs = custoVariavel != null ? precoSim - custoVariavel : null;
+    const margemContribPct = custoVariavel != null && precoSim > 0
+      ? ((precoSim - custoVariavel) / precoSim) * 100
+      : null;
+
+    return { lucroBruto, margemPct, status, difAtual, difAtualPct, desvioFipePct, margemContribRs, margemContribPct };
+  }, [precoSim, custoTotal, custoVariavel, precoAtual, precoFipe]);
 
   const alertas = useMemo(() => {
     const out: { tipo: "ruim" | "atenção" | "bom"; texto: string }[] = [];
@@ -115,7 +204,18 @@ function SimuladorView({
   }
 
   function resetar() {
-    setPrecoSim(precoAtual);
+    if (modoDecomposto) {
+      setComposicao({
+        precoBasico: precoAtual ?? 0,
+        acessorios: 0,
+        frete: 0,
+        outros: 0,
+        descontoTipo: "valor",
+        descontoValor: 0,
+      });
+    } else {
+      setPrecoSimples(precoAtual);
+    }
   }
 
   const borderTone =
@@ -137,17 +237,37 @@ function SimuladorView({
       </header>
 
       <div className="grid gap-5 p-5 lg:grid-cols-[1fr,1fr]">
-        {/* Coluna 1 — input + ações */}
+        {/* Coluna 1 — input simples OU composição decomposta */}
         <div className="space-y-3">
-          <label className="block">
+          {/* Toggle de modo */}
+          <div className="flex items-center justify-between gap-2">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-              Preço de venda simulado
+              {modoDecomposto ? "Composição do preço" : "Preço de venda simulado"}
             </span>
+            <button
+              type="button"
+              onClick={toggleModo}
+              className="inline-flex items-center gap-1 rounded-md border border-[var(--border-soft)] bg-[var(--bg-surface)] px-2 py-1 text-[10px] font-medium text-[var(--text-muted)] transition hover:bg-[var(--bg-muted)] hover:text-[var(--text-strong)]"
+              title={modoDecomposto ? "Voltar pro modo simples (preço único)" : "Decompor em Preço Básico + Acessórios + Frete − Desconto"}
+            >
+              <SlidersHorizontal className="h-3 w-3" />
+              {modoDecomposto ? "Modo simples" : "Decompor preço"}
+            </button>
+          </div>
+
+          {modoDecomposto ? (
+            <ComposicaoEditor
+              composicao={composicao}
+              setComposicao={setComposicao}
+              composto={composto}
+              status={calc?.status}
+            />
+          ) : (
             <CurrencyInput
-              value={precoSim}
-              onChange={setPrecoSim}
+              value={precoSimples}
+              onChange={setPrecoSimples}
               className={cn(
-                "mt-1 w-full rounded-lg border bg-[var(--bg-app)] px-4 py-3 text-2xl font-bold tabular-nums tracking-tight outline-none transition-colors duration-200",
+                "w-full rounded-lg border bg-[var(--bg-app)] px-4 py-3 text-2xl font-bold tabular-nums tracking-tight outline-none transition-colors duration-200",
                 "focus:border-[var(--brand-500)] focus:ring-2 focus:ring-[var(--brand-500)]/30",
                 calc?.status === "prejuizo" && "border-red-400 text-red-700 dark:text-red-400",
                 calc?.status === "atencao" && "border-amber-400 text-amber-700 dark:text-amber-400",
@@ -155,7 +275,7 @@ function SimuladorView({
                 !calc && "border-[var(--border-base)] text-[var(--text-strong)]",
               )}
             />
-          </label>
+          )}
 
           <div className="flex flex-wrap gap-2">
             <button
@@ -170,16 +290,15 @@ function SimuladorView({
             <button
               type="button"
               onClick={resetar}
-              disabled={precoSim === precoAtual}
-              className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border-soft)] bg-[var(--bg-surface)] px-3 py-2 text-xs font-medium text-[var(--text-body)] transition hover:bg-[var(--bg-muted)] disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border-soft)] bg-[var(--bg-surface)] px-3 py-2 text-xs font-medium text-[var(--text-body)] transition hover:bg-[var(--bg-muted)]"
             >
               <RotateCcw className="h-3.5 w-3.5" />
               Voltar pro atual ({precoAtual != null ? formatBRL(precoAtual) : "—"})
             </button>
           </div>
 
-          {/* Atalhos rápidos */}
-          {precoAtual != null && (
+          {/* Atalhos rápidos — só em modo simples (no decomposto, edita-se o desconto) */}
+          {!modoDecomposto && precoAtual != null && (
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Atalhos:</span>
               {[-0.05, -0.03, -0.01, 0.01, 0.03, 0.05].map((delta) => {
@@ -189,7 +308,7 @@ function SimuladorView({
                   <button
                     key={delta}
                     type="button"
-                    onClick={() => setPrecoSim(novo)}
+                    onClick={() => setPrecoSimples(novo)}
                     className="rounded border border-[var(--border-soft)] bg-[var(--bg-app)] px-1.5 py-0.5 text-[10px] tabular-nums text-[var(--text-muted)] hover:border-[var(--border-base)] hover:text-[var(--text-strong)]"
                   >
                     {sign}{(delta * 100).toFixed(0)}%
@@ -209,10 +328,24 @@ function SimuladorView({
             tooltip="Lucro bruto = preço de venda simulado − custo total NBS. Não considera impostos sobre o lucro."
           />
           <MetricCard
-            label="Margem"
+            label="Margem de Venda"
             value={calc ? `${calc.margemPct >= 0 ? "+" : ""}${calc.margemPct.toFixed(1)}%` : "—"}
             tone={calc?.status === "lucro" ? "good" : calc?.status === "atencao" ? "warn" : calc?.status === "prejuizo" ? "bad" : "neutral"}
-            tooltip="Margem percentual = lucro bruto ÷ preço de venda. Saudável: ≥ 5%. Fina: 0–5%. Prejuízo: < 0%."
+            tooltip="Margem de Venda = (preço − custo total) ÷ preço. Considera TODOS os custos (variáveis + fixos rateados). É o que de fato sobra na operação. Saudável: ≥ 5%. Fina: 0–5%. Prejuízo: < 0%."
+          />
+          <MetricCard
+            label="Margem de Contribuição"
+            value={calc?.margemContribPct != null
+              ? `${calc.margemContribPct >= 0 ? "+" : ""}${calc.margemContribPct.toFixed(1)}%`
+              : custoEstoque == null ? "—" : "—"}
+            sub={calc?.margemContribRs != null ? formatBRLCents(calc.margemContribRs) : (custoEstoque == null ? "importe markup pra calcular" : undefined)}
+            tone={
+              calc?.margemContribPct == null ? "neutral"
+                : calc.margemContribPct >= 10 ? "good"
+                  : calc.margemContribPct >= 0 ? "warn"
+                    : "bad"
+            }
+            tooltip="Margem de Contribuição = (preço − custos variáveis) ÷ preço. Exclui custos fixos rateados (ADM + Despesas Gerais). Representa quanto a venda contribui pra cobrir o operacional. Sempre maior que Margem de Venda. Use pra negociar fundo: se 'cair' nessa margem, ainda contribui pro fixo."
           />
           <MetricCard
             label="vs Preço atual"
@@ -237,15 +370,13 @@ function SimuladorView({
             }
             tooltip="Desvio do preço simulado em relação à FIPE. Acima de +5% = caro (risco de demora). Abaixo de −5% = barato (gira rápido mas perde margem)."
           />
-          <div className="col-span-2">
-            <MetricCard
-              label="Custo total NBS"
-              value={formatBRLCents(custoTotal)}
-              tone="neutral"
-              tooltip="Custo total final do veículo conforme NBS DMS — não muda com a simulação."
-              dense
-            />
-          </div>
+          <MetricCard
+            label="Custo total NBS"
+            value={formatBRLCents(custoTotal)}
+            sub={custoFixo != null ? `Fixo ${formatBRLCents(custoFixo)} · Var ${formatBRLCents(custoTotal - custoFixo)}` : undefined}
+            tone="neutral"
+            tooltip="Custo total final do veículo conforme NBS DMS. Quando há detalhe importado, mostra também a quebra: 'Fixo' = ADM + Despesas Gerais; 'Var' = todo o resto."
+          />
         </div>
       </div>
 
@@ -388,6 +519,162 @@ function CurrencyInput({
  *      ex: "178.500" → 178500 ; "1.234.567" → 1234567
  *   4. Strings sem dígito retornam null.
  */
+/**
+ * Editor da composição do preço (modo decomposto).
+ * Mostra Preço Básico + Acessórios + Frete + Outros − Desconto = Preço de Venda.
+ * Desconto pode ser editado em R$ ou em % — converte ao trocar de tipo.
+ */
+function ComposicaoEditor({
+  composicao,
+  setComposicao,
+  composto,
+  status,
+}: {
+  composicao: Composicao;
+  setComposicao: (c: Composicao) => void;
+  composto: { subtotal: number; descontoEmReais: number; descontoEmPct: number; precoFinal: number };
+  status: StatusSemaforo | undefined;
+}) {
+  function trocarDescontoTipo(novo: "valor" | "pct") {
+    if (novo === composicao.descontoTipo) return;
+    // Ao trocar, converte o valor digitado pro novo tipo pra não pular numericamente.
+    // Quando subtotal=0 (todos os componentes zerados), não há base pra converter %:
+    // o desconto cai pra 0 silenciosamente — comportamento esperado, sem divisão por zero.
+    if (novo === "pct") {
+      const pct = composto.subtotal > 0 ? (composicao.descontoValor / composto.subtotal) * 100 : 0;
+      setComposicao({ ...composicao, descontoTipo: novo, descontoValor: Number(pct.toFixed(2)) });
+    } else {
+      const reais = (composto.subtotal * composicao.descontoValor) / 100;
+      setComposicao({ ...composicao, descontoTipo: novo, descontoValor: Number(reais.toFixed(2)) });
+    }
+  }
+
+  const finalTone =
+    status === "prejuizo"
+      ? "border-red-400 text-red-700 dark:text-red-400"
+      : status === "atencao"
+        ? "border-amber-400 text-amber-700 dark:text-amber-400"
+        : status === "lucro"
+          ? "border-emerald-400 text-emerald-700 dark:text-emerald-400"
+          : "border-[var(--border-base)] text-[var(--text-strong)]";
+
+  return (
+    <div className="space-y-2 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-app)] p-3">
+      <LinhaComposicao
+        label="Preço Básico"
+        prefixo={null}
+        value={composicao.precoBasico}
+        onChange={(v) => setComposicao({ ...composicao, precoBasico: v ?? 0 })}
+      />
+      <LinhaComposicao
+        label="Acessórios"
+        prefixo="add"
+        value={composicao.acessorios}
+        onChange={(v) => setComposicao({ ...composicao, acessorios: v ?? 0 })}
+      />
+      <LinhaComposicao
+        label="Frete"
+        prefixo="add"
+        value={composicao.frete}
+        onChange={(v) => setComposicao({ ...composicao, frete: v ?? 0 })}
+      />
+      <LinhaComposicao
+        label="Outros"
+        prefixo="add"
+        value={composicao.outros}
+        onChange={(v) => setComposicao({ ...composicao, outros: v ?? 0 })}
+      />
+
+      <div className="flex items-center justify-between border-t border-[var(--border-soft)] pt-2 text-xs">
+        <span className="text-[var(--text-muted)]">Subtotal</span>
+        <span className="font-semibold tabular-nums text-[var(--text-body)]">{formatBRLCents(composto.subtotal)}</span>
+      </div>
+
+      {/* Desconto com toggle R$ / % */}
+      <div className="rounded-md bg-[var(--bg-muted)]/50 p-2">
+        <div className="flex items-center justify-between">
+          <span className="inline-flex items-center gap-1 text-xs">
+            <Minus className="h-3 w-3 text-red-600 dark:text-red-400" />
+            <span className="text-[var(--text-body)]">Desconto</span>
+            <div className="ml-1 inline-flex overflow-hidden rounded border border-[var(--border-soft)]">
+              <button
+                type="button"
+                onClick={() => trocarDescontoTipo("valor")}
+                className={cn(
+                  "px-1.5 py-0.5 text-[10px] font-medium transition",
+                  composicao.descontoTipo === "valor"
+                    ? "bg-[var(--brand-700)] text-white"
+                    : "bg-[var(--bg-surface)] text-[var(--text-muted)] hover:bg-[var(--bg-app)]",
+                )}
+              >
+                R$
+              </button>
+              <button
+                type="button"
+                onClick={() => trocarDescontoTipo("pct")}
+                className={cn(
+                  "px-1.5 py-0.5 text-[10px] font-medium transition",
+                  composicao.descontoTipo === "pct"
+                    ? "bg-[var(--brand-700)] text-white"
+                    : "bg-[var(--bg-surface)] text-[var(--text-muted)] hover:bg-[var(--bg-app)]",
+                )}
+              >
+                %
+              </button>
+            </div>
+          </span>
+          <div className="flex items-center gap-2">
+            <CurrencyInput
+              value={composicao.descontoValor}
+              onChange={(v) => setComposicao({ ...composicao, descontoValor: v ?? 0 })}
+              className="w-24 rounded border border-[var(--border-soft)] bg-[var(--bg-app)] px-2 py-1 text-right text-xs tabular-nums focus:border-[var(--brand-500)] focus:outline-none"
+            />
+            <span className="text-[10px] tabular-nums text-[var(--text-muted)]" style={{ minWidth: 64 }}>
+              {composicao.descontoTipo === "pct"
+                ? `= ${formatBRLCents(composto.descontoEmReais)}`
+                : `= ${composto.descontoEmPct.toFixed(2)}%`}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Preço final */}
+      <div className={cn("flex items-center justify-between rounded-md border-2 border-dashed px-3 py-2 transition-colors duration-200", finalTone)}>
+        <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider">
+          <Plus className="h-3 w-3" /> Preço de Venda
+        </span>
+        <span className="text-xl font-bold tabular-nums">{formatBRLCents(composto.precoFinal)}</span>
+      </div>
+    </div>
+  );
+}
+
+function LinhaComposicao({
+  label,
+  prefixo,
+  value,
+  onChange,
+}: {
+  label: string;
+  prefixo: "add" | null;
+  value: number;
+  onChange: (v: number | null) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 text-xs">
+      <span className="inline-flex items-center gap-1 text-[var(--text-body)]">
+        {prefixo === "add" && <Plus className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />}
+        {label}
+      </span>
+      <CurrencyInput
+        value={value}
+        onChange={onChange}
+        className="w-32 rounded border border-[var(--border-soft)] bg-[var(--bg-app)] px-2 py-1 text-right text-xs tabular-nums focus:border-[var(--brand-500)] focus:outline-none"
+      />
+    </div>
+  );
+}
+
 function parseDecimal(s: string): number | null {
   if (!s) return null;
   let norm: string;
