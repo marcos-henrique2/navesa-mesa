@@ -332,16 +332,16 @@ function SimuladorView({
         {/* Coluna 2 — métricas */}
         <div className="grid grid-cols-2 gap-3">
           <MetricCard
-            label="Lucro bruto"
+            label="Lucro Líquido"
             value={calc ? formatBRLCents(calc.lucroBruto) : "—"}
             tone={calc?.status === "lucro" ? "good" : calc?.status === "atencao" ? "warn" : calc?.status === "prejuizo" ? "bad" : "neutral"}
-            tooltip="Lucro bruto = preço de venda simulado − custo total NBS. Não considera impostos sobre o lucro."
+            tooltip="Lucro Líquido = Preço de Venda − Custo Total NBS. Considera TODOS os gastos do carro (Floor Plan, ADM, Impostos, Comissões, Despesas) e os abatimentos da fábrica (HoldBack, Bônus, Ganhos Indiretos). Veja a decomposição completa no Demonstrativo do Lucro abaixo."
           />
           <MetricCard
-            label="Margem de Venda"
+            label="Margem Líquida"
             value={calc ? `${calc.margemPct >= 0 ? "+" : ""}${calc.margemPct.toFixed(1)}%` : "—"}
             tone={calc?.status === "lucro" ? "good" : calc?.status === "atencao" ? "warn" : calc?.status === "prejuizo" ? "bad" : "neutral"}
-            tooltip="Margem de Venda = (preço − custo total) ÷ preço. Considera TODOS os custos (variáveis + fixos rateados). É o que de fato sobra na operação. Saudável: ≥ 5%. Fina: 0–5%. Prejuízo: < 0%."
+            tooltip="Margem Líquida = Lucro Líquido ÷ Preço de Venda. Considera TODOS os custos lançados no NBS. Saudável: ≥ 5%. Fina: 0–5%. Prejuízo: < 0%."
           />
           <MetricCard
             label="Margem de Contribuição"
