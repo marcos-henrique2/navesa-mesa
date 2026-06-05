@@ -23,6 +23,7 @@ import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import { ExportDropdown } from "./ui/ExportDropdown";
 import { useVeiculosTable, type FiltrosPrioridade } from "./veiculos/useVeiculosTable";
 import { FiltrosVeiculos } from "./veiculos/FiltrosVeiculos";
+import { VeiculoCardMobile } from "./veiculos/VeiculoCardMobile";
 import { calcularDesvioFipe } from "@/lib/fipe/batch";
 
 function ehPreparacao(v: VeiculoParsed): boolean {
@@ -237,6 +238,9 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
     { accessorKey: "dias_patio", header: "Dias", cell: (info) => <span className="tabular-nums whitespace-nowrap text-xs">{info.getValue<number | null>() ?? "—"}</span>, size: 50 },
   ], [lojas, classifMap, cautelares, fipeBatch]);
 
+  // TanStack Table v8 retorna funções não-puras que o React Compiler não consegue memorizar.
+  // Limitação conhecida — remover este disable quando migrarmos pra v9 (compatível).
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data: filtered,
     columns,
@@ -344,7 +348,38 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
         {filtrosAtivos > 0 && <button onClick={limparFiltros} className="ml-2 text-blue-700 underline dark:text-blue-400">Limpar filtros</button>}
       </p>
 
-      <div className="overflow-hidden rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)]">
+      {/* Mobile: card view (md:hidden) */}
+      <div className="space-y-2 md:hidden">
+        {table.getRowModel().rows.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-[var(--border-base)] bg-[var(--bg-surface)] p-6 text-center text-sm text-[var(--text-muted)]">
+            Nenhum veículo nessa página.
+          </p>
+        ) : (
+          table.getRowModel().rows.map((row) => (
+            <VeiculoCardMobile
+              key={row.id}
+              veiculo={row.original}
+              loja={lojas[row.original.cod_empresa]}
+              classif={classifMap.get(row.original.chassi) ?? null}
+              cautelar={cautelares[row.original.chassi] ?? null}
+              fipeItem={fipeBatch?.items?.[row.original.chassi] ?? null}
+              selecionado={row.getIsSelected()}
+              onToggleSelect={() => row.toggleSelected()}
+            />
+          ))
+        )}
+        {/* Paginação mobile */}
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] px-3 py-2 text-xs">
+          <span>Página {table.getState().pagination.pageIndex + 1} de {table.getPageCount() || 1}</span>
+          <div className="flex gap-1">
+            <button onClick={() => table.previousPage()} disabled={!table.getCanPreviousPage()} className="rounded border border-[var(--border-soft)] px-3 py-1.5 disabled:opacity-40">‹ Anterior</button>
+            <button onClick={() => table.nextPage()} disabled={!table.getCanNextPage()} className="rounded border border-[var(--border-soft)] px-3 py-1.5 disabled:opacity-40">Próxima ›</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Desktop: tabela densa (oculta em mobile) */}
+      <div className="hidden overflow-hidden rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] md:block">
         <div className="overflow-x-auto">
           <table className="w-full text-[13px]">
             <thead className="border-b border-[var(--border-soft)] bg-[var(--bg-muted)]">
