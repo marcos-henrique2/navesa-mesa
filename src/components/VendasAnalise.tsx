@@ -120,6 +120,9 @@ export function VendasAnalise() {
     ...(hasAnyTroca ? [{ id: "troca", header: "Troca", cell: ({ row }: { row: { original: VendaParsed } }) => row.original.placa_troca ? <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">{row.original.placa_troca}</span> : null } as ColumnDef<VendaParsed>] : []),
   ], [clientesIndex, custosPorPlaca, hasAnyTroca]);
 
+  // TanStack Table v8 retorna funções não-puras que o React Compiler não consegue memorizar.
+  // Limitação conhecida da lib — remover este disable quando migrarmos pra v9 (compatível).
+  // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
     data: filtered, columns, state: { sorting }, onSortingChange: setSorting,
     getCoreRowModel: getCoreRowModel(), getFilteredRowModel: getFilteredRowModel(),
