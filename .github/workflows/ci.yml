@@ -1,0 +1,56 @@
+# Navesa Mesa — CI
+#
+# Roda em todo push pra main e em pull requests.
+# Garante que ninguém quebra build, typecheck, lint ou testes sem perceber.
+#
+# Não bloqueia o deploy do Vercel — só sinaliza no GitHub. O Vercel continua
+# autônomo; esse CI dá visibilidade pra revisão e histórico.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancela runs anteriores no mesmo branch/PR — economiza minutos.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: Typecheck + Lint + Tests + Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests (node:test)
+        run: npm test
+
+      # Build sem env vars de Sentry — só verifica que compila.
+      # `withSentryConfig` é no-op quando SENTRY_DSN não está setado.
+      - name: Production build
+        run: npm run build
+        env:
+          # Evita Sentry tentar upload de source maps no CI
+          SENTRY_AUTH_TOKEN: ""
