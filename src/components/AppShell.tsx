@@ -1,4 +1,10 @@
 "use client";
+/* eslint-disable react-hooks/set-state-in-effect --
+ * Hidratação SSR-safe do estado UI (sidebar collapsed + user menu email).
+ * É padrão idiomático ler localStorage/Supabase dentro de useEffect e setar
+ * o estado depois. Regra é conservadora demais aqui — mesmo precedente do
+ * PrecificacaoBlock e FlagsVeiculo.
+ */
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -43,7 +49,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState<boolean>(false);
   const [hidratado, setHidratado] = useState(false);
 
-  // Hidrata do localStorage só após mount (post-hydration)
+  // Hidrata do localStorage só após mount (post-hydration).
   useEffect(() => {
     try {
       if (localStorage.getItem(COLLAPSED_KEY) === "true") setCollapsed(true);
