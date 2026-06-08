@@ -1,5 +1,11 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
+import bundleAnalyzer from "@next/bundle-analyzer";
+
+const withBundleAnalyzer = bundleAnalyzer({
+  enabled: process.env.ANALYZE === "true",
+  openAnalyzer: false,
+});
 
 /**
  * Hosts externos que o app conecta legitimamente (CSP connect-src).
@@ -80,7 +86,7 @@ const nextConfig: NextConfig = {
  * suprime warnings de tunneling, etc. Tudo opcional via env vars: sem
  * `SENTRY_DSN` configurado, é no-op puro.
  */
-export default withSentryConfig(nextConfig, {
+export default withSentryConfig(withBundleAnalyzer(nextConfig), {
   // Org/project — só preenchidos se Marcos configurar no Vercel/.env
   org: process.env.SENTRY_ORG,
   project: process.env.SENTRY_PROJECT,
