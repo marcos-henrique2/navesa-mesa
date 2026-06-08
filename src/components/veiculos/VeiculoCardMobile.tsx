@@ -73,7 +73,7 @@ export function VeiculoCardMobile({
       <button
         type="button"
         onClick={() => router.push(`/veiculos/${veiculo.chassi}`)}
-        className="w-full px-4 py-3 text-left"
+        className="w-full px-4 py-3 pl-12 text-left"
       >
         {/* Header: marca + modelo + placa + classe */}
         <div className="flex items-start justify-between gap-2">
@@ -182,13 +182,15 @@ export function VeiculoCardMobile({
       </button>
 
       {/* Checkbox flutuante (canto sup. esq.) — tap independente do botão */}
+      {/* Checkbox de seleção — canto sup. esq., longe do header (placa/classe).
+          Tap independente do botão principal via stopPropagation. */}
       <button
         type="button"
         onClick={(e) => {
           e.stopPropagation();
           onToggleSelect();
         }}
-        className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-subtle)] hover:bg-[var(--bg-muted)]"
+        className="absolute left-2 top-3 flex h-7 w-7 items-center justify-center rounded-md text-[var(--text-subtle)] hover:bg-[var(--bg-muted)]"
         aria-label={selecionado ? "Remover seleção" : "Selecionar veículo"}
       >
         <span
