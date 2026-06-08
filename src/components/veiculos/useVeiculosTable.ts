@@ -8,6 +8,7 @@ import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import { useFipeBatch } from "@/lib/fipe/useFipeBatch";
 import { calcularDesvioFipe } from "@/lib/fipe/batch";
 import { useCautelares, type StatusCautelar } from "@/lib/inventory/cautelar";
+import { useFlagsTodas } from "@/lib/data/flags-veiculo";
 import { computarDiagnosticoLista, type DiagnosticoStatus } from "@/lib/pricing/diagnostico";
 import { calcularMedianasKm } from "@/lib/pricing/medianas";
 import { usePersistedState } from "@/lib/hooks/usePersistedState";
@@ -62,6 +63,7 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
   const [filtroClasse, setFiltroClasse] = usePersistedState<"all" | Classe | "showroom" | "repasse">("veiculos:filtroClasse", "all");
   const [filtroFipe, setFiltroFipe] = usePersistedState<"all" | "acima" | "abaixo" | "sem">("veiculos:filtroFipe", "all");
   const [filtroCautelar, setFiltroCautelar] = usePersistedState<"all" | StatusCautelar | "sem">("veiculos:filtroCautelar", "all");
+  const [filtroFlag, setFiltroFlag] = usePersistedState<"all" | "promocao" | "brinde" | "qualquer">("veiculos:filtroFlag", "all");
 
   // Nonce do último filtrosPrioridade que o usuário "fechou" manualmente (via Limpar filtros)
   // Deriva modoPrioridade do prop, exceto se já foi fechado pra esse nonce.
@@ -77,6 +79,7 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
 
   const fipeBatch = useFipeBatch();
   const cautelares = useCautelares();
+  const flags = useFlagsTodas();
   const [avancadoOpen, setAvancadoOpen] = useState(false);
   const [anoMin, setAnoMin] = usePersistedState<string>("veiculos:anoMin", "");
   const [anoMax, setAnoMax] = usePersistedState<string>("veiculos:anoMax", "");
@@ -181,6 +184,12 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
           return false;
         }
       }
+      if (filtroFlag !== "all") {
+        const f = flags[v.chassi];
+        if (filtroFlag === "promocao" && !f?.em_promocao) return false;
+        if (filtroFlag === "brinde" && !f?.brinde_acessorios) return false;
+        if (filtroFlag === "qualquer" && !(f?.em_promocao || f?.brinde_acessorios)) return false;
+      }
       if (filtroFipe !== "all") {
         const item = fipeBatch?.items[v.chassi];
         const desv = item ? calcularDesvioFipe(v.preco_venda, item.precoFipe) : null;
@@ -209,7 +218,7 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
       }
       return true;
     });
-  }, [veiculos, filtroLoja, filtroMarca, filtroCor, filtroComb, filtroSituacao, filtroPatio, filtroClasse, filtroFipe, filtroCautelar, classifMap, fipeBatch, cautelares, anoMin, anoMax, kmMin, kmMax, precoMin, precoMax, diasMin, diasMax, search, modoPrioridade, diagnosticosPrioridade]);
+  }, [veiculos, filtroLoja, filtroMarca, filtroCor, filtroComb, filtroSituacao, filtroPatio, filtroClasse, filtroFipe, filtroCautelar, filtroFlag, classifMap, fipeBatch, cautelares, flags, anoMin, anoMax, kmMin, kmMax, precoMin, precoMax, diasMin, diasMax, search, modoPrioridade, diagnosticosPrioridade]);
 
   const filtered = useMemo(() => {
     return filteredExceptStatus.filter((v) => {
@@ -237,7 +246,7 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
   const limparFiltros = () => {
     setStatusFiltro("all"); setSearch(""); setFiltroLoja("all"); setFiltroMarca("all");
     setFiltroCor("all"); setFiltroComb("all"); setFiltroSituacao("all"); setFiltroPatio("all");
-    setFiltroClasse("all"); setFiltroFipe("all"); setFiltroCautelar("all");
+    setFiltroClasse("all"); setFiltroFipe("all"); setFiltroCautelar("all"); setFiltroFlag("all");
     setAnoMin(""); setAnoMax(""); setKmMin(""); setKmMax("");
     setPrecoMin(""); setPrecoMax(""); setDiasMin(""); setDiasMax("");
     fecharModoPrioridade();
@@ -361,6 +370,7 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
     filtroClasse !== "all",
     filtroFipe !== "all",
     filtroCautelar !== "all",
+    filtroFlag !== "all",
     !!anoMin, !!anoMax, !!kmMin, !!kmMax, !!precoMin, !!precoMax, !!diasMin, !!diasMax,
   ].filter(Boolean).length;
 
@@ -393,6 +403,8 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
     setFiltroFipe,
     filtroCautelar,
     setFiltroCautelar,
+    filtroFlag,
+    setFiltroFlag,
     avancadoOpen,
     setAvancadoOpen,
     anoMin,
@@ -423,6 +435,7 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
     situacoes,
     classifMap,
     cautelares,
+    flags,
     fipeBatch,
     modoPrioridade,
     fecharModoPrioridade,

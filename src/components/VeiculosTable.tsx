@@ -65,6 +65,8 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
     lojasCods, marcas, cores, combs, patios, situacoes,
     classifMap,
     cautelares,
+    flags,
+    filtroFlag, setFiltroFlag,
     fipeBatch,
     modoPrioridade, fecharModoPrioridade,
     filtered,
@@ -333,6 +335,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
         filtroClasse={filtroClasse} setFiltroClasse={setFiltroClasse}
         filtroFipe={filtroFipe} setFiltroFipe={setFiltroFipe}
         filtroCautelar={filtroCautelar} setFiltroCautelar={setFiltroCautelar}
+        filtroFlag={filtroFlag} setFiltroFlag={setFiltroFlag}
         anoMin={anoMin} setAnoMin={setAnoMin} anoMax={anoMax} setAnoMax={setAnoMax}
         kmMin={kmMin} setKmMin={setKmMin} kmMax={kmMax} setKmMax={setKmMax}
         precoMin={precoMin} setPrecoMin={setPrecoMin} precoMax={precoMax} setPrecoMax={setPrecoMax}
@@ -362,6 +365,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
               loja={lojas[row.original.cod_empresa]}
               classif={classifMap.get(row.original.chassi) ?? null}
               cautelar={cautelares[row.original.chassi] ?? null}
+              flags={flags[row.original.chassi] ?? null}
               fipeItem={fipeBatch?.items?.[row.original.chassi] ?? null}
               selecionado={row.getIsSelected()}
               onToggleSelect={() => row.toggleSelected()}

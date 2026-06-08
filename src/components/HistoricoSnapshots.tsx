@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useSyncExternalStore } from "react";
-import { Camera, Trash2, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { Camera, Trash2, TrendingUp, TrendingDown, Minus, AlertTriangle } from "lucide-react";
 import { useInventory } from "@/lib/store/inventory";
 import {
   capturarSnapshot,
@@ -13,6 +13,30 @@ import {
   type Snapshot,
 } from "@/lib/storage/snapshots";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
+
+/** Formata o período de vendas do snapshot (data_venda min → max). */
+function fmtPeriodo(ini: string | null, fim: string | null): string {
+  if (!ini || !fim) return "—";
+  const d1 = new Date(ini).toLocaleDateString("pt-BR");
+  const d2 = new Date(fim).toLocaleDateString("pt-BR");
+  return d1 === d2 ? d1 : `${d1} → ${d2}`;
+}
+
+/**
+ * Calcula a variação de vendas vs snapshot imediatamente anterior cronologicamente.
+ * Retorna `null` se for a primeira foto ou se anterior não tem vendas.
+ */
+function calcularDeltaVendas(atual: Snapshot, anterior: Snapshot | undefined): {
+  diff: number;
+  pct: number;
+  alerta: boolean;
+} | null {
+  if (!anterior?.vendas || !atual.vendas) return null;
+  const diff = atual.vendas.qt - anterior.vendas.qt;
+  const pct = anterior.vendas.qt > 0 ? (diff / anterior.vendas.qt) * 100 : 0;
+  // Alerta se vendas caíram mais que 5% — indica re-import com período menor ou cancelamentos.
+  return { diff, pct, alerta: pct <= -5 };
+}
 
 const EVT = "navesa-mesa:snapshots-updated";
 
@@ -162,7 +186,8 @@ function SecaoVendas({ snapshots }: { snapshots: Snapshot[] }) {
         <table className="w-full text-sm">
           <thead className="bg-[var(--bg-muted)] text-left text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
             <tr>
-              <th className="px-4 py-2">Data</th>
+              <th className="px-4 py-2">Data foto</th>
+              <th className="px-4 py-2">Período coberto</th>
               <th className="px-4 py-2 text-right">Vendas</th>
               <th className="px-4 py-2 text-right">Faturamento</th>
               <th className="px-4 py-2 text-right">Margem</th>
@@ -173,34 +198,54 @@ function SecaoVendas({ snapshots }: { snapshots: Snapshot[] }) {
             </tr>
           </thead>
           <tbody>
-            {comVendas.map((s) => (
-              <tr key={s.id} className="border-t border-[var(--border-soft)] hover:bg-[var(--bg-muted)]">
-                <td className="px-4 py-2 font-medium text-[var(--text-strong)]">{fmtData(s.id)}</td>
-                <td className="px-4 py-2 text-right tabular-nums">{formatInt(s.vendas!.qt)}</td>
-                <td className="px-4 py-2 text-right tabular-nums text-[var(--text-body)]">{formatBRL(s.vendas!.faturamento)}</td>
-                <td className={cn("px-4 py-2 text-right tabular-nums font-semibold", s.vendas!.margem >= 0 ? "text-emerald-700" : "text-red-700")}>
-                  {formatBRL(s.vendas!.margem)}
-                </td>
-                <td className="px-4 py-2 text-right tabular-nums text-[var(--text-body)]">{s.vendas!.margemPct.toFixed(2)}%</td>
-                <td className="px-4 py-2 text-right tabular-nums text-[var(--text-muted)]">{formatBRL(s.vendas!.ganhosIndiretos)}</td>
-                <td className={cn("px-4 py-2 text-right tabular-nums", s.vendas!.margemSemBonus >= 0 ? "text-emerald-700" : "text-red-700")}>
-                  {formatBRL(s.vendas!.margemSemBonus)}
-                </td>
-                <td className="px-4 py-2 text-right">
-                  <button
-                    onClick={async () => {
-                      if (!confirm(`Apagar foto de ${fmtData(s.id)}?`)) return;
-                      try { await removerSnapshot(s.id); }
-                      catch (err) { alert(`Falha: ${err instanceof Error ? err.message : String(err)}`); }
-                    }}
-                    className="text-[var(--text-subtle)] hover:text-red-500"
-                    title="Apagar foto"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {comVendas.map((s, i) => {
+              // `comVendas` está ordenado do mais recente pro mais antigo. O snapshot
+              // imediatamente posterior na lista é o anterior cronologicamente.
+              const delta = calcularDeltaVendas(s, comVendas[i + 1]);
+              return (
+                <tr key={s.id} className={cn("border-t border-[var(--border-soft)] hover:bg-[var(--bg-muted)]", delta?.alerta && "bg-red-50/40 dark:bg-red-950/20")}>
+                  <td className="px-4 py-2 font-medium text-[var(--text-strong)]">{fmtData(s.id)}</td>
+                  <td className="px-4 py-2 text-xs text-[var(--text-muted)]">{fmtPeriodo(s.vendas!.periodoInicio, s.vendas!.periodoFim)}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">
+                    <div className="inline-flex items-center justify-end gap-1.5">
+                      {delta?.alerta && (
+                        <span title={`Queda de ${delta.pct.toFixed(1)}% (-${Math.abs(delta.diff)} vendas) vs foto anterior — pode indicar re-import com período menor`}>
+                          <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                        </span>
+                      )}
+                      <span>{formatInt(s.vendas!.qt)}</span>
+                      {delta && (
+                        <span className={cn("text-[10px] tabular-nums", delta.diff > 0 ? "text-emerald-600" : delta.diff < 0 ? "text-red-600" : "text-[var(--text-subtle)]")}>
+                          {delta.diff > 0 ? "+" : ""}{delta.diff}
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-2 text-right tabular-nums text-[var(--text-body)]">{formatBRL(s.vendas!.faturamento)}</td>
+                  <td className={cn("px-4 py-2 text-right tabular-nums font-semibold", s.vendas!.margem >= 0 ? "text-emerald-700" : "text-red-700")}>
+                    {formatBRL(s.vendas!.margem)}
+                  </td>
+                  <td className="px-4 py-2 text-right tabular-nums text-[var(--text-body)]">{s.vendas!.margemPct.toFixed(2)}%</td>
+                  <td className="px-4 py-2 text-right tabular-nums text-[var(--text-muted)]">{formatBRL(s.vendas!.ganhosIndiretos)}</td>
+                  <td className={cn("px-4 py-2 text-right tabular-nums", s.vendas!.margemSemBonus >= 0 ? "text-emerald-700" : "text-red-700")}>
+                    {formatBRL(s.vendas!.margemSemBonus)}
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    <button
+                      onClick={async () => {
+                        if (!confirm(`Apagar foto de ${fmtData(s.id)}?`)) return;
+                        try { await removerSnapshot(s.id); }
+                        catch (err) { alert(`Falha: ${err instanceof Error ? err.message : String(err)}`); }
+                      }}
+                      className="text-[var(--text-subtle)] hover:text-red-500"
+                      title="Apagar foto"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

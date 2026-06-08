@@ -9,6 +9,7 @@ import type { LojaInfo } from "@/lib/store/inventory";
 type FiltroClasseValor = "all" | Classe | "showroom" | "repasse";
 type FiltroFipeValor = "all" | "acima" | "abaixo" | "sem";
 type FiltroCautelarValor = "all" | StatusCautelar | "sem";
+type FiltroFlagValor = "all" | "promocao" | "brinde" | "qualquer";
 
 type SelectOption = [string, string];
 
@@ -54,6 +55,9 @@ type FiltrosVeiculosProps = {
   filtroCautelar: "all" | StatusCautelar | "sem";
   setFiltroCautelar: (v: "all" | StatusCautelar | "sem") => void;
 
+  filtroFlag: FiltroFlagValor;
+  setFiltroFlag: (v: FiltroFlagValor) => void;
+
   anoMin: string;
   setAnoMin: (v: string) => void;
   anoMax: string;
@@ -88,6 +92,7 @@ export function FiltrosVeiculos(props: FiltrosVeiculosProps) {
     filtroClasse, setFiltroClasse,
     filtroFipe, setFiltroFipe,
     filtroCautelar, setFiltroCautelar,
+    filtroFlag, setFiltroFlag,
     anoMin, setAnoMin, anoMax, setAnoMax,
     kmMin, setKmMin, kmMax, setKmMax,
     precoMin, setPrecoMin, precoMax, setPrecoMax,
@@ -233,6 +238,17 @@ export function FiltrosVeiculos(props: FiltrosVeiculosProps) {
                   ["restricao", "Com restrição"],
                   ["reprovado", "Reprovada"],
                   ["sem", "Sem cautelar"],
+                ]}
+              />
+              <Select
+                label="Marcação"
+                value={filtroFlag}
+                onChange={(v) => setFiltroFlag(v as FiltroFlagValor)}
+                options={[
+                  ["all", "Todas"],
+                  ["promocao", "Em promoção"],
+                  ["brinde", "Com brinde"],
+                  ["qualquer", "Qualquer marcação"],
                 ]}
               />
             </div>

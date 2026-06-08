@@ -1,13 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { AlertTriangle, MapPin } from "lucide-react";
+import { AlertTriangle, MapPin, Tag, Gift } from "lucide-react";
 import { classificarPatio } from "@/lib/inventory/status";
 import { CLASSE_COR } from "@/lib/pricing/classificacao";
 import { CAUTELAR_ICONE, CAUTELAR_LABEL, type StatusCautelar } from "@/lib/inventory/cautelar";
 import type { ClassificacaoVeiculo } from "@/lib/pricing/classificacao";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import type { LojaInfo } from "@/lib/store/inventory";
+import type { FlagsVeiculo } from "@/lib/data/flags-veiculo";
 import { cn, formatBRL, formatInt } from "@/lib/utils";
 import { calcularDesvioFipe, type BatchFipeItem } from "@/lib/fipe/batch";
 
@@ -20,6 +21,7 @@ export function VeiculoCardMobile({
   loja,
   classif,
   cautelar,
+  flags,
   fipeItem,
   selecionado,
   onToggleSelect,
@@ -28,6 +30,7 @@ export function VeiculoCardMobile({
   loja: LojaInfo | undefined;
   classif: ClassificacaoVeiculo | null;
   cautelar: StatusCautelar | null;
+  flags: FlagsVeiculo | null;
   fipeItem: BatchFipeItem | null;
   selecionado: boolean;
   onToggleSelect: () => void;
@@ -116,6 +119,19 @@ export function VeiculoCardMobile({
           {cautelar && (
             <span className="inline-flex items-center gap-1 rounded-full bg-[var(--bg-muted)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--text-body)]" title={CAUTELAR_LABEL[cautelar]}>
               {CAUTELAR_ICONE[cautelar]} {CAUTELAR_LABEL[cautelar]}
+            </span>
+          )}
+          {flags?.em_promocao && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-pink-100 px-1.5 py-0.5 text-[10px] font-medium text-pink-800 dark:bg-pink-950/40 dark:text-pink-300" title="Veículo em promoção">
+              <Tag className="h-2.5 w-2.5" /> Promoção
+            </span>
+          )}
+          {flags?.brinde_acessorios && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-medium text-purple-800 dark:bg-purple-950/40 dark:text-purple-300"
+              title={flags.observacao_brinde ? `Brinde: ${flags.observacao_brinde}` : "Brinde de acessórios incluso"}
+            >
+              <Gift className="h-2.5 w-2.5" /> Brinde
             </span>
           )}
         </div>
