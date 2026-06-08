@@ -1312,6 +1312,110 @@ export function gerarAlertas(
     }
   }
 
+  // 10) Carros parados entre 90 e 180 dias — aviso precoce
+  //     Antes que o cenário "180d" (que já tem alerta crítico) aconteça.
+  if (veiculos.length > 0) {
+    const parados90 = veiculos.filter((v) => {
+      const d = v.dias_patio ?? 0;
+      return d > 90 && d <= 180;
+    });
+    if (parados90.length >= 5) {
+      const valor = parados90.reduce((s, v) => s + (v.valor_aquisicao ?? 0), 0);
+      alertas.push({
+        id: "parados-90d",
+        severidade: "atencao",
+        icone: "⌛",
+        titulo: `${parados90.length} carros parados entre 90 e 180 dias`,
+        detalhe: `R$ ${fmtBR(valor)} de capital comprometido. Se não rodar, viram alerta crítico em poucas semanas. Considere revisar preço ou repassar agora.`,
+        acao: {
+          rota: "/veiculos",
+          filtros: { diasMin: "90", diasMax: "180" },
+          label: "Ver carros parados",
+        },
+      });
+    }
+  }
+
+  // 11) Carros parados há mais de 365 dias — catastrófico
+  //     Floor plan já consumiu boa parte da margem teórica.
+  if (veiculos.length > 0) {
+    const parados365 = veiculos.filter((v) => (v.dias_patio ?? 0) > 365);
+    if (parados365.length > 0) {
+      const valor = parados365.reduce((s, v) => s + (v.valor_aquisicao ?? 0), 0);
+      alertas.push({
+        id: "parados-365d",
+        severidade: "critico",
+        icone: "💀",
+        titulo: `${parados365.length} carros parados há MAIS DE 1 ANO`,
+        detalhe: `R$ ${fmtBR(valor)} preso há 12+ meses. Floor plan acumulado já comeu a margem. Decisão urgente: leilão, baixa, ou repasse direto.`,
+        acao: {
+          rota: "/veiculos",
+          filtros: { diasMin: "365" },
+          label: "Ver fantasmas do estoque",
+        },
+      });
+    }
+  }
+
+  // 12) Carros muito abaixo da FIPE — subprecificados, perdendo margem
+  //     Se vender nesse preço, vai dar lucro, mas menor do que poderia.
+  if (fipeBatch?.items && veiculos.length > 0) {
+    let qtMuitoAbaixo = 0;
+    let valorMuitoAbaixo = 0;
+    for (const v of veiculos) {
+      const item = fipeBatch.items[v.chassi];
+      if (!item?.precoFipe || !v.preco_venda || v.preco_venda <= 0) continue;
+      const desvio = ((v.preco_venda - item.precoFipe) / item.precoFipe) * 100;
+      if (desvio < -10) {
+        qtMuitoAbaixo++;
+        // Valor "perdido": diferença entre FIPE-5% (preço razoável) e preço atual
+        const precoRazoavel = item.precoFipe * 0.95;
+        valorMuitoAbaixo += Math.max(0, precoRazoavel - v.preco_venda);
+      }
+    }
+    if (qtMuitoAbaixo >= 5) {
+      alertas.push({
+        id: "subprecificado-fipe",
+        severidade: qtMuitoAbaixo >= 20 ? "critico" : "atencao",
+        icone: "📉",
+        titulo: `${qtMuitoAbaixo} carros mais de 10% ABAIXO da FIPE`,
+        detalhe: `Vão vender rápido, mas com margem ${valorMuitoAbaixo > 0 ? `~R$ ${fmtBR(valorMuitoAbaixo)} menor` : "comprimida"}. Revisar se vale subir preço.`,
+        acao: {
+          rota: "/veiculos",
+          filtros: { filtroFipe: "abaixo" },
+          label: "Ver subprecificados",
+        },
+      });
+    }
+  }
+
+  // 13) Risco de prejuízo iminente
+  //     Carros com margem teórica fina (<5%) E parados >90d
+  //     → quando finalmente venderem, podem virar prejuízo
+  if (veiculos.length > 0) {
+    const emRiscoPrejuizo = veiculos.filter((v) => {
+      if (v.preco_venda == null || v.custo_total == null || v.preco_venda <= 0) return false;
+      if ((v.dias_patio ?? 0) <= 90) return false;
+      const margem = (v.preco_venda - v.custo_total) / v.preco_venda;
+      return margem < 0.05;
+    });
+    if (emRiscoPrejuizo.length > 0) {
+      const valor = emRiscoPrejuizo.reduce((s, v) => s + (v.custo_total ?? 0), 0);
+      alertas.push({
+        id: "risco-prejuizo-iminente",
+        severidade: "critico",
+        icone: "💸",
+        titulo: `${emRiscoPrejuizo.length} carros com margem fina E parados +90d`,
+        detalhe: `R$ ${fmtBR(valor)} em risco. Margem teórica já está em <5% e o capital travado segue consumindo. Quando vender, vai estar no prejuízo.`,
+        acao: {
+          rota: "/veiculos",
+          filtros: { diasMin: "90" },
+          label: "Ver carros em risco",
+        },
+      });
+    }
+  }
+
   // Ordenação: críticos primeiro, depois atenção, depois info
   const ordem = { critico: 0, atencao: 1, info: 2 };
   return alertas.sort((a, b) => ordem[a.severidade] - ordem[b.severidade]);
