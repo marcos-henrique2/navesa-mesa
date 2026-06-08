@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Car, TrendingUp, Building2, Upload, Menu, X, Sparkles, MessageSquare, History, ChevronLeft, ChevronRight, LogOut, Loader2, Search } from "lucide-react";
+import { LayoutDashboard, Car, TrendingUp, Building2, Upload, Menu, X, Sparkles, History, ChevronLeft, ChevronRight, LogOut, Loader2, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { DataGate } from "./DataGate";
@@ -27,7 +27,9 @@ const NAV: NavItem[] = [
   { href: "/vendas", label: "Análise de Vendas", icon: <TrendingUp className="h-4 w-4" />, match: (p) => p.startsWith("/vendas") },
   { href: "/insights", label: "Insights", icon: <Sparkles className="h-4 w-4" />, match: (p) => p.startsWith("/insights") },
   { href: "/historico", label: "Histórico", icon: <History className="h-4 w-4" />, match: (p) => p.startsWith("/historico") },
-  { href: "/chat", label: "Chat IA", icon: <MessageSquare className="h-4 w-4" />, match: (p) => p.startsWith("/chat") },
+  // Chat IA desativado temporariamente — providers gratuitos não suportam volume real e Anthropic paga
+  // é cara pra esse uso. Pra reativar: descomente a linha abaixo.
+  // { href: "/chat", label: "Chat IA", icon: <MessageSquare className="h-4 w-4" />, match: (p) => p.startsWith("/chat") },
   { href: "/upload", label: "Upload de Relatórios", icon: <Upload className="h-4 w-4" />, match: (p) => p.startsWith("/upload") },
   { href: "/lojas", label: "Cadastro de Lojas", icon: <Building2 className="h-4 w-4" />, match: (p) => p.startsWith("/lojas") },
 ];
