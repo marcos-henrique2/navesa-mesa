@@ -10,6 +10,7 @@ import { PageHeader } from "./AppShell";
 import { AlertasOperacionais } from "./AlertasOperacionais";
 import { ComparativoMesAnterior } from "./ComparativoMesAnterior";
 import { HeatmapLojas } from "./HeatmapLojas";
+import { UltimosDiasCard } from "./UltimosDiasCard";
 
 export function DashboardHome() {
   const { meta, veiculos, vendasMeta, vendas, custosPorPlaca, isHydrated } = useInventory();
@@ -65,6 +66,9 @@ export function DashboardHome() {
           <div className="space-y-6">
             {/* Alertas operacionais — no topo, sempre que houver algo */}
             <AlertasOperacionais />
+
+            {/* Resumo dos últimos 7 dias */}
+            <UltimosDiasCard dias={7} />
 
             {/* Hero KPIs — Estoque */}
             {isHydrated && veiculos.length > 0 && (
