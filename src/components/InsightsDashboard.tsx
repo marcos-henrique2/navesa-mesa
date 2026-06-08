@@ -31,6 +31,7 @@ import {
 } from "@/lib/analytics/insights";
 import { CLASSE_COR, CLASSE_DESC } from "@/lib/pricing/classificacao";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
+import { ComparativoMensal } from "./ComparativoMensal";
 
 export function InsightsDashboard() {
   const { vendas, veiculos, custosPorPlaca, isHydrated } = useInventory();
@@ -75,6 +76,9 @@ export function InsightsDashboard() {
 
   return (
     <div className="space-y-8">
+      {/* 0. Comparativo mês-a-mês — narrativa automática */}
+      <ComparativoMensal />
+
       {/* 1. Risco crítico — dependência de Ganhos Indiretos */}
       <SectionCriticidade sumario={dados.sumario} />
 
