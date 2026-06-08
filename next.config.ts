@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSentryConfig } from "@sentry/nextjs";
 
 /**
  * Hosts externos que o app conecta legitimamente (CSP connect-src).
@@ -18,6 +19,11 @@ const CONNECT_HOSTS = [
   "https://parallelum.com.br",
   // Upstash (rate limit — quando ativado)
   "https://*.upstash.io",
+  // Sentry (monitoramento de erros) — ingest dos eventos
+  "https://*.sentry.io",
+  "https://*.ingest.sentry.io",
+  "https://*.ingest.us.sentry.io",
+  "https://*.ingest.de.sentry.io",
 ];
 
 /**
@@ -69,4 +75,27 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+/**
+ * Sentry wraps Next config — injeta source maps em build de produção,
+ * suprime warnings de tunneling, etc. Tudo opcional via env vars: sem
+ * `SENTRY_DSN` configurado, é no-op puro.
+ */
+export default withSentryConfig(nextConfig, {
+  // Org/project — só preenchidos se Marcos configurar no Vercel/.env
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+
+  // Suprimir prints verbosos no build, exceto em CI
+  silent: !process.env.CI,
+
+  // Não fazer telemetry do Sentry pra eles
+  telemetry: false,
+
+  // Permite tunneling de requisições do Sentry via /monitoring → evita
+  // ad-blockers bloqueando o ingest. Custa um pouco mais de bandwidth Vercel.
+  tunnelRoute: "/monitoring",
+
+  // Pra builds sem auth token, pula upload de source maps — ainda funciona,
+  // só os stack traces não vão ser deminificados em produção.
+  widenClientFileUpload: true,
+});
