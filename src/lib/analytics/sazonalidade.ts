@@ -11,6 +11,9 @@
  */
 
 import type { VendaParsed } from "@/lib/parsers/nbs-vendas-xlsx";
+import type { CustoDetalhado } from "@/lib/parsers/nbs-custos-xls";
+
+type CustosMap = Record<string, CustoDetalhado>;
 
 export type SazonalidadeMes = {
   /** Número do mês (1-12). */
@@ -25,6 +28,12 @@ export type SazonalidadeMes = {
   indice: number;
   /** Anos distintos com dado pra esse mês. */
   anosObservados: number;
+  /** Margem média (%) das vendas nesse mês (todos os anos). null se não há custo cruzado. */
+  margemMediaPct: number | null;
+  /** Margem total (R$) das vendas nesse mês. */
+  margemTotal: number;
+  /** Faturamento total das vendas nesse mês. */
+  faturamento: number;
 };
 
 export type SazonalidadeModelo = {
@@ -44,15 +53,30 @@ function normalizarModelo(s: string): string {
   return s.trim().toUpperCase().replace(/\s+/g, " ");
 }
 
+function calcMargemVenda(v: VendaParsed, custosPorPlaca: CustosMap): { valor: number; margem: number } {
+  const valor = v.valor_venda ?? 0;
+  const custo = (v.placa ? custosPorPlaca[v.placa] : null)?.custo_total ?? v.custo_total_final ?? 0;
+  return { valor, margem: valor - custo };
+}
+
 /**
  * Calcula sazonalidade geral (todos os modelos juntos).
  * Útil pro overview do dashboard.
+ *
+ * Se `custosPorPlaca` for fornecido, calcula também margem média (%) por mês —
+ * útil pra cruzar volume × rentabilidade ("vendeu muito mas com margem fraca").
  */
-export function calcularSazonalidadeGeral(vendas: VendaParsed[]): SazonalidadeModelo | null {
+export function calcularSazonalidadeGeral(
+  vendas: VendaParsed[],
+  custosPorPlaca: CustosMap = {},
+): SazonalidadeModelo | null {
   if (vendas.length === 0) return null;
 
-  // {mes: {totalVendas, anosVistos: Set}}
-  const porMes = new Map<number, { total: number; anos: Set<number> }>();
+  // {mes: {totalVendas, anosVistos: Set, faturamento, margem}}
+  const porMes = new Map<
+    number,
+    { total: number; anos: Set<number>; faturamento: number; margem: number; qtComCusto: number }
+  >();
   const todosAnos = new Set<number>();
 
   for (const v of vendas) {
@@ -60,10 +84,19 @@ export function calcularSazonalidadeGeral(vendas: VendaParsed[]): SazonalidadeMo
     const mes = v.data_venda.getMonth() + 1;
     const ano = v.data_venda.getFullYear();
     todosAnos.add(ano);
-    if (!porMes.has(mes)) porMes.set(mes, { total: 0, anos: new Set() });
+    if (!porMes.has(mes)) {
+      porMes.set(mes, { total: 0, anos: new Set(), faturamento: 0, margem: 0, qtComCusto: 0 });
+    }
     const r = porMes.get(mes)!;
     r.total++;
     r.anos.add(ano);
+
+    const { valor, margem } = calcMargemVenda(v, custosPorPlaca);
+    if (valor > 0) {
+      r.faturamento += valor;
+      r.margem += margem;
+      r.qtComCusto++;
+    }
   }
 
   const totalVendas = vendas.length;
@@ -81,11 +114,16 @@ export function calcularSazonalidadeGeral(vendas: VendaParsed[]): SazonalidadeMo
         mediaPorAno: 0,
         indice: 0,
         anosObservados: 0,
+        margemMediaPct: null,
+        margemTotal: 0,
+        faturamento: 0,
       });
       continue;
     }
     const anosObs = r.anos.size || 1;
     const media = r.total / anosObs;
+    const margemPct =
+      r.qtComCusto > 0 && r.faturamento > 0 ? (r.margem / r.faturamento) * 100 : null;
     meses.push({
       mes: m,
       rotulo: MESES_PT[m - 1],
@@ -93,6 +131,9 @@ export function calcularSazonalidadeGeral(vendas: VendaParsed[]): SazonalidadeMo
       mediaPorAno: media,
       indice: mediaPorMesGeral > 0 ? media / mediaPorMesGeral : 1,
       anosObservados: anosObs,
+      margemMediaPct: margemPct,
+      margemTotal: r.margem,
+      faturamento: r.faturamento,
     });
   }
 
@@ -123,6 +164,7 @@ export function calcularSazonalidadeGeral(vendas: VendaParsed[]): SazonalidadeMo
  */
 export function calcularSazonalidadeTopModelos(
   vendas: VendaParsed[],
+  custosPorPlaca: CustosMap = {},
   opts: { topN?: number; minVendas?: number } = {},
 ): SazonalidadeModelo[] {
   const topN = opts.topN ?? 10;
@@ -143,7 +185,7 @@ export function calcularSazonalidadeTopModelos(
     .slice(0, topN);
 
   return modelosElegiveis.map(([modelo, vds]) => {
-    const r = calcularSazonalidadeGeral(vds);
+    const r = calcularSazonalidadeGeral(vds, custosPorPlaca);
     if (!r) {
       return {
         modelo,

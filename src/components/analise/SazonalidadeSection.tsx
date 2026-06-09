@@ -12,8 +12,9 @@
 import { useMemo } from "react";
 import { useInventory } from "@/lib/store/inventory";
 import {
-  BarChart,
+  ComposedChart,
   Bar,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -21,6 +22,7 @@ import {
   ReferenceLine,
   ResponsiveContainer,
   Cell,
+  Legend,
 } from "recharts";
 import {
   calcularSazonalidadeGeral,
@@ -29,12 +31,12 @@ import {
 import { cn, formatInt } from "@/lib/utils";
 
 export function SazonalidadeSection() {
-  const { vendas } = useInventory();
+  const { vendas, custosPorPlaca } = useInventory();
 
-  const geral = useMemo(() => calcularSazonalidadeGeral(vendas), [vendas]);
+  const geral = useMemo(() => calcularSazonalidadeGeral(vendas, custosPorPlaca), [vendas, custosPorPlaca]);
   const porModelo = useMemo(
-    () => calcularSazonalidadeTopModelos(vendas, { topN: 8, minVendas: 12 }),
-    [vendas],
+    () => calcularSazonalidadeTopModelos(vendas, custosPorPlaca, { topN: 8, minVendas: 12 }),
+    [vendas, custosPorPlaca],
   );
 
   if (!geral || geral.totalVendasModelo === 0) {
@@ -45,13 +47,15 @@ export function SazonalidadeSection() {
     );
   }
 
-  // Dados pro gráfico: índice sazonal por mês (geral)
+  // Dados pro gráfico: índice sazonal por mês (geral) + margem média
   const dadosBarras = geral.meses.map((m) => ({
     mes: m.rotulo,
     indice: m.indice,
     media: m.mediaPorAno,
     total: m.totalVendas,
+    margemPct: m.margemMediaPct,
   }));
+  const temMargem = dadosBarras.some((d) => d.margemPct != null);
 
   return (
     <div className="space-y-5 rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-5 shadow-[var(--shadow-sm)]">
@@ -87,17 +91,42 @@ export function SazonalidadeSection() {
         </div>
       )}
 
-      {/* Gráfico de barras geral */}
+      {/* Gráfico geral — índice sazonal (barras) + margem média (linha) */}
       <div>
         <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
-          Índice sazonal por mês — geral (todos os modelos)
+          Volume × Margem por mês — geral (todos os modelos)
         </h3>
-        <div className="h-64">
+        <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={dadosBarras} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
+            <ComposedChart data={dadosBarras} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border-soft)" />
               <XAxis dataKey="mes" tick={{ fontSize: 11, fill: "var(--text-muted)" }} />
-              <YAxis tick={{ fontSize: 11, fill: "var(--text-muted)" }} />
+              <YAxis
+                yAxisId="left"
+                tick={{ fontSize: 11, fill: "var(--text-muted)" }}
+                label={{
+                  value: "Índice sazonal",
+                  angle: -90,
+                  position: "insideLeft",
+                  fontSize: 10,
+                  fill: "var(--text-muted)",
+                }}
+              />
+              {temMargem && (
+                <YAxis
+                  yAxisId="right"
+                  orientation="right"
+                  tick={{ fontSize: 11, fill: "#8b5cf6" }}
+                  label={{
+                    value: "Margem %",
+                    angle: 90,
+                    position: "insideRight",
+                    fontSize: 10,
+                    fill: "#8b5cf6",
+                  }}
+                  tickFormatter={(v: number) => `${v.toFixed(1)}%`}
+                />
+              )}
               <Tooltip
                 cursor={{ fill: "rgba(148, 163, 184, 0.12)" }}
                 contentStyle={{
@@ -116,11 +145,28 @@ export function SazonalidadeSection() {
                       v >= 1.2 ? " (forte)" : v >= 0.8 ? " (típico)" : " (fraco)";
                     return [v.toFixed(2).replace(".", ",") + "×" + intensidade, "Índice sazonal"];
                   }
+                  if (name === "margemPct" && Number.isFinite(v)) {
+                    const qualidade =
+                      v >= 5 ? " (saudável)" : v >= 0 ? " (apertada)" : " (prejuízo)";
+                    return [v.toFixed(2).replace(".", ",") + "%" + qualidade, "Margem média"];
+                  }
                   return [String(value ?? ""), String(name ?? "")];
                 }}
               />
-              <ReferenceLine y={1} stroke="#94a3b8" strokeDasharray="2 2" label={{ value: "Média", fontSize: 10, fill: "#94a3b8" }} />
-              <Bar dataKey="indice" name="Índice sazonal">
+              <Legend
+                wrapperStyle={{ fontSize: 11, paddingTop: 8 }}
+                formatter={(value) =>
+                  value === "indice" ? "Volume (índice sazonal)" : "Margem média (%)"
+                }
+              />
+              <ReferenceLine
+                yAxisId="left"
+                y={1}
+                stroke="#94a3b8"
+                strokeDasharray="2 2"
+                label={{ value: "Média", fontSize: 10, fill: "#94a3b8" }}
+              />
+              <Bar yAxisId="left" dataKey="indice" name="indice">
                 {dadosBarras.map((d) => (
                   <Cell
                     key={d.mes}
@@ -136,9 +182,26 @@ export function SazonalidadeSection() {
                   />
                 ))}
               </Bar>
-            </BarChart>
+              {temMargem && (
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="margemPct"
+                  name="margemPct"
+                  stroke="#8b5cf6"
+                  strokeWidth={2.5}
+                  dot={{ r: 4, fill: "#8b5cf6" }}
+                  connectNulls
+                />
+              )}
+            </ComposedChart>
           </ResponsiveContainer>
         </div>
+        {!temMargem && (
+          <p className="mt-1 text-[10px] italic text-[var(--text-muted)]">
+            Importe o XLSX de custos pra cruzar volume × margem.
+          </p>
+        )}
       </div>
 
       {/* Heatmap por modelo */}
