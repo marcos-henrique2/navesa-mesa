@@ -101,13 +101,22 @@ export function ForecastSection() {
             <XAxis dataKey="mes" tick={{ fontSize: 11, fill: "var(--text-muted)" }} />
             <YAxis tick={{ fontSize: 11, fill: "var(--text-muted)" }} />
             <Tooltip
+              cursor={{ stroke: "#94a3b8", strokeWidth: 1, strokeDasharray: "3 3" }}
               contentStyle={{
-                backgroundColor: "var(--bg-surface)",
-                border: "1px solid var(--border-base)",
+                backgroundColor: "#0f172a",
+                border: "1px solid #334155",
                 borderRadius: 8,
                 fontSize: 12,
+                color: "#f1f5f9",
               }}
-              labelStyle={{ color: "var(--text-strong)", fontWeight: 600 }}
+              labelStyle={{ color: "#f1f5f9", fontWeight: 700, marginBottom: 4 }}
+              itemStyle={{ color: "#e2e8f0" }}
+              formatter={(value, name) => {
+                if (value == null || (typeof value === "string" && !value)) return ["—", String(name ?? "")];
+                const num = typeof value === "number" ? value : Number(value);
+                if (Number.isFinite(num)) return [String(num), String(name ?? "")];
+                return [String(value), String(name ?? "")];
+              }}
             />
             <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
             <Area

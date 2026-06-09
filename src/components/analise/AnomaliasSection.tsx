@@ -12,7 +12,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronRight, TrendingUp, TrendingDown, Banknote, Clock } from "lucide-react";
+import { ChevronRight, TrendingUp, TrendingDown, Banknote, Clock, Info } from "lucide-react";
 import { useInventory } from "@/lib/store/inventory";
 import {
   detectarAnomalias,
@@ -80,6 +80,43 @@ export function AnomaliasSection() {
 
   return (
     <div className="space-y-4 rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-5 shadow-[var(--shadow-sm)]">
+      {/* Explicação didática — o que é "fora do padrão" */}
+      <details className="group rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-200">
+        <summary className="cursor-pointer list-none">
+          <span className="inline-flex items-center gap-1.5 font-semibold">
+            <Info className="h-3.5 w-3.5" />
+            O que isso significa?
+            <span className="text-[10px] font-normal opacity-70 group-open:hidden">(toque pra ler)</span>
+          </span>
+        </summary>
+        <div className="mt-2 space-y-1.5 text-[11px] leading-relaxed">
+          <p>
+            Cada carro do estoque é comparado com a <strong>média histórica do próprio modelo</strong> (preço de venda, custo total, dias no pátio).
+            Quando um valor está muito longe da média, sinalizamos como anomalia.
+          </p>
+          <p>
+            Os <strong>níveis</strong> indicam quão fora do esperado está:
+          </p>
+          <ul className="ml-3 space-y-0.5">
+            <li>
+              <span className="inline-block w-20 rounded bg-red-200 px-1.5 py-0.5 text-center text-[10px] font-bold text-red-900 dark:bg-red-900/60 dark:text-red-200">EXTREMO</span>{" "}
+              fora do padrão por uma diferença muito grande (3+ desvios)
+            </li>
+            <li>
+              <span className="inline-block w-20 rounded bg-amber-200 px-1.5 py-0.5 text-center text-[10px] font-bold text-amber-900 dark:bg-amber-900/60 dark:text-amber-200">ALTO</span>{" "}
+              bem fora do padrão (2 a 3 desvios)
+            </li>
+            <li>
+              <span className="inline-block w-20 rounded bg-slate-200 px-1.5 py-0.5 text-center text-[10px] font-bold text-slate-800 dark:bg-slate-700 dark:text-slate-200">MODERADO</span>{" "}
+              fora mas ainda dentro do razoável (1,5 a 2 desvios)
+            </li>
+          </ul>
+          <p className="mt-1 text-[10px] italic opacity-80">
+            Quanto maior o número de desvios, mais o carro foge da regra do modelo. Use pra revisar preço, investigar custos ou priorizar venda.
+          </p>
+        </div>
+      </details>
+
       {/* Resumo */}
       <div className="grid gap-3 sm:grid-cols-4">
         <ResumoCard
@@ -184,21 +221,34 @@ function ResumoCard({
 function SeverityChip({ severidade, z }: { severidade: Anomalia["severidade"]; z: number }) {
   const conf =
     severidade === "extrema"
-      ? { bg: "bg-red-100 dark:bg-red-950/40", text: "text-red-800 dark:text-red-300" }
+      ? {
+          bg: "bg-red-200 dark:bg-red-950/60",
+          text: "text-red-900 dark:text-red-200",
+          label: "EXTREMO",
+        }
       : severidade === "alta"
-        ? { bg: "bg-amber-100 dark:bg-amber-950/40", text: "text-amber-800 dark:text-amber-300" }
-        : { bg: "bg-[var(--bg-muted)]", text: "text-[var(--text-body)]" };
+        ? {
+            bg: "bg-amber-200 dark:bg-amber-950/60",
+            text: "text-amber-900 dark:text-amber-200",
+            label: "ALTO",
+          }
+        : {
+            bg: "bg-slate-200 dark:bg-slate-700",
+            text: "text-slate-900 dark:text-slate-200",
+            label: "MODERADO",
+          };
+  const desviosFmt = Math.abs(z).toFixed(1).replace(".", ",");
   return (
     <span
       className={cn(
-        "flex h-10 w-12 shrink-0 flex-col items-center justify-center rounded font-bold tabular-nums",
+        "flex h-14 w-20 shrink-0 flex-col items-center justify-center rounded font-bold",
         conf.bg,
         conf.text,
       )}
-      title={`${severidade} · z=${z.toFixed(2)}`}
+      title={`Está ${desviosFmt} desvios fora da média do modelo`}
     >
-      <span className="text-base leading-none">{Math.abs(z).toFixed(1)}σ</span>
-      <span className="mt-0.5 text-[8px] uppercase opacity-70">{severidade.slice(0, 3)}</span>
+      <span className="text-[11px] uppercase leading-none tracking-wider">{conf.label}</span>
+      <span className="mt-1 text-[10px] font-normal tabular-nums opacity-80">{desviosFmt}× fora</span>
     </span>
   );
 }

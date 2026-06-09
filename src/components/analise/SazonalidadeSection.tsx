@@ -99,17 +99,22 @@ export function SazonalidadeSection() {
               <XAxis dataKey="mes" tick={{ fontSize: 11, fill: "var(--text-muted)" }} />
               <YAxis tick={{ fontSize: 11, fill: "var(--text-muted)" }} />
               <Tooltip
+                cursor={{ fill: "rgba(148, 163, 184, 0.12)" }}
                 contentStyle={{
-                  backgroundColor: "var(--bg-surface)",
-                  border: "1px solid var(--border-base)",
+                  backgroundColor: "#0f172a",
+                  border: "1px solid #334155",
                   borderRadius: 8,
                   fontSize: 12,
+                  color: "#f1f5f9",
                 }}
-                labelStyle={{ color: "var(--text-strong)", fontWeight: 600 }}
+                labelStyle={{ color: "#f1f5f9", fontWeight: 700, marginBottom: 4 }}
+                itemStyle={{ color: "#e2e8f0" }}
                 formatter={(value, name) => {
                   const v = typeof value === "number" ? value : Number(value);
                   if (name === "indice" && Number.isFinite(v)) {
-                    return [v.toFixed(2) + "×", "Índice sazonal"];
+                    const intensidade =
+                      v >= 1.2 ? " (forte)" : v >= 0.8 ? " (típico)" : " (fraco)";
+                    return [v.toFixed(2).replace(".", ",") + "×" + intensidade, "Índice sazonal"];
                   }
                   return [String(value ?? ""), String(name ?? "")];
                 }}
