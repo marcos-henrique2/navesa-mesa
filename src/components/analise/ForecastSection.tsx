@@ -5,7 +5,7 @@
  * + cards de comparativo + lista de top modelos com variação esperada.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Filter } from "lucide-react";
 import { useInventory } from "@/lib/store/inventory";
 import {
@@ -37,6 +37,15 @@ const CONF_COR = {
 export function ForecastSection() {
   const { vendas, lojas } = useInventory();
   const [lojaFiltro, setLojaFiltro] = useState<string>("all");
+  const sectionRef = useRef<HTMLDivElement>(null);
+
+  // Muda o filtro e rola pro topo da seção pra dar feedback visual claro
+  // (quando o usuário clica numa loja do bloco "por loja", ele vê os dados
+  // dela aparecerem em cima)
+  function selecionarLoja(codLoja: string) {
+    setLojaFiltro(codLoja);
+    sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 
   const lojaCodNum = lojaFiltro === "all" ? null : Number(lojaFiltro);
 
@@ -44,43 +53,46 @@ export function ForecastSection() {
     () => calcularForecastGeral(vendas, { lojaFiltro: lojaCodNum }),
     [vendas, lojaCodNum],
   );
-  const porModelo = useMemo(() => calcularForecastPorModelo(vendas, { topN: 8 }), [vendas]);
+  const porModelo = useMemo(
+    () => calcularForecastPorModelo(vendas, { topN: 8, lojaFiltro: lojaCodNum }),
+    [vendas, lojaCodNum],
+  );
   const porLoja = useMemo(() => calcularForecastPorLoja(vendas), [vendas]);
 
   const lojasComVendas = [...new Set(vendas.map((v) => v.cod_empresa).filter((c): c is number => c != null))].sort();
 
-  if (!forecast) {
-    return (
-      <div className="rounded-lg border border-dashed border-[var(--border-base)] bg-[var(--bg-surface)] p-6 text-center text-sm text-[var(--text-muted)]">
-        Precisamos de pelo menos 2 meses de vendas no dataset pra projetar.
-      </div>
-    );
-  }
+  const nomeLojaSelecionada =
+    lojaCodNum != null ? (lojas[lojaCodNum]?.nome?.trim() ?? `Loja ${lojaCodNum}`) : null;
 
-  const dadosGrafico = [
-    ...forecast.historico.map((m) => ({
-      mes: m.rotulo,
-      realizado: m.realizadas,
-      projecao: null as number | null,
-      intervaloMin: null as number | null,
-      intervaloMax: null as number | null,
-    })),
-    {
-      mes: forecast.mesCorrente.rotulo,
-      realizado: forecast.mesCorrente.realizadas,
-      projecao: forecast.mesCorrente.projecaoTotal,
-      intervaloMin: forecast.mesCorrente.intervaloMin,
-      intervaloMax: forecast.mesCorrente.intervaloMax,
-    },
-  ];
+  const dadosGrafico = forecast
+    ? [
+        ...forecast.historico.map((m) => ({
+          mes: m.rotulo,
+          realizado: m.realizadas,
+          projecao: null as number | null,
+          intervaloMin: null as number | null,
+          intervaloMax: null as number | null,
+        })),
+        {
+          mes: forecast.mesCorrente.rotulo,
+          realizado: forecast.mesCorrente.realizadas,
+          projecao: forecast.mesCorrente.projecaoTotal,
+          intervaloMin: forecast.mesCorrente.intervaloMin,
+          intervaloMax: forecast.mesCorrente.intervaloMax,
+        },
+      ]
+    : [];
 
   const completude =
-    forecast.mesCorrente.projecaoTotal > 0
+    forecast && forecast.mesCorrente.projecaoTotal > 0
       ? (forecast.mesCorrente.realizadas / forecast.mesCorrente.projecaoTotal) * 100
       : 0;
 
   return (
-    <div className="space-y-5 rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-5 shadow-[var(--shadow-sm)]">
+    <div
+      ref={sectionRef}
+      className="space-y-5 rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-5 shadow-[var(--shadow-sm)]"
+    >
       {/* Seletor de loja */}
       <div className="flex flex-wrap items-center gap-2">
         <label className="inline-flex items-center gap-1.5 text-xs">
@@ -100,38 +112,79 @@ export function ForecastSection() {
           </select>
         </label>
         {lojaFiltro !== "all" && (
-          <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
-            Filtro ativo
-          </span>
+          <>
+            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+              {nomeLojaSelecionada}
+            </span>
+            <button
+              type="button"
+              onClick={() => setLojaFiltro("all")}
+              className="text-[10px] text-[var(--brand-700)] underline hover:text-[var(--brand-900)] dark:text-[var(--brand-300)] dark:hover:text-[var(--brand-100)]"
+            >
+              limpar filtro
+            </button>
+          </>
         )}
       </div>
 
-      {/* Cards do mês corrente */}
-      <div className="grid gap-3 sm:grid-cols-3">
-        <KpiCard
-          label={`${forecast.mesCorrente.rotulo} — realizado`}
-          valor={formatInt(forecast.mesCorrente.realizadas)}
-          sublabel={`${completude.toFixed(0)}% da projeção`}
-          tom="info"
-        />
-        <KpiCard
-          label="Projeção total"
-          valor={formatInt(forecast.mesCorrente.projecaoTotal)}
-          sublabel={`Intervalo: ${formatInt(forecast.mesCorrente.intervaloMin)}–${formatInt(forecast.mesCorrente.intervaloMax)}`}
-          tom={
-            forecast.mesCorrente.realizadas >= forecast.mesCorrente.projecaoTotal
-              ? "good"
-              : "warn"
-          }
-        />
-        <KpiCard
-          label="Confiança"
-          valor={CONF_LABEL[forecast.confianca]}
-          sublabel={`Histórico: ${forecast.historico.length} meses · sazonal × ${forecast.indiceSazonal.toFixed(2)}`}
-          confianca={forecast.confianca}
-        />
-      </div>
+      {/* Mensagem quando loja específica não tem 2 meses de histórico */}
+      {!forecast && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-900/60 dark:bg-amber-950/30">
+          <p className="text-sm text-amber-900 dark:text-amber-200">
+            <strong>Sem histórico suficiente</strong> pra projetar
+            {nomeLojaSelecionada && (
+              <>
+                {" "}
+                a <strong>{nomeLojaSelecionada}</strong>
+              </>
+            )}
+            .
+          </p>
+          <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+            Precisamos de pelo menos 2 meses de vendas. Tente selecionar outra loja ou voltar pro consolidado.
+          </p>
+          <button
+            type="button"
+            onClick={() => setLojaFiltro("all")}
+            className="mt-2 inline-flex items-center gap-1 rounded-md border border-amber-400 bg-white px-3 py-1.5 text-xs font-medium text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200 dark:hover:bg-amber-900/30"
+          >
+            Voltar pra Todas (consolidado)
+          </button>
+        </div>
+      )}
 
+      {forecast && (
+        <>
+          {/* Cards do mês corrente */}
+          <div className="grid gap-3 sm:grid-cols-3">
+            <KpiCard
+              label={`${forecast.mesCorrente.rotulo} — realizado`}
+              valor={formatInt(forecast.mesCorrente.realizadas)}
+              sublabel={`${completude.toFixed(0)}% da projeção`}
+              tom="info"
+            />
+            <KpiCard
+              label="Projeção total"
+              valor={formatInt(forecast.mesCorrente.projecaoTotal)}
+              sublabel={`Intervalo: ${formatInt(forecast.mesCorrente.intervaloMin)}–${formatInt(forecast.mesCorrente.intervaloMax)}`}
+              tom={
+                forecast.mesCorrente.realizadas >= forecast.mesCorrente.projecaoTotal
+                  ? "good"
+                  : "warn"
+              }
+            />
+            <KpiCard
+              label="Confiança"
+              valor={CONF_LABEL[forecast.confianca]}
+              sublabel={`Histórico: ${forecast.historico.length} meses · sazonal × ${forecast.indiceSazonal.toFixed(2)}`}
+              confianca={forecast.confianca}
+            />
+          </div>
+        </>
+      )}
+
+      {forecast && (
+        <>
       {/* Gráfico de linhas */}
       <div className="h-72">
         <ResponsiveContainer width="100%" height="100%">
@@ -234,7 +287,10 @@ export function ForecastSection() {
         </div>
       )}
 
-      {/* Projeção por loja */}
+        </>
+      )}
+
+      {/* Projeção por loja — sempre visível (mesmo se forecast for null) */}
       {porLoja.length > 1 && (
         <div>
           <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
@@ -249,7 +305,7 @@ export function ForecastSection() {
                 <button
                   key={p.loja}
                   type="button"
-                  onClick={() => setLojaFiltro(String(p.loja))}
+                  onClick={() => selecionarLoja(String(p.loja))}
                   className="w-full rounded-md border border-[var(--border-soft)] bg-[var(--bg-app)] p-3 text-left transition hover:bg-[var(--bg-muted)]"
                 >
                   <div className="flex items-center justify-between gap-3">

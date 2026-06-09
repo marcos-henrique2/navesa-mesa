@@ -193,12 +193,19 @@ export function calcularForecastPorLoja(vendas: VendaParsed[]): ForecastPorLoja[
 /**
  * Forecast por modelo: compara realizado do mês anterior vs projeção do corrente.
  * Útil pra ver onde tá "abaixo do esperado".
+ *
+ * Aceita `lojaFiltro` opcional pra projetar só os modelos vendidos por uma loja
+ * específica — mantém consistência com `calcularForecastGeral`.
  */
 export function calcularForecastPorModelo(
   vendas: VendaParsed[],
-  opts: { topN?: number } = {},
+  opts: { topN?: number; lojaFiltro?: number | null } = {},
 ): ForecastPorModelo[] {
   const topN = opts.topN ?? 10;
+  vendas =
+    opts.lojaFiltro != null
+      ? vendas.filter((v) => v.cod_empresa === opts.lojaFiltro)
+      : vendas;
 
   // Top modelos com mais vendas históricas
   const sazonalidades = calcularSazonalidadeTopModelos(vendas, {}, { topN, minVendas: 6 });
