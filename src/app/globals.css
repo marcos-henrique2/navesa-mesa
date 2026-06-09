@@ -122,3 +122,85 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border-base); border-radius: 999px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-subtle); }
+
+/* ============================================================
+ * Print styles — pra reuniões e relatórios em PDF
+ * Triggered por: Ctrl+P (Salvar como PDF), ou botão "Imprimir"
+ * ============================================================ */
+@media print {
+  @page {
+    margin: 1.5cm;
+    size: A4;
+  }
+
+  /* Esconde elementos não-essenciais ao imprimir */
+  .print-hide,
+  aside,
+  header,
+  nav,
+  button[aria-label*="Recolher"],
+  button[aria-label*="Expandir"] {
+    display: none !important;
+  }
+
+  /* Layout limpo: tira sombras, deixa cores legíveis */
+  body, html {
+    background: white !important;
+    color: black !important;
+    font-size: 11pt;
+  }
+
+  main {
+    min-width: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Cards: borda fina sem sombra */
+  section, [class*="rounded-xl"], [class*="rounded-lg"] {
+    box-shadow: none !important;
+    border: 1px solid #cbd5e1 !important;
+    page-break-inside: avoid;
+    background: white !important;
+  }
+
+  /* Texto sempre escuro no papel */
+  h1, h2, h3, h4, p, span, td, th, li, div {
+    color: black !important;
+  }
+
+  /* Tabelas amigáveis pra papel */
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 10pt;
+  }
+
+  th, td {
+    border: 1px solid #e5e7eb;
+    padding: 4px 6px;
+  }
+
+  /* Gráficos Recharts ocupam largura cheia */
+  .recharts-wrapper, .recharts-surface {
+    background: white !important;
+  }
+
+  /* Quebra de página antes de seções principais */
+  section + section {
+    page-break-before: auto;
+  }
+
+  /* Detalhes colapsáveis sempre abertos no PDF */
+  details {
+    display: block !important;
+  }
+
+  details > summary {
+    list-style: none;
+  }
+
+  details[open] > div,
+  details > div {
+    display: block !important;
+  }
+}

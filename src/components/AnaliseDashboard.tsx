@@ -9,7 +9,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { Calendar, TrendingUp, AlertCircle, Sparkles } from "lucide-react";
+import { Calendar, TrendingUp, AlertCircle, Sparkles, Printer } from "lucide-react";
 import { useInventory } from "@/lib/store/inventory";
 import { SazonalidadeSection } from "./analise/SazonalidadeSection";
 import { ForecastSection } from "./analise/ForecastSection";
@@ -54,14 +54,25 @@ export function AnaliseDashboard() {
 
   return (
     <div className="space-y-8">
-      {/* Cabeçalho com escopo do dataset */}
-      {datasetInfo && (
-        <div className="rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] px-4 py-3 text-xs text-[var(--text-muted)]">
-          📊 Analisando <strong className="text-[var(--text-strong)]">{datasetInfo.total.toLocaleString("pt-BR")} vendas</strong>{" "}
-          em <strong className="text-[var(--text-strong)]">{datasetInfo.meses} meses</strong> de histórico
-          ({datasetInfo.min.toLocaleDateString("pt-BR")} → {datasetInfo.max.toLocaleDateString("pt-BR")})
-        </div>
-      )}
+      {/* Toolbar — escopo + ações (esconde no print) */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {datasetInfo && (
+          <div className="flex-1 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] px-4 py-3 text-xs text-[var(--text-muted)]">
+            📊 Analisando <strong className="text-[var(--text-strong)]">{datasetInfo.total.toLocaleString("pt-BR")} vendas</strong>{" "}
+            em <strong className="text-[var(--text-strong)]">{datasetInfo.meses} meses</strong> de histórico
+            ({datasetInfo.min.toLocaleDateString("pt-BR")} → {datasetInfo.max.toLocaleDateString("pt-BR")})
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => window.print()}
+          className="print-hide inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] px-3 py-2 text-xs font-medium text-[var(--text-body)] shadow-sm transition hover:bg-[var(--bg-muted)]"
+          title="Imprimir ou salvar como PDF (Ctrl+P)"
+        >
+          <Printer className="h-3.5 w-3.5" />
+          Imprimir / PDF
+        </button>
+      </div>
 
       {/* 1. Forecast — primeiro porque é o que tá ACONTECENDO AGORA */}
       <Section
