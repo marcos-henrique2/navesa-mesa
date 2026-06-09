@@ -5,7 +5,8 @@
  * + cards de comparativo + lista de top modelos com variação esperada.
  */
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { Filter } from "lucide-react";
 import { useInventory } from "@/lib/store/inventory";
 import {
   ComposedChart,
@@ -19,7 +20,11 @@ import {
   ReferenceLine,
   ResponsiveContainer,
 } from "recharts";
-import { calcularForecastGeral, calcularForecastPorModelo } from "@/lib/analytics/forecast";
+import {
+  calcularForecastGeral,
+  calcularForecastPorModelo,
+  calcularForecastPorLoja,
+} from "@/lib/analytics/forecast";
 import { cn, formatInt } from "@/lib/utils";
 
 const CONF_LABEL = { alta: "Alta", media: "Média", baixa: "Baixa" } as const;
@@ -30,10 +35,19 @@ const CONF_COR = {
 } as const;
 
 export function ForecastSection() {
-  const { vendas } = useInventory();
+  const { vendas, lojas } = useInventory();
+  const [lojaFiltro, setLojaFiltro] = useState<string>("all");
 
-  const forecast = useMemo(() => calcularForecastGeral(vendas), [vendas]);
+  const lojaCodNum = lojaFiltro === "all" ? null : Number(lojaFiltro);
+
+  const forecast = useMemo(
+    () => calcularForecastGeral(vendas, { lojaFiltro: lojaCodNum }),
+    [vendas, lojaCodNum],
+  );
   const porModelo = useMemo(() => calcularForecastPorModelo(vendas, { topN: 8 }), [vendas]);
+  const porLoja = useMemo(() => calcularForecastPorLoja(vendas), [vendas]);
+
+  const lojasComVendas = [...new Set(vendas.map((v) => v.cod_empresa).filter((c): c is number => c != null))].sort();
 
   if (!forecast) {
     return (
@@ -67,6 +81,31 @@ export function ForecastSection() {
 
   return (
     <div className="space-y-5 rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-5 shadow-[var(--shadow-sm)]">
+      {/* Seletor de loja */}
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="inline-flex items-center gap-1.5 text-xs">
+          <Filter className="h-3 w-3 text-[var(--text-subtle)]" />
+          <span className="text-[var(--text-muted)]">Loja:</span>
+          <select
+            value={lojaFiltro}
+            onChange={(e) => setLojaFiltro(e.target.value)}
+            className="rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-600)]"
+          >
+            <option value="all">Todas (consolidado)</option>
+            {lojasComVendas.map((l) => (
+              <option key={l} value={String(l)}>
+                {lojas[l]?.nome?.trim() ?? `Loja ${l}`}
+              </option>
+            ))}
+          </select>
+        </label>
+        {lojaFiltro !== "all" && (
+          <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+            Filtro ativo
+          </span>
+        )}
+      </div>
+
       {/* Cards do mês corrente */}
       <div className="grid gap-3 sm:grid-cols-3">
         <KpiCard
@@ -191,6 +230,69 @@ export function ForecastSection() {
                 </span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Projeção por loja */}
+      {porLoja.length > 1 && (
+        <div>
+          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            Projeção pra esse mês — por loja
+          </h3>
+          <div className="space-y-1.5">
+            {porLoja.map((p) => {
+              const pct =
+                p.projecaoTotal > 0 ? (p.realizadasEsteMes / p.projecaoTotal) * 100 : 0;
+              const nomeLoja = lojas[p.loja]?.nome?.trim() ?? `Loja ${p.loja}`;
+              return (
+                <button
+                  key={p.loja}
+                  type="button"
+                  onClick={() => setLojaFiltro(String(p.loja))}
+                  className="w-full rounded-md border border-[var(--border-soft)] bg-[var(--bg-app)] p-3 text-left transition hover:bg-[var(--bg-muted)]"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="truncate text-xs font-medium text-[var(--text-body)]" title={nomeLoja}>
+                      {nomeLoja}
+                    </span>
+                    <span className="shrink-0 text-xs tabular-nums">
+                      <span className="text-[var(--text-muted)]">
+                        {formatInt(p.realizadasEsteMes)} / {formatInt(p.projecaoTotal)}
+                      </span>
+                      <span
+                        className={cn(
+                          "ml-2 text-[10px] font-semibold",
+                          p.variacao >= 0
+                            ? "text-emerald-700 dark:text-emerald-400"
+                            : "text-amber-700 dark:text-amber-400",
+                        )}
+                      >
+                        {p.variacao >= 0 ? "+" : ""}{p.variacao}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="mt-1.5 h-1.5 overflow-hidden rounded bg-[var(--bg-muted)]">
+                    <div
+                      className={cn(
+                        "h-full transition-all",
+                        pct >= 100
+                          ? "bg-emerald-500"
+                          : pct >= 75
+                            ? "bg-blue-500"
+                            : pct >= 50
+                              ? "bg-amber-500"
+                              : "bg-red-500",
+                      )}
+                      style={{ width: `${Math.min(100, pct)}%` }}
+                    />
+                  </div>
+                  <p className="mt-1 text-[10px] text-[var(--text-muted)]">
+                    {pct.toFixed(0)}% da projeção · clique pra ver detalhe
+                  </p>
+                </button>
+              );
+            })}
           </div>
         </div>
       )}

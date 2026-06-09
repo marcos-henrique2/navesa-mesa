@@ -83,9 +83,19 @@ function desvioPadrao(valores: number[]): number {
 /**
  * Forecast geral de vendas (todos os modelos) pro mês corrente do dataset.
  * O "mês corrente" é o último mês com vendas no dataset.
+ *
+ * Pode opcionalmente filtrar por loja (cod_empresa) — útil pra projeções
+ * localizadas ("Ford Aeroporto vai fechar com X vendas").
  */
-export function calcularForecastGeral(vendas: VendaParsed[]): ForecastResultado | null {
-  const porMes = agregarPorMes(vendas);
+export function calcularForecastGeral(
+  vendas: VendaParsed[],
+  opts: { lojaFiltro?: number | null } = {},
+): ForecastResultado | null {
+  const vendasFiltradas =
+    opts.lojaFiltro != null
+      ? vendas.filter((v) => v.cod_empresa === opts.lojaFiltro)
+      : vendas;
+  const porMes = agregarPorMes(vendasFiltradas);
   if (porMes.length < 2) return null;
 
   // Último mês do dataset = mês "corrente" sendo projetado
@@ -101,7 +111,7 @@ export function calcularForecastGeral(vendas: VendaParsed[]): ForecastResultado 
     ultimosNMeses.reduce((s, m) => s + m.qt, 0) / ultimosNMeses.length;
 
   // Ajuste sazonal: pega índice sazonal do mês corrente
-  const sazonalidade = calcularSazonalidadeGeral(vendas);
+  const sazonalidade = calcularSazonalidadeGeral(vendasFiltradas);
   const idxSazonal = sazonalidade?.meses.find((m) => m.mes === corrente.mes);
   const indiceSazonal = idxSazonal && idxSazonal.indice > 0 ? idxSazonal.indice : 1;
 
@@ -153,6 +163,33 @@ export type ForecastPorModelo = {
   variacao: number;
 };
 
+export type ForecastPorLoja = {
+  loja: number;
+  realizadasEsteMes: number;
+  projecaoTotal: number;
+  variacao: number;
+};
+
+/**
+ * Forecast por loja: pra cada loja com >=2 meses de histórico, calcula
+ * a projeção do mês corrente. Útil pra ver onde está abaixo/acima do esperado.
+ */
+export function calcularForecastPorLoja(vendas: VendaParsed[]): ForecastPorLoja[] {
+  const lojas = [...new Set(vendas.map((v) => v.cod_empresa).filter((c): c is number => c != null))];
+  const out: ForecastPorLoja[] = [];
+  for (const loja of lojas) {
+    const r = calcularForecastGeral(vendas, { lojaFiltro: loja });
+    if (!r) continue;
+    out.push({
+      loja,
+      realizadasEsteMes: r.mesCorrente.realizadas,
+      projecaoTotal: r.mesCorrente.projecaoTotal,
+      variacao: r.mesCorrente.realizadas - r.mesCorrente.projecaoTotal,
+    });
+  }
+  return out.sort((a, b) => b.projecaoTotal - a.projecaoTotal);
+}
+
 /**
  * Forecast por modelo: compara realizado do mês anterior vs projeção do corrente.
  * Útil pra ver onde tá "abaixo do esperado".
@@ -164,7 +201,7 @@ export function calcularForecastPorModelo(
   const topN = opts.topN ?? 10;
 
   // Top modelos com mais vendas históricas
-  const sazonalidades = calcularSazonalidadeTopModelos(vendas, { topN, minVendas: 6 });
+  const sazonalidades = calcularSazonalidadeTopModelos(vendas, {}, { topN, minVendas: 6 });
 
   const out: ForecastPorModelo[] = [];
 
