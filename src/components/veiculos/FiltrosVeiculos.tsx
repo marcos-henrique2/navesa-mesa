@@ -10,6 +10,7 @@ type FiltroClasseValor = "all" | Classe | "showroom" | "repasse";
 type FiltroFipeValor = "all" | "acima" | "abaixo" | "sem";
 type FiltroCautelarValor = "all" | StatusCautelar | "sem";
 type FiltroFlagValor = "all" | "promocao" | "brinde" | "qualquer";
+type FiltroRepasseValor = "all" | "sim" | "nao";
 
 type SelectOption = [string, string];
 
@@ -58,6 +59,19 @@ type FiltrosVeiculosProps = {
   filtroFlag: FiltroFlagValor;
   setFiltroFlag: (v: FiltroFlagValor) => void;
 
+  filtroRepasse: FiltroRepasseValor;
+  setFiltroRepasse: (v: FiltroRepasseValor) => void;
+
+  idadeMin: string;
+  setIdadeMin: (v: string) => void;
+  idadeMax: string;
+  setIdadeMax: (v: string) => void;
+
+  margemMin: string;
+  setMargemMin: (v: string) => void;
+  margemMax: string;
+  setMargemMax: (v: string) => void;
+
   anoMin: string;
   setAnoMin: (v: string) => void;
   anoMax: string;
@@ -93,6 +107,9 @@ export function FiltrosVeiculos(props: FiltrosVeiculosProps) {
     filtroFipe, setFiltroFipe,
     filtroCautelar, setFiltroCautelar,
     filtroFlag, setFiltroFlag,
+    filtroRepasse, setFiltroRepasse,
+    idadeMin, setIdadeMin, idadeMax, setIdadeMax,
+    margemMin, setMargemMin, margemMax, setMargemMax,
     anoMin, setAnoMin, anoMax, setAnoMax,
     kmMin, setKmMin, kmMax, setKmMax,
     precoMin, setPrecoMin, precoMax, setPrecoMax,
@@ -251,12 +268,24 @@ export function FiltrosVeiculos(props: FiltrosVeiculosProps) {
                   ["qualquer", "Qualquer marcação"],
                 ]}
               />
+              <Select
+                label="Pra repasse"
+                value={filtroRepasse}
+                onChange={(v) => setFiltroRepasse(v as FiltroRepasseValor)}
+                options={[
+                  ["all", "Todos"],
+                  ["sim", "Sim — bate critérios"],
+                  ["nao", "Não — fora dos critérios"],
+                ]}
+              />
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
               <InputRange label="Ano modelo" valMin={anoMin} setMin={setAnoMin} valMax={anoMax} setMax={setAnoMax} placeholder="Ex: 2020" />
+              <InputRange label="Idade (anos)" valMin={idadeMin} setMin={setIdadeMin} valMax={idadeMax} setMax={setIdadeMax} placeholder="Ex: 5" />
               <InputRange label="KM" valMin={kmMin} setMin={setKmMin} valMax={kmMax} setMax={setKmMax} placeholder="Ex: 50000" />
               <InputRange label="Preço venda (R$)" valMin={precoMin} setMin={setPrecoMin} valMax={precoMax} setMax={setPrecoMax} placeholder="Ex: 85000" />
+              <InputRange label="Margem teórica (%)" valMin={margemMin} setMin={setMargemMin} valMax={margemMax} setMax={setMargemMax} placeholder="Ex: 5" />
               <InputRange label="Dias pátio" valMin={diasMin} setMin={setDiasMin} valMax={diasMax} setMax={setDiasMax} placeholder="Ex: 30" />
             </div>
           </div>

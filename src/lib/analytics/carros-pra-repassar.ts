@@ -21,6 +21,24 @@ const LIMITE_IDADE_ANOS = 10;
 const LIMITE_KM = 100_000;
 const LIMITE_DIAS_PATIO = 50;
 
+/**
+ * Função leve que diz se um veículo qualifica pra repasse — basta UM
+ * critério bater. Usada em filtragens de listagem (sem precisar do score
+ * completo).
+ *
+ * Mesma regra do `calcularCarrosPraRepassar` (sem o filtro de PREPARAÇÃO).
+ */
+export function ehPraRepasse(
+  v: VeiculoParsed,
+  anoReferencia: number = new Date().getFullYear(),
+): boolean {
+  const ano = v.ano_fabricacao ?? v.ano_modelo ?? null;
+  if (ano != null && ano > 0 && anoReferencia - ano >= LIMITE_IDADE_ANOS) return true;
+  if (v.km != null && v.km >= LIMITE_KM) return true;
+  if ((v.dias_patio ?? 0) >= LIMITE_DIAS_PATIO) return true;
+  return false;
+}
+
 export type MotivoRepasse =
   | { tipo: "idade"; anos: number }
   | { tipo: "km"; km: number }

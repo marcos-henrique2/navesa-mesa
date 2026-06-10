@@ -9,6 +9,7 @@ import { useFipeBatch } from "@/lib/fipe/useFipeBatch";
 import { calcularDesvioFipe } from "@/lib/fipe/batch";
 import { useCautelares, type StatusCautelar } from "@/lib/inventory/cautelar";
 import { useFlagsTodas } from "@/lib/data/flags-veiculo";
+import { ehPraRepasse } from "@/lib/analytics/carros-pra-repassar";
 import { computarDiagnosticoLista, type DiagnosticoStatus } from "@/lib/pricing/diagnostico";
 import { calcularMedianasKm } from "@/lib/pricing/medianas";
 import { usePersistedState } from "@/lib/hooks/usePersistedState";
@@ -64,6 +65,11 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
   const [filtroFipe, setFiltroFipe] = usePersistedState<"all" | "acima" | "abaixo" | "sem">("veiculos:filtroFipe", "all");
   const [filtroCautelar, setFiltroCautelar] = usePersistedState<"all" | StatusCautelar | "sem">("veiculos:filtroCautelar", "all");
   const [filtroFlag, setFiltroFlag] = usePersistedState<"all" | "promocao" | "brinde" | "qualquer">("veiculos:filtroFlag", "all");
+  const [filtroRepasse, setFiltroRepasse] = usePersistedState<"all" | "sim" | "nao">("veiculos:filtroRepasse", "all");
+  const [idadeMin, setIdadeMin] = usePersistedState<string>("veiculos:idadeMin", "");
+  const [idadeMax, setIdadeMax] = usePersistedState<string>("veiculos:idadeMax", "");
+  const [margemMin, setMargemMin] = usePersistedState<string>("veiculos:margemMin", "");
+  const [margemMax, setMargemMax] = usePersistedState<string>("veiculos:margemMax", "");
 
   // Nonce do último filtrosPrioridade que o usuário "fechou" manualmente (via Limpar filtros)
   // Deriva modoPrioridade do prop, exceto se já foi fechado pra esse nonce.
@@ -154,6 +160,9 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
     const kMin = num(kmMin), kMax = num(kmMax);
     const pMin = num(precoMin), pMax = num(precoMax);
     const dMin = num(diasMin), dMax = num(diasMax);
+    const idMin = num(idadeMin), idMax = num(idadeMax);
+    const mgMin = num(margemMin), mgMax = num(margemMax);
+    const anoRef = new Date().getFullYear();
 
     return veiculos.filter((v) => {
       if (modoPrioridade) {
@@ -211,6 +220,30 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
       if (pMax !== null && (v.preco_venda ?? Infinity) > pMax) return false;
       if (dMin !== null && (v.dias_patio ?? -Infinity) < dMin) return false;
       if (dMax !== null && (v.dias_patio ?? Infinity) > dMax) return false;
+      if (filtroRepasse !== "all") {
+        const ehRepasse = ehPraRepasse(v);
+        if (filtroRepasse === "sim" && !ehRepasse) return false;
+        if (filtroRepasse === "nao" && ehRepasse) return false;
+      }
+      if (idMin !== null || idMax !== null) {
+        const anoVeic = v.ano_fabricacao ?? v.ano_modelo;
+        if (anoVeic == null || anoVeic <= 0) {
+          // Sem ano → exclui se há qualquer filtro de idade
+          return false;
+        }
+        const idade = anoRef - anoVeic;
+        if (idMin !== null && idade < idMin) return false;
+        if (idMax !== null && idade > idMax) return false;
+      }
+      if (mgMin !== null || mgMax !== null) {
+        if (v.preco_venda == null || v.custo_total == null || v.preco_venda <= 0) {
+          // Sem dados pra calcular margem → exclui se há filtro
+          return false;
+        }
+        const margemPct = ((v.preco_venda - v.custo_total) / v.preco_venda) * 100;
+        if (mgMin !== null && margemPct < mgMin) return false;
+        if (mgMax !== null && margemPct > mgMax) return false;
+      }
       if (search) {
         const q = search.toLowerCase();
         const hay = `${v.placa} ${v.chassi} ${v.modelo} ${v.marca ?? ""}`.toLowerCase();
@@ -218,7 +251,7 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
       }
       return true;
     });
-  }, [veiculos, filtroLoja, filtroMarca, filtroCor, filtroComb, filtroSituacao, filtroPatio, filtroClasse, filtroFipe, filtroCautelar, filtroFlag, classifMap, fipeBatch, cautelares, flags, anoMin, anoMax, kmMin, kmMax, precoMin, precoMax, diasMin, diasMax, search, modoPrioridade, diagnosticosPrioridade]);
+  }, [veiculos, filtroLoja, filtroMarca, filtroCor, filtroComb, filtroSituacao, filtroPatio, filtroClasse, filtroFipe, filtroCautelar, filtroFlag, filtroRepasse, classifMap, fipeBatch, cautelares, flags, anoMin, anoMax, kmMin, kmMax, precoMin, precoMax, diasMin, diasMax, idadeMin, idadeMax, margemMin, margemMax, search, modoPrioridade, diagnosticosPrioridade]);
 
   const filtered = useMemo(() => {
     return filteredExceptStatus.filter((v) => {
@@ -247,8 +280,10 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
     setStatusFiltro("all"); setSearch(""); setFiltroLoja("all"); setFiltroMarca("all");
     setFiltroCor("all"); setFiltroComb("all"); setFiltroSituacao("all"); setFiltroPatio("all");
     setFiltroClasse("all"); setFiltroFipe("all"); setFiltroCautelar("all"); setFiltroFlag("all");
+    setFiltroRepasse("all");
     setAnoMin(""); setAnoMax(""); setKmMin(""); setKmMax("");
     setPrecoMin(""); setPrecoMax(""); setDiasMin(""); setDiasMax("");
+    setIdadeMin(""); setIdadeMax(""); setMargemMin(""); setMargemMax("");
     fecharModoPrioridade();
   };
 
@@ -371,7 +406,9 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
     filtroFipe !== "all",
     filtroCautelar !== "all",
     filtroFlag !== "all",
+    filtroRepasse !== "all",
     !!anoMin, !!anoMax, !!kmMin, !!kmMax, !!precoMin, !!precoMax, !!diasMin, !!diasMax,
+    !!idadeMin, !!idadeMax, !!margemMin, !!margemMax,
   ].filter(Boolean).length;
 
   const filtrosAtivos = filtrosEssenciaisAtivos + filtrosAvancadosAtivos;
@@ -405,6 +442,16 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
     setFiltroCautelar,
     filtroFlag,
     setFiltroFlag,
+    filtroRepasse,
+    setFiltroRepasse,
+    idadeMin,
+    setIdadeMin,
+    idadeMax,
+    setIdadeMax,
+    margemMin,
+    setMargemMin,
+    margemMax,
+    setMargemMax,
     avancadoOpen,
     setAvancadoOpen,
     anoMin,

@@ -67,6 +67,9 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
     cautelares,
     flags,
     filtroFlag, setFiltroFlag,
+    filtroRepasse, setFiltroRepasse,
+    idadeMin, setIdadeMin, idadeMax, setIdadeMax,
+    margemMin, setMargemMin, margemMax, setMargemMax,
     fipeBatch,
     modoPrioridade, fecharModoPrioridade,
     filtered,
@@ -336,6 +339,9 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
         filtroFipe={filtroFipe} setFiltroFipe={setFiltroFipe}
         filtroCautelar={filtroCautelar} setFiltroCautelar={setFiltroCautelar}
         filtroFlag={filtroFlag} setFiltroFlag={setFiltroFlag}
+        filtroRepasse={filtroRepasse} setFiltroRepasse={setFiltroRepasse}
+        idadeMin={idadeMin} setIdadeMin={setIdadeMin} idadeMax={idadeMax} setIdadeMax={setIdadeMax}
+        margemMin={margemMin} setMargemMin={setMargemMin} margemMax={margemMax} setMargemMax={setMargemMax}
         anoMin={anoMin} setAnoMin={setAnoMin} anoMax={anoMax} setAnoMax={setAnoMax}
         kmMin={kmMin} setKmMin={setKmMin} kmMax={kmMax} setKmMax={setKmMax}
         precoMin={precoMin} setPrecoMin={setPrecoMin} precoMax={precoMax} setPrecoMax={setPrecoMax}
