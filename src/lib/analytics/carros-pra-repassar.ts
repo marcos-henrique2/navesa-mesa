@@ -1,27 +1,30 @@
 /**
- * Carros pra repassar — ranking automatizado dos veículos que mais merecem
- * atenção pra repasse/leilão essa semana.
+ * Carros pra repassar — ranking baseado em critérios objetivos.
  *
- * Combina 4 sinais de risco em um score 0-100 e gera motivos legíveis:
- *   • Dias parado (peso 40) — Floor plan consumindo margem
- *   • Margem teórica (peso 30) — quanto pior, mais urgente
- *   • Desvio FIPE (peso 20) — caro = vai demorar mais
- *   • Cautelar (peso 10) — com restrição reduz mercado
+ * Regras de qualificação (basta UM bater pra o carro entrar na lista):
+ *   • Idade ≥ 10 anos (modelo ou fabricação)
+ *   • KM ≥ 100.000
+ *   • Dias de pátio ≥ 50
  *
- * Output: lista ranqueada com top N carros prioritários + motivos explicados
- * em chips. Pra cada carro também devolve faixa de preço sugerida pra repasse.
+ * Carros que batem MAIS critérios sobem no ranking — score baseado em
+ * quantidade de critérios disparados (1 = 50, 2 = 75, 3 = 100).
+ *
+ * Custos de manutenção, pintura, recondicionamento ficam por conta da
+ * análise no Auto Avaliar (fora deste sistema).
  */
 
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import type { BatchResult } from "@/lib/fipe/batch";
 import type { StatusCautelar } from "@/lib/inventory/cautelar";
 
+const LIMITE_IDADE_ANOS = 10;
+const LIMITE_KM = 100_000;
+const LIMITE_DIAS_PATIO = 50;
+
 export type MotivoRepasse =
-  | { tipo: "parado"; dias: number; severidade: "atencao" | "critico" }
-  | { tipo: "margem-fraca"; pct: number; severidade: "atencao" | "critico" }
-  | { tipo: "acima-fipe"; pct: number; severidade: "atencao" | "critico" }
-  | { tipo: "cautelar-restricao" }
-  | { tipo: "preco-acima-mercado"; precoSugerido: number };
+  | { tipo: "idade"; anos: number }
+  | { tipo: "km"; km: number }
+  | { tipo: "parado"; dias: number };
 
 export type CarroPraRepassar = {
   chassi: string;
@@ -29,6 +32,7 @@ export type CarroPraRepassar = {
   modelo: string;
   marca: string | null;
   anoModelo: number | null;
+  anoFabricacao: number | null;
   km: number | null;
   cor: string | null;
   loja: number;
@@ -41,7 +45,7 @@ export type CarroPraRepassar = {
   cautelar: StatusCautelar | null;
   /** Capital travado (custo de fábrica) */
   capitalTravado: number;
-  /** Score 0-100, maior = mais urgente pra repassar */
+  /** Score 0-100, maior = mais urgente pra repassar (combina nº critérios + intensidade) */
   score: number;
   /** Faixa de preço sugerida pra repasse: [piso, teto] */
   precoSugerido: { piso: number; teto: number } | null;
@@ -49,49 +53,17 @@ export type CarroPraRepassar = {
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Pontuação por dimensão (cada uma retorna 0-100)
+// Cálculo de idade do veículo
 // ──────────────────────────────────────────────────────────────────────────────
 
-/** Mapeia dias de pátio em score 0-100. */
-function scoreDias(dias: number): number {
-  if (dias <= 30) return 0;
-  if (dias <= 60) return 20;
-  if (dias <= 90) return 40;
-  if (dias <= 120) return 60;
-  if (dias <= 180) return 75;
-  if (dias <= 270) return 88;
-  if (dias <= 365) return 95;
-  return 100;
-}
-
-/** Mapeia margem teórica em score 0-100 (menor margem = score maior). */
-function scoreMargem(margemPct: number | null): number {
-  if (margemPct == null) return 50; // ausência de dado: neutro
-  if (margemPct < -10) return 100;
-  if (margemPct < -5) return 90;
-  if (margemPct < 0) return 80;
-  if (margemPct < 3) return 60;
-  if (margemPct < 5) return 40;
-  if (margemPct < 10) return 20;
-  return 0;
-}
-
-/** Mapeia desvio FIPE em score 0-100. Só penaliza preço ACIMA da FIPE. */
-function scoreFipe(desvioPct: number | null): number {
-  if (desvioPct == null) return 30; // sem FIPE = penalidade leve (incerteza)
-  if (desvioPct <= 0) return 0; // abaixo da FIPE = ok
-  if (desvioPct <= 3) return 10;
-  if (desvioPct <= 5) return 30;
-  if (desvioPct <= 10) return 60;
-  if (desvioPct <= 15) return 80;
-  return 100;
-}
-
-/** Cautelar com restrição/reprovação aumenta urgência de repasse. */
-function scoreCautelar(c: StatusCautelar | null): number {
-  if (c === "reprovado") return 100;
-  if (c === "com_restricao") return 60;
-  return 0;
+/**
+ * Calcula idade em anos usando o ano mais antigo entre fabricação e modelo.
+ * Comparado com o ano atual.
+ */
+function calcularIdade(v: VeiculoParsed, anoReferencia: number): number | null {
+  const ano = v.ano_fabricacao ?? v.ano_modelo ?? null;
+  if (ano == null || ano <= 0) return null;
+  return anoReferencia - ano;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -99,34 +71,26 @@ function scoreCautelar(c: StatusCautelar | null): number {
 // ──────────────────────────────────────────────────────────────────────────────
 
 /**
- * Calcula faixa sugerida pra repasse. Lógica:
+ * Faixa sugerida pra repasse. Lógica:
  *   • Base = FIPE (se houver) ou preço atual ÷ 1.10
- *   • Aplica desconto por dias parado (até -10%)
- *   • Aplica desconto adicional por cautelar com restrição (-5%)
- *   • Retorna piso (mínimo aceitável) e teto (alvo)
+ *   • Aplica desconto crescente conforme número de critérios batidos
+ *   • Aplica desconto extra por cautelar com restrição
  */
 function calcularPrecoSugerido(
   precoVenda: number | null,
   precoFipe: number | null,
-  diasPatio: number,
+  qtCriteriosBatidos: number,
   cautelar: StatusCautelar | null,
 ): { piso: number; teto: number } | null {
   const base = precoFipe ?? (precoVenda != null && precoVenda > 0 ? precoVenda / 1.1 : null);
   if (base == null || base <= 0) return null;
 
-  // Desconto por tempo parado
-  let descontoTempo = 0;
-  if (diasPatio > 365) descontoTempo = 0.15;
-  else if (diasPatio > 270) descontoTempo = 0.12;
-  else if (diasPatio > 180) descontoTempo = 0.08;
-  else if (diasPatio > 120) descontoTempo = 0.05;
-  else if (diasPatio > 90) descontoTempo = 0.03;
-
-  // Desconto extra por cautelar com restrição
+  // Desconto base aumenta com nº de critérios batidos
+  const descontoCriterios = qtCriteriosBatidos === 1 ? 0.05 : qtCriteriosBatidos === 2 ? 0.10 : 0.15;
   const descontoCautelar = cautelar === "com_restricao" ? 0.05 : 0;
 
-  const teto = base * (1 - descontoTempo);
-  const piso = teto * (1 - 0.05 - descontoCautelar); // 5% abaixo do teto + cautelar
+  const teto = base * (1 - descontoCriterios);
+  const piso = teto * (1 - 0.05 - descontoCautelar);
 
   return { piso: Math.round(piso), teto: Math.round(teto) };
 }
@@ -135,23 +99,22 @@ function calcularPrecoSugerido(
 // Função principal
 // ──────────────────────────────────────────────────────────────────────────────
 
-const PESOS = {
-  dias: 0.4,
-  margem: 0.3,
-  fipe: 0.2,
-  cautelar: 0.1,
-} as const;
-
 export type OpcoesRepasse = {
-  /** Não considera carros parados há menos disso (default 60d) */
-  diasMinimo?: number;
-  /** Não considera carros em PREPARAÇÃO (default true) */
+  /** Ano de referência pra calcular idade (default: ano atual). */
+  anoReferencia?: number;
+  /** Não considera carros em PREPARAÇÃO (default true). */
   excluirPreparacao?: boolean;
 };
 
 /**
- * Calcula o ranking completo de "carros pra repassar".
- * Já vem ordenado pelos mais urgentes (score desc).
+ * Calcula o ranking de "carros pra repassar".
+ *
+ * Critérios de qualificação (basta 1 bater):
+ *   • Idade >= 10 anos
+ *   • KM >= 100.000
+ *   • Dias de pátio >= 50
+ *
+ * Ordenado pelos mais urgentes primeiro (score desc).
  */
 export function calcularCarrosPraRepassar(
   veiculos: VeiculoParsed[],
@@ -159,61 +122,68 @@ export function calcularCarrosPraRepassar(
   cautelares: Record<string, StatusCautelar>,
   opts: OpcoesRepasse = {},
 ): CarroPraRepassar[] {
-  const diasMinimo = opts.diasMinimo ?? 60;
+  // Ano de referência: padrão é o ano atual. Permitir override pra testes.
+  const anoReferencia = opts.anoReferencia ?? new Date().getFullYear();
   const excluirPrep = opts.excluirPreparacao ?? true;
 
   const out: CarroPraRepassar[] = [];
 
   for (const v of veiculos) {
-    const dias = v.dias_patio ?? 0;
-    if (dias < diasMinimo) continue;
-
-    // Pula preparação se solicitado (carro nem é "vendável" ainda)
+    // Pula preparação se solicitado
     if (excluirPrep && v.patio?.toUpperCase().includes("PREPARA")) continue;
 
-    const margemPct =
-      v.preco_venda != null && v.custo_total != null && v.preco_venda > 0
-        ? ((v.preco_venda - v.custo_total) / v.preco_venda) * 100
-        : null;
+    const motivos: MotivoRepasse[] = [];
 
+    // Critério 1: idade
+    const idade = calcularIdade(v, anoReferencia);
+    if (idade != null && idade >= LIMITE_IDADE_ANOS) {
+      motivos.push({ tipo: "idade", anos: idade });
+    }
+
+    // Critério 2: KM
+    if (v.km != null && v.km >= LIMITE_KM) {
+      motivos.push({ tipo: "km", km: v.km });
+    }
+
+    // Critério 3: dias parado
+    const dias = v.dias_patio ?? 0;
+    if (dias >= LIMITE_DIAS_PATIO) {
+      motivos.push({ tipo: "parado", dias });
+    }
+
+    // Se não bateu nenhum critério, pula
+    if (motivos.length === 0) continue;
+
+    // Score: 1 critério = 50, 2 = 75, 3 = 100
+    // Bonus pequeno por intensidade (cada critério acima do limite soma até +10)
+    const scoreBase = motivos.length === 1 ? 50 : motivos.length === 2 ? 75 : 100;
+
+    // Intensidade extra: quanto mais acima do limite, mais urgente
+    let bonusIntensidade = 0;
+    if (idade != null && idade >= LIMITE_IDADE_ANOS) {
+      bonusIntensidade += Math.min(5, (idade - LIMITE_IDADE_ANOS) * 0.5);
+    }
+    if (v.km != null && v.km >= LIMITE_KM) {
+      bonusIntensidade += Math.min(5, ((v.km - LIMITE_KM) / 50_000) * 5);
+    }
+    if (dias >= LIMITE_DIAS_PATIO) {
+      bonusIntensidade += Math.min(5, ((dias - LIMITE_DIAS_PATIO) / 100) * 5);
+    }
+    const score = Math.min(100, Math.round(scoreBase + bonusIntensidade));
+
+    // Dados auxiliares (FIPE, cautelar, margem) — só pra contexto, não pra qualificação
     const precoFipe = fipeBatch?.items?.[v.chassi]?.precoFipe ?? null;
     const desvioFipePct =
       precoFipe != null && precoFipe > 0 && v.preco_venda != null
         ? ((v.preco_venda - precoFipe) / precoFipe) * 100
         : null;
-
     const cautelar = cautelares[v.chassi] ?? null;
+    const margemPct =
+      v.preco_venda != null && v.custo_total != null && v.preco_venda > 0
+        ? ((v.preco_venda - v.custo_total) / v.preco_venda) * 100
+        : null;
 
-    // Score combinado
-    const sDias = scoreDias(dias);
-    const sMargem = scoreMargem(margemPct);
-    const sFipe = scoreFipe(desvioFipePct);
-    const sCautelar = scoreCautelar(cautelar);
-    const score = Math.round(
-      sDias * PESOS.dias + sMargem * PESOS.margem + sFipe * PESOS.fipe + sCautelar * PESOS.cautelar,
-    );
-
-    // Só inclui carros com score relevante (>= 40)
-    if (score < 40) continue;
-
-    // Motivos legíveis pra mostrar na UI
-    const motivos: MotivoRepasse[] = [];
-    if (dias > 180) motivos.push({ tipo: "parado", dias, severidade: "critico" });
-    else if (dias > 90) motivos.push({ tipo: "parado", dias, severidade: "atencao" });
-    if (margemPct != null) {
-      if (margemPct < 0) motivos.push({ tipo: "margem-fraca", pct: margemPct, severidade: "critico" });
-      else if (margemPct < 5) motivos.push({ tipo: "margem-fraca", pct: margemPct, severidade: "atencao" });
-    }
-    if (desvioFipePct != null && desvioFipePct > 5) {
-      motivos.push({
-        tipo: "acima-fipe",
-        pct: desvioFipePct,
-        severidade: desvioFipePct > 10 ? "critico" : "atencao",
-      });
-    }
-    if (cautelar === "com_restricao") motivos.push({ tipo: "cautelar-restricao" });
-
-    const precoSugerido = calcularPrecoSugerido(v.preco_venda, precoFipe, dias, cautelar);
+    const precoSugerido = calcularPrecoSugerido(v.preco_venda, precoFipe, motivos.length, cautelar);
 
     out.push({
       chassi: v.chassi,
@@ -221,6 +191,7 @@ export function calcularCarrosPraRepassar(
       modelo: v.modelo,
       marca: v.marca,
       anoModelo: v.ano_modelo,
+      anoFabricacao: v.ano_fabricacao,
       km: v.km,
       cor: v.cor_externa,
       loja: v.cod_empresa,
@@ -247,6 +218,7 @@ export function calcularCarrosPraRepassar(
 export type ResumoRepasse = {
   total: number;
   capitalTotal: number;
+  /** Carros que batem TODOS os 3 critérios (urgência máxima) */
   criticos: number;
   topN: CarroPraRepassar[];
 };
@@ -255,7 +227,8 @@ export function resumirRepasse(carros: CarroPraRepassar[], topN: number = 5): Re
   return {
     total: carros.length,
     capitalTotal: carros.reduce((s, c) => s + c.capitalTravado, 0),
-    criticos: carros.filter((c) => c.score >= 75).length,
+    // Crítico = bate os 3 critérios simultaneamente (score 100)
+    criticos: carros.filter((c) => c.motivos.length === 3).length,
     topN: carros.slice(0, topN),
   };
 }

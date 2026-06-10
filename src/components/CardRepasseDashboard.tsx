@@ -81,20 +81,15 @@ export function CardRepasseDashboard() {
                     {top2Motivos.map((m, i) => {
                       let label = "";
                       switch (m.tipo) {
+                        case "idade":
+                          label = `${m.anos} anos`;
+                          break;
+                        case "km":
+                          label = `${m.km.toLocaleString("pt-BR")} km`;
+                          break;
                         case "parado":
                           label = `${m.dias}d parado`;
                           break;
-                        case "margem-fraca":
-                          label = `Margem ${m.pct >= 0 ? "+" : ""}${m.pct.toFixed(1)}%`;
-                          break;
-                        case "acima-fipe":
-                          label = `+${m.pct.toFixed(1)}% FIPE`;
-                          break;
-                        case "cautelar-restricao":
-                          label = "Cautelar restrição";
-                          break;
-                        default:
-                          label = "";
                       }
                       return (
                         <span key={i}>

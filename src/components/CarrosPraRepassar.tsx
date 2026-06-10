@@ -18,10 +18,8 @@ import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Clock,
-  TrendingDown,
-  Banknote,
-  ShieldAlert,
-  Calculator,
+  Calendar,
+  Gauge,
   ChevronRight,
   Building2,
   Filter,
@@ -41,7 +39,7 @@ export function CarrosPraRepassar() {
   const fipeBatch = useFipeBatch();
   const cautelares = useCautelares();
   const [filtroLoja, setFiltroLoja] = useState<string>("all");
-  const [scoreMin, setScoreMin] = useState<number>(40);
+  const [scoreMin, setScoreMin] = useState<number>(50);
 
   const carros = useMemo(() => {
     if (!isHydrated) return [];
@@ -75,10 +73,10 @@ export function CarrosPraRepassar() {
     return (
       <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-6 text-center dark:border-emerald-900/60 dark:bg-emerald-950/30">
         <p className="text-sm font-medium text-emerald-800 dark:text-emerald-300">
-          ✅ Nenhum carro precisa de atenção urgente pra repasse no momento.
+          ✅ Nenhum carro precisa de repasse no momento.
         </p>
         <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-400">
-          Critério: score ≥ 40 baseado em dias de pátio + margem + FIPE + cautelar.
+          Critérios: 10 anos ou mais de uso · 100.000 km ou mais · 50 dias parado ou mais.
         </p>
       </div>
     );
@@ -116,16 +114,15 @@ export function CarrosPraRepassar() {
             </select>
           </label>
           <label className="inline-flex items-center gap-1.5 text-xs">
-            <span className="text-[var(--text-muted)]">Score mín:</span>
+            <span className="text-[var(--text-muted)]">Critérios:</span>
             <select
               value={String(scoreMin)}
               onChange={(e) => setScoreMin(Number(e.target.value))}
               className="rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--brand-600)]"
             >
-              <option value="40">40+ (todos)</option>
-              <option value="60">60+ (atenção)</option>
-              <option value="75">75+ (crítico)</option>
-              <option value="85">85+ (urgência máxima)</option>
+              <option value="50">Bate ao menos 1</option>
+              <option value="75">Bate 2 ou mais</option>
+              <option value="100">Bate os 3 (crítico)</option>
             </select>
           </label>
         </div>
@@ -253,37 +250,28 @@ function scoreToColor(score: number): { bg: string; text: string } {
 }
 
 function ChipMotivo({ motivo }: { motivo: MotivoRepasse }) {
-  const sev = "severidade" in motivo ? motivo.severidade : null;
-  const tom =
-    sev === "critico"
-      ? "bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300"
-      : sev === "atencao"
-        ? "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
-        : "bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300";
-
   let icon: React.ReactNode = null;
   let texto = "";
+  // Cores fixas por tipo de critério — todos têm peso igual no novo modelo
+  let tom = "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300";
 
   switch (motivo.tipo) {
+    case "idade":
+      icon = <Calendar className="h-3 w-3" />;
+      texto = `${motivo.anos} anos de uso`;
+      tom = "bg-orange-100 text-orange-800 dark:bg-orange-950/40 dark:text-orange-300";
+      break;
+    case "km":
+      icon = <Gauge className="h-3 w-3" />;
+      texto = `${motivo.km.toLocaleString("pt-BR")} km`;
+      tom = "bg-purple-100 text-purple-800 dark:bg-purple-950/40 dark:text-purple-300";
+      break;
     case "parado":
       icon = <Clock className="h-3 w-3" />;
-      texto = motivo.dias > 365 ? `${motivo.dias}d parado (+1 ano)` : `${motivo.dias}d parado`;
-      break;
-    case "margem-fraca":
-      icon = <TrendingDown className="h-3 w-3" />;
-      texto = `Margem ${motivo.pct >= 0 ? "+" : ""}${motivo.pct.toFixed(1)}%`;
-      break;
-    case "acima-fipe":
-      icon = <Banknote className="h-3 w-3" />;
-      texto = `+${motivo.pct.toFixed(1)}% acima FIPE`;
-      break;
-    case "cautelar-restricao":
-      icon = <ShieldAlert className="h-3 w-3" />;
-      texto = "Cautelar com restrição";
-      break;
-    case "preco-acima-mercado":
-      icon = <Calculator className="h-3 w-3" />;
-      texto = `Sugerido ${formatBRL(motivo.precoSugerido)}`;
+      texto = `${motivo.dias} dias parado`;
+      tom = motivo.dias >= 180
+        ? "bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300"
+        : "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300";
       break;
   }
 
