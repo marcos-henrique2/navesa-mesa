@@ -20,7 +20,7 @@
  * Sem detalhes de margem/venda — quem cuida disso é o Auto Avaliar.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Download,
   Loader2,
@@ -37,9 +37,25 @@ import {
   listRepasses,
   marcarComoSubido,
   marcarVariosComoSubido,
+  updateRepasseCampos,
+  type RepasseCamposManuaisPatch,
 } from "@/lib/repasses/queries";
-import type { Repasse, RepasseStatus } from "@/lib/repasses/types";
-import { STATUS_LABEL } from "@/lib/repasses/types";
+import type {
+  CautelarStatus,
+  DocStatus,
+  IpvaStatus,
+  Repasse,
+  RepasseStatus,
+} from "@/lib/repasses/types";
+import {
+  CAUTELAR_LABEL,
+  CAUTELAR_VALUES,
+  DOC_LABEL,
+  DOC_VALUES,
+  IPVA_LABEL,
+  IPVA_VALUES,
+  STATUS_LABEL,
+} from "@/lib/repasses/types";
 import { gerarRelatorioRepasseProfissional } from "@/lib/export/relatorio-repasse-xlsx";
 import { useChassisEmRepasse } from "@/lib/repasses/useChassisEmRepasse";
 import { usePersistedState } from "@/lib/hooks/usePersistedState";
@@ -217,6 +233,53 @@ export function RepassesLista() {
       setProcessando(false);
     }
   }
+
+  /**
+   * Patch otimista nos campos manuais. Atualiza UI imediatamente; salva em
+   * background. Se Supabase reclamar (CHECK fail, network) reverte o estado.
+   *
+   * Não aciona spinner global `processando` — edição inline precisa fluir
+   * sem bloquear o resto da tela.
+   */
+  const handlePatchCampos = useCallback(
+    async (id: number, patch: RepasseCamposManuaisPatch) => {
+      // Snapshot pra rollback.
+      const anterior = repasses.find((r) => r.id === id);
+      if (!anterior) return;
+
+      // Aplica otimista no estado local.
+      setRepasses((prev) =>
+        prev.map((r) =>
+          r.id === id
+            ? {
+                ...r,
+                ...("ipva_status" in patch ? { ipva_status: patch.ipva_status ?? null } : {}),
+                ...("documentacao_status" in patch
+                  ? { documentacao_status: patch.documentacao_status ?? null }
+                  : {}),
+                ...("cautelar_status_manual" in patch
+                  ? { cautelar_status_manual: patch.cautelar_status_manual ?? null }
+                  : {}),
+                ...("valor_subir" in patch ? { valor_subir: patch.valor_subir ?? null } : {}),
+                ...("observacoes" in patch ? { observacoes: patch.observacoes ?? null } : {}),
+              }
+            : r,
+        ),
+      );
+
+      try {
+        const atualizado = await updateRepasseCampos(id, patch);
+        // Substitui pelo retorno autoritativo do banco (ex.: trim de string vazia).
+        setRepasses((prev) => prev.map((r) => (r.id === id ? atualizado : r)));
+      } catch (err) {
+        // Rollback: volta ao estado anterior.
+        setRepasses((prev) => prev.map((r) => (r.id === id ? anterior : r)));
+        const msg = err instanceof Error ? err.message : String(err);
+        showErrorToast(`Erro ao salvar: ${msg}`);
+      }
+    },
+    [repasses],
+  );
 
   async function exportarLista(lista: ReadonlyArray<Repasse>) {
     if (exportando || lista.length === 0) return;
@@ -424,6 +487,7 @@ export function RepassesLista() {
           onToggleTodos={toggleTodos}
           onMarcarSubido={handleMarcarSubido}
           onRemover={handleRemover}
+          onPatchCampos={handlePatchCampos}
           processando={processando}
         />
       )}
@@ -460,6 +524,7 @@ function TabelaRepasses({
   onToggleTodos,
   onMarcarSubido,
   onRemover,
+  onPatchCampos,
   processando,
 }: {
   repasses: Repasse[];
@@ -469,6 +534,7 @@ function TabelaRepasses({
   onToggleTodos: () => void;
   onMarcarSubido: (id: number) => void;
   onRemover: (id: number) => void;
+  onPatchCampos: (id: number, patch: RepasseCamposManuaisPatch) => void | Promise<void>;
   processando: boolean;
 }) {
   const todosSelecionados =
@@ -497,9 +563,15 @@ function TabelaRepasses({
             <Th className="text-right">KM</Th>
             <Th>Loja</Th>
             <Th>Pátio</Th>
-            <Th className="text-right">Dias parado</Th>
+            <Th className="text-right">Dias</Th>
             <Th className="text-right">Preço atual</Th>
             <Th className="text-right">Custo</Th>
+            {/* Campos manuais (Caminho B — inline edit) */}
+            <Th>IPVA</Th>
+            <Th>Doc</Th>
+            <Th>Cautelar</Th>
+            <Th className="text-right">Valor pra subir</Th>
+            <Th>Observação</Th>
             <Th>Status</Th>
             <Th>Data marcado</Th>
             <Th />
@@ -529,15 +601,61 @@ function TabelaRepasses({
                   <div className="font-medium text-[var(--text-strong)]">{r.modelo}</div>
                   {r.marca && <div className="text-[10px] text-[var(--text-subtle)]">{r.marca}</div>}
                 </Td>
-                <Td className="text-xs text-[var(--text-muted)]">
-                  {r.ano_modelo ?? "—"}
-                </Td>
+                <Td className="text-xs text-[var(--text-muted)]">{r.ano_modelo ?? "—"}</Td>
                 <Td className="text-right text-xs tabular-nums">{formatInt(r.km)}</Td>
-                <Td className="text-xs">{r.loja_origem != null ? nomeOuCodigo(lojas, r.loja_origem) : "—"}</Td>
+                <Td className="text-xs">
+                  {r.loja_origem != null ? nomeOuCodigo(lojas, r.loja_origem) : "—"}
+                </Td>
                 <Td className="text-xs">{r.patio_origem ?? "—"}</Td>
                 <Td className="text-right text-xs tabular-nums">{dias != null ? `${dias}d` : "—"}</Td>
                 <Td className="text-right tabular-nums">{formatBRL(r.preco_atual)}</Td>
                 <Td className="text-right tabular-nums">{formatBRL(r.valor_aquisicao)}</Td>
+
+                {/* IPVA */}
+                <Td>
+                  <IpvaSelect
+                    value={r.ipva_status}
+                    onChange={(v) => void onPatchCampos(r.id, { ipva_status: v })}
+                    placa={r.placa}
+                  />
+                </Td>
+
+                {/* Doc */}
+                <Td>
+                  <DocSelect
+                    value={r.documentacao_status}
+                    onChange={(v) => void onPatchCampos(r.id, { documentacao_status: v })}
+                    placa={r.placa}
+                  />
+                </Td>
+
+                {/* Cautelar manual */}
+                <Td>
+                  <CautelarSelect
+                    value={r.cautelar_status_manual}
+                    onChange={(v) => void onPatchCampos(r.id, { cautelar_status_manual: v })}
+                    placa={r.placa}
+                  />
+                </Td>
+
+                {/* Valor pra subir */}
+                <Td className="text-right">
+                  <ValorSubirInput
+                    value={r.valor_subir}
+                    onCommit={(v) => void onPatchCampos(r.id, { valor_subir: v })}
+                    placa={r.placa}
+                  />
+                </Td>
+
+                {/* Observação */}
+                <Td>
+                  <ObservacaoInput
+                    value={r.observacoes}
+                    onCommit={(v) => void onPatchCampos(r.id, { observacoes: v })}
+                    placa={r.placa}
+                  />
+                </Td>
+
                 <Td>
                   <StatusBadge status={r.status} />
                 </Td>
@@ -572,6 +690,267 @@ function TabelaRepasses({
         </tbody>
       </table>
     </div>
+  );
+}
+
+// ─── Inline edit components ─────────────────────────────────────────────────
+
+const SELECT_BASE =
+  "w-full rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-1.5 py-0.5 text-[11px] text-[var(--text-body)] focus:border-[var(--brand-500)] focus:outline-none";
+
+/** Cor de fundo do select por status preenchido. Cells vazias mantêm bg neutro. */
+function corIpva(s: IpvaStatus | null): string {
+  if (s === "pago") return "bg-emerald-50 dark:bg-emerald-950/30";
+  if (s === "em_aberto") return "bg-amber-50 dark:bg-amber-950/30";
+  if (s === "nao_verificado") return "bg-[var(--bg-muted)]";
+  return "";
+}
+function corDoc(s: DocStatus | null): string {
+  if (s === "ok") return "bg-emerald-50 dark:bg-emerald-950/30";
+  if (s === "pendente") return "bg-amber-50 dark:bg-amber-950/30";
+  if (s === "irregular") return "bg-red-50 dark:bg-red-950/30";
+  if (s === "nao_verificado") return "bg-[var(--bg-muted)]";
+  return "";
+}
+function corCautelar(s: CautelarStatus | null): string {
+  if (s === "limpa") return "bg-emerald-50 dark:bg-emerald-950/30";
+  if (s === "com_restricao") return "bg-red-50 dark:bg-red-950/30";
+  if (s === "nao_verificada") return "bg-[var(--bg-muted)]";
+  return "";
+}
+
+function IpvaSelect({
+  value,
+  onChange,
+  placa,
+}: {
+  value: IpvaStatus | null;
+  onChange: (v: IpvaStatus | null) => void;
+  placa: string;
+}) {
+  return (
+    <select
+      aria-label={`IPVA de ${placa}`}
+      className={cn(SELECT_BASE, "min-w-[110px]", corIpva(value))}
+      value={value ?? ""}
+      onChange={(e) => {
+        const v = e.target.value;
+        onChange(v === "" ? null : (v as IpvaStatus));
+      }}
+    >
+      <option value="">—</option>
+      {IPVA_VALUES.map((v) => (
+        <option key={v} value={v}>
+          {IPVA_LABEL[v]}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function DocSelect({
+  value,
+  onChange,
+  placa,
+}: {
+  value: DocStatus | null;
+  onChange: (v: DocStatus | null) => void;
+  placa: string;
+}) {
+  return (
+    <select
+      aria-label={`Documentação de ${placa}`}
+      className={cn(SELECT_BASE, "min-w-[110px]", corDoc(value))}
+      value={value ?? ""}
+      onChange={(e) => {
+        const v = e.target.value;
+        onChange(v === "" ? null : (v as DocStatus));
+      }}
+    >
+      <option value="">—</option>
+      {DOC_VALUES.map((v) => (
+        <option key={v} value={v}>
+          {DOC_LABEL[v]}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function CautelarSelect({
+  value,
+  onChange,
+  placa,
+}: {
+  value: CautelarStatus | null;
+  onChange: (v: CautelarStatus | null) => void;
+  placa: string;
+}) {
+  return (
+    <select
+      aria-label={`Cautelar de ${placa}`}
+      className={cn(SELECT_BASE, "min-w-[110px]", corCautelar(value))}
+      value={value ?? ""}
+      onChange={(e) => {
+        const v = e.target.value;
+        onChange(v === "" ? null : (v as CautelarStatus));
+      }}
+    >
+      <option value="">—</option>
+      {CAUTELAR_VALUES.map((v) => (
+        <option key={v} value={v}>
+          {CAUTELAR_LABEL[v]}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/**
+ * Parse de número BR-tolerante:
+ *   - "138.500,00" → 138500
+ *   - "138500.50"  → 138500.5
+ *   - "" / inválido → null
+ * Aceita ponto OU vírgula como decimal — escolhe o último separador como decimal,
+ * e remove os outros (assume serem milhar).
+ */
+function parseValorBR(raw: string): number | null {
+  const s = raw.trim().replace(/[R$\s]/g, "");
+  if (s === "") return null;
+  const lastComma = s.lastIndexOf(",");
+  const lastDot = s.lastIndexOf(".");
+  let normalizado: string;
+  if (lastComma > lastDot) {
+    // vírgula é decimal — tira pontos (milhar), troca vírgula por ponto.
+    normalizado = s.replace(/\./g, "").replace(",", ".");
+  } else if (lastDot > lastComma) {
+    // ponto é decimal — tira vírgulas (milhar).
+    normalizado = s.replace(/,/g, "");
+  } else {
+    normalizado = s;
+  }
+  const n = Number(normalizado);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n;
+}
+
+/**
+ * Input pra valor R$. Mantém estado local (string) durante edição;
+ * commita no banco apenas no blur ou Enter — evita request a cada tecla.
+ * Sem debounce porque o blur já cobre o caso natural de "perdi o foco".
+ */
+function ValorSubirInput({
+  value,
+  onCommit,
+  placa,
+}: {
+  value: number | null;
+  onCommit: (v: number | null) => void;
+  placa: string;
+}) {
+  const [draft, setDraft] = useState<string>(value != null ? String(value) : "");
+
+  // Sincroniza quando a prop muda (ex.: rollback de erro vindo do pai).
+  useEffect(() => {
+    setDraft(value != null ? String(value) : "");
+  }, [value]);
+
+  function commit() {
+    const parsed = parseValorBR(draft);
+    if (parsed === value) return; // sem mudança
+    onCommit(parsed);
+  }
+
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      aria-label={`Valor pra subir de ${placa}`}
+      placeholder="R$"
+      className={cn(
+        "w-full min-w-[120px] rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-1.5 py-0.5 text-right text-[11px] tabular-nums text-[var(--text-body)] focus:border-[var(--brand-500)] focus:outline-none",
+        value != null && "bg-emerald-50 dark:bg-emerald-950/30",
+      )}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.currentTarget.blur();
+        } else if (e.key === "Escape") {
+          setDraft(value != null ? String(value) : "");
+          e.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
+/**
+ * Input de observação inline. Commit no blur ou Enter (sem nova linha — texto
+ * curto, livre). Truncamento natural via overflow do input (não precisa de
+ * preview separado).
+ */
+function ObservacaoInput({
+  value,
+  onCommit,
+  placa,
+}: {
+  value: string | null;
+  onCommit: (v: string | null) => void;
+  placa: string;
+}) {
+  const [draft, setDraft] = useState<string>(value ?? "");
+
+  useEffect(() => {
+    setDraft(value ?? "");
+  }, [value]);
+
+  // Debounce 600ms — caso usuário digite muito sem dar blur.
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function commit(immediate: boolean) {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    const novo = draft.trim() === "" ? null : draft;
+    const atual = value ?? null;
+    if (novo === atual) return;
+    if (immediate) {
+      onCommit(novo);
+    } else {
+      timeoutRef.current = setTimeout(() => onCommit(novo), 600);
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
+
+  return (
+    <input
+      type="text"
+      aria-label={`Observação de ${placa}`}
+      placeholder="—"
+      className="w-full min-w-[180px] truncate rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-1.5 py-0.5 text-[11px] text-[var(--text-body)] focus:border-[var(--brand-500)] focus:outline-none"
+      value={draft}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        commit(false);
+      }}
+      onBlur={() => commit(true)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.currentTarget.blur();
+        } else if (e.key === "Escape") {
+          setDraft(value ?? "");
+          e.currentTarget.blur();
+        }
+      }}
+    />
   );
 }
 

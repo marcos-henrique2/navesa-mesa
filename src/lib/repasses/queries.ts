@@ -20,7 +20,16 @@ import { getSupabase } from "@/lib/data/supabase";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import { buildChassisEmRepasseMap, type RepasseAtivoRow } from "./chassis-em-repasse";
 import { criarErroRepasse } from "./erros";
-import type { Repasse, RepasseCanal } from "./types";
+import {
+  isCautelarStatus,
+  isDocStatus,
+  isIpvaStatus,
+  type CautelarStatus,
+  type DocStatus,
+  type IpvaStatus,
+  type Repasse,
+  type RepasseCanal,
+} from "./types";
 
 // ─── REPASSES ────────────────────────────────────────────────────────────────
 
@@ -63,6 +72,11 @@ type RepasseRow = {
   data_subido: string | null;
   canal: RepasseCanal;
   status: string;
+  ipva_status: string | null;
+  documentacao_status: string | null;
+  cautelar_status_manual: string | null;
+  valor_subir: number | string | null;
+  observacoes: string | null;
   criado_em: string;
   atualizado_em: string;
 };
@@ -74,6 +88,23 @@ function rowToRepasse(row: RepasseRow): Repasse {
     row.status === "marcado" || row.status === "subido" || row.status === "cancelado"
       ? row.status
       : "marcado";
+
+  // Status manuais: type guards rejeitam valor inesperado (vira null).
+  // Defesa em profundidade — banco já tem CHECK constraint.
+  const ipva = isIpvaStatus(row.ipva_status) ? row.ipva_status : null;
+  const doc = isDocStatus(row.documentacao_status) ? row.documentacao_status : null;
+  const cautelar = isCautelarStatus(row.cautelar_status_manual)
+    ? row.cautelar_status_manual
+    : null;
+
+  // Supabase pode retornar NUMERIC como string em alguns casos — normaliza.
+  const valorSubir =
+    row.valor_subir == null
+      ? null
+      : typeof row.valor_subir === "string"
+        ? Number(row.valor_subir)
+        : row.valor_subir;
+
   return {
     id: row.id,
     chassi: row.chassi,
@@ -92,6 +123,11 @@ function rowToRepasse(row: RepasseRow): Repasse {
     data_subido: row.data_subido,
     canal: row.canal,
     status,
+    ipva_status: ipva,
+    documentacao_status: doc,
+    cautelar_status_manual: cautelar,
+    valor_subir: valorSubir != null && Number.isFinite(valorSubir) ? valorSubir : null,
+    observacoes: row.observacoes,
     criado_em: row.criado_em,
     atualizado_em: row.atualizado_em,
   };
@@ -188,6 +224,96 @@ export async function marcarVariosComoSubido(ids: ReadonlyArray<number>): Promis
     .select("id");
   if (error) throw new Error(`Falha ao marcar como subidos: ${error.message}`);
   return (data ?? []).length;
+}
+
+// ─── Inline edit dos campos manuais (Caminho B) ──────────────────────────────
+
+/** Patch parcial pros 5 campos manuais. Campos omitidos não são tocados. */
+export type RepasseCamposManuaisPatch = {
+  ipva_status?: IpvaStatus | null;
+  documentacao_status?: DocStatus | null;
+  cautelar_status_manual?: CautelarStatus | null;
+  valor_subir?: number | null;
+  observacoes?: string | null;
+};
+
+/**
+ * Atualiza um ou mais dos 5 campos manuais inline.
+ *
+ * Defesa em profundidade: rejeita valores fora do enum ANTES de mandar pro
+ * banco. O CHECK constraint já bloqueia, mas validar aqui dá erro mais claro
+ * pra UI (não chega no Supabase).
+ *
+ * `valor_subir` aceita number finito ou null. Negativo é rejeitado (não faz
+ * sentido pra preço).
+ *
+ * `observacoes` aceita qualquer string (incluindo vazia, que normaliza pra null).
+ */
+export async function updateRepasseCampos(
+  id: number,
+  patch: RepasseCamposManuaisPatch,
+): Promise<Repasse> {
+  // Monta o update só com os campos presentes no patch.
+  const update: Record<string, IpvaStatus | DocStatus | CautelarStatus | number | string | null> = {};
+
+  if ("ipva_status" in patch) {
+    const v = patch.ipva_status;
+    if (v !== null && !isIpvaStatus(v)) {
+      throw new Error(`ipva_status inválido: ${String(v)}`);
+    }
+    update.ipva_status = v;
+  }
+
+  if ("documentacao_status" in patch) {
+    const v = patch.documentacao_status;
+    if (v !== null && !isDocStatus(v)) {
+      throw new Error(`documentacao_status inválido: ${String(v)}`);
+    }
+    update.documentacao_status = v;
+  }
+
+  if ("cautelar_status_manual" in patch) {
+    const v = patch.cautelar_status_manual;
+    if (v !== null && !isCautelarStatus(v)) {
+      throw new Error(`cautelar_status_manual inválido: ${String(v)}`);
+    }
+    update.cautelar_status_manual = v;
+  }
+
+  if ("valor_subir" in patch) {
+    const v = patch.valor_subir;
+    if (v !== null) {
+      if (typeof v !== "number" || !Number.isFinite(v) || v < 0) {
+        throw new Error(`valor_subir inválido: ${String(v)}`);
+      }
+    }
+    update.valor_subir = v;
+  }
+
+  if ("observacoes" in patch) {
+    const v = patch.observacoes;
+    if (v !== null && typeof v !== "string") {
+      throw new Error(`observacoes inválido: ${typeof v}`);
+    }
+    // String vazia vira null pra consistência.
+    update.observacoes = v != null && v.trim() === "" ? null : v;
+  }
+
+  if (Object.keys(update).length === 0) {
+    throw new Error("updateRepasseCampos: patch vazio");
+  }
+
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("repasses")
+    .update(update)
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error || !data) {
+    throw new Error(`Falha ao atualizar campos: ${error?.message ?? "sem dados"}`);
+  }
+  return rowToRepasse(data as RepasseRow);
 }
 
 export async function deleteRepasse(id: number): Promise<void> {

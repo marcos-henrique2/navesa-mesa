@@ -1,14 +1,17 @@
 /**
  * Gerador de planilha XLSX profissional pra carros marcados pra repasse.
  *
- * Uma planilha = lista de carros. Marcos baixa, preenche IPVA/Doc/Cautelar/
- * Observação no Excel (dropdowns + observação livre), e sobe no Auto Avaliar.
+ * Caminho B (Sprint nova): Marcos preenche IPVA/Doc/Cautelar/Valor pra subir/
+ * Observação INLINE no /repasses. Esse XLSX agora vem PRÉ-PREENCHIDO com o
+ * que ele já colocou no sistema. Cells vazias mantêm o dropdown como fallback
+ * caso ele queira preencher no Excel.
  *
  * Layout: 1 aba só ("Carros pra Repasse").
  *   - Linhas 1-3: cabeçalho com título, data de geração, total + capital travado
- *   - Linha 5: header da tabela (17 colunas)
- *   - Linha 6+: dados dos carros (snapshot)
- *   - Colunas IPVA / Doc / Cautelar / Observação: vazias, com data validation
+ *   - Linha 5: header da tabela (18 colunas)
+ *   - Linha 6+: dados dos carros (snapshot + campos manuais já preenchidos)
+ *   - Cells preenchidas: SEM dataValidation, COM cor de fundo de status
+ *   - Cells vazias: COM dataValidation apontando pra `_Listas`
  *   - AutoFilter no header + frozen header (5 linhas)
  *
  * Por que `exceljs` e não `xlsx` (SheetJS)?
@@ -18,8 +21,17 @@
  */
 
 import ExcelJS from "exceljs";
-import { CANAL_LABEL, STATUS_LABEL } from "@/lib/repasses/types";
-import type { Repasse } from "@/lib/repasses/types";
+import {
+  CANAL_LABEL,
+  CAUTELAR_LABEL,
+  DOC_LABEL,
+  IPVA_LABEL,
+  STATUS_LABEL,
+  type CautelarStatus,
+  type DocStatus,
+  type IpvaStatus,
+  type Repasse,
+} from "@/lib/repasses/types";
 
 const FMT_BRL = '"R$" #,##0.00;[Red]-"R$" #,##0.00';
 const FMT_INT = "#,##0";
@@ -29,6 +41,12 @@ const COR_TITULO_FG = "FFFFFFFF";
 const COR_HEADER_BG = "FF3B82F6"; // azul Tailwind blue-500
 const COR_HEADER_FG = "FFFFFFFF";
 const COR_ZEBRA = "FFF3F4F6"; // cinza claro
+
+// Cores de fundo por status preenchido (paleta clara, contraste com texto preto)
+const COR_OK = "FFD1FAE5"; // emerald-100
+const COR_WARN = "FFFEF3C7"; // amber-100
+const COR_BAD = "FFFEE2E2"; // red-100
+const COR_NEUTRO = "FFE5E7EB"; // gray-200
 
 const BORDA_FINA: Partial<ExcelJS.Borders> = {
   top: { style: "thin", color: { argb: "FFD1D5DB" } },
@@ -60,6 +78,9 @@ function diasParado(dataMarcado: string): number | null {
  * como capital travado mesmo se aparecem no export (filtro "Todos").
  *
  * Consistente com o KPI da tela de /repasses.
+ *
+ * NOTA: continua usando `preco_atual` (snapshot do estoque) e não `valor_subir`
+ * (decisão manual mutável). KPI = capital travado real, não palpite.
  */
 function somarPrecoAtualMarcados(repasses: ReadonlyArray<Repasse>): number {
   let total = 0;
@@ -85,13 +106,15 @@ const COLUNAS: ReadonlyArray<{ key: string; header: string; width: number }> = [
   { key: "dias_parado", header: "Dias parado", width: 11 },
   { key: "preco_atual", header: "Preço atual", width: 14 },
   { key: "custo", header: "Custo", width: 14 },
+  { key: "valor_subir", header: "Valor pra subir", width: 15 },
   { key: "ipva", header: "IPVA", width: 16 },
   { key: "doc", header: "Doc", width: 16 },
   { key: "cautelar", header: "Cautelar", width: 16 },
   { key: "observacao", header: "Observação", width: 40 },
 ];
 
-const COL_IPVA = COLUNAS.findIndex((c) => c.key === "ipva") + 1; // 1-based
+const COL_VALOR_SUBIR = COLUNAS.findIndex((c) => c.key === "valor_subir") + 1; // 1-based
+const COL_IPVA = COLUNAS.findIndex((c) => c.key === "ipva") + 1;
 const COL_DOC = COLUNAS.findIndex((c) => c.key === "doc") + 1;
 const COL_CAUTELAR = COLUNAS.findIndex((c) => c.key === "cautelar") + 1;
 const COL_OBS = COLUNAS.findIndex((c) => c.key === "observacao") + 1;
@@ -107,10 +130,47 @@ const DATA_START_ROW = 6;
  * numa aba auxiliar oculta (`_Listas`) — workaround pra data validation
  * funcionar em qualquer locale (Excel pt-BR usa `;` como separador, e o
  * `formulae: ['"a,b,c"']` inline quebra).
+ *
+ * Ordem precisa bater com as constantes IPVA_VALUES/DOC_VALUES/CAUTELAR_VALUES
+ * dos types.ts — mas como o XLSX é só pra exibição, mantemos os labels.
  */
 const OPCOES_IPVA: ReadonlyArray<string> = ["Pago", "Em aberto", "Não verificado"];
 const OPCOES_DOC: ReadonlyArray<string> = ["OK", "Pendente", "Irregular", "Não verificado"];
 const OPCOES_CAUTELAR: ReadonlyArray<string> = ["Limpa", "Com restrição", "Não verificada"];
+
+/** Cor de fundo por status preenchido. */
+function corIpva(s: IpvaStatus): string {
+  switch (s) {
+    case "pago":
+      return COR_OK;
+    case "em_aberto":
+      return COR_WARN;
+    case "nao_verificado":
+      return COR_NEUTRO;
+  }
+}
+function corDoc(s: DocStatus): string {
+  switch (s) {
+    case "ok":
+      return COR_OK;
+    case "pendente":
+      return COR_WARN;
+    case "irregular":
+      return COR_BAD;
+    case "nao_verificado":
+      return COR_NEUTRO;
+  }
+}
+function corCautelar(s: CautelarStatus): string {
+  switch (s) {
+    case "limpa":
+      return COR_OK;
+    case "com_restricao":
+      return COR_BAD;
+    case "nao_verificada":
+      return COR_NEUTRO;
+  }
+}
 
 export async function gerarRelatorioRepasseProfissional(
   repasses: ReadonlyArray<Repasse>,
@@ -184,10 +244,24 @@ export async function gerarRelatorioRepasseProfissional(
   headerRow.height = 22;
 
   // ─── Dados (linha 6+) ──────────────────────────────────────────────────────
+  // Rastreia quais cells dos campos manuais ficaram VAZIAS → recebem dataValidation.
+  // Cells preenchidas: sem validation (já tem dado) + cor de fundo do status.
+  const linhasVaziasPorCol: Record<number, number[]> = {
+    [COL_IPVA]: [],
+    [COL_DOC]: [],
+    [COL_CAUTELAR]: [],
+  };
+
   repasses.forEach((r, idx) => {
     const rowNum = DATA_START_ROW + idx;
     const row = ws.getRow(rowNum);
     const zebra = idx % 2 === 1;
+
+    const ipvaLabel = r.ipva_status ? IPVA_LABEL[r.ipva_status] : "";
+    const docLabel = r.documentacao_status ? DOC_LABEL[r.documentacao_status] : "";
+    const cautelarLabel = r.cautelar_status_manual
+      ? CAUTELAR_LABEL[r.cautelar_status_manual]
+      : "";
 
     const valores: Array<string | number | Date | null> = [
       idx + 1,
@@ -204,10 +278,11 @@ export async function gerarRelatorioRepasseProfissional(
       diasParado(r.data_marcado) ?? "",
       r.preco_atual ?? "",
       r.valor_aquisicao ?? "",
-      "", // IPVA — preencher no Excel
-      "", // Doc — preencher no Excel
-      "", // Cautelar — preencher no Excel
-      "", // Observação — preencher no Excel
+      r.valor_subir ?? "",
+      ipvaLabel,
+      docLabel,
+      cautelarLabel,
+      r.observacoes ?? "",
     ];
 
     for (let i = 0; i < valores.length; i++) {
@@ -222,35 +297,64 @@ export async function gerarRelatorioRepasseProfissional(
     row.getCell(COL_PRECO).numFmt = FMT_BRL;
     row.getCell(COL_CUSTO).numFmt = FMT_BRL;
     row.getCell(COL_KM).numFmt = FMT_INT;
+    if (r.valor_subir != null) {
+      row.getCell(COL_VALOR_SUBIR).numFmt = FMT_BRL;
+    }
     row.getCell(COL_OBS).alignment = { wrapText: true, vertical: "top" };
     row.height = 20;
+
+    // Cor de fundo + tracking de cells vazias pros dropdowns.
+    if (r.ipva_status) {
+      row.getCell(COL_IPVA).fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: corIpva(r.ipva_status) },
+      };
+    } else {
+      linhasVaziasPorCol[COL_IPVA]!.push(rowNum);
+    }
+    if (r.documentacao_status) {
+      row.getCell(COL_DOC).fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: corDoc(r.documentacao_status) },
+      };
+    } else {
+      linhasVaziasPorCol[COL_DOC]!.push(rowNum);
+    }
+    if (r.cautelar_status_manual) {
+      row.getCell(COL_CAUTELAR).fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: corCautelar(r.cautelar_status_manual) },
+      };
+    } else {
+      linhasVaziasPorCol[COL_CAUTELAR]!.push(rowNum);
+    }
   });
 
   const lastDataRow = totalRegistros > 0 ? DATA_START_ROW + totalRegistros - 1 : DATA_START_ROW;
 
-  // ─── Data validation (dropdowns) ───────────────────────────────────────────
+  // ─── Data validation (dropdowns) — SÓ nas cells vazias ─────────────────────
   // Referência range na aba "_Listas" (oculta). Funciona em qualquer locale
   // do Excel — string inline com vírgula quebra em Excel BR (separador ";").
   if (totalRegistros > 0) {
-    aplicarValidationColuna(
+    aplicarValidationEmLinhas(
       ws,
       COL_IPVA,
-      DATA_START_ROW,
-      lastDataRow,
+      linhasVaziasPorCol[COL_IPVA]!,
       rangeListas("A", OPCOES_IPVA.length),
     );
-    aplicarValidationColuna(
+    aplicarValidationEmLinhas(
       ws,
       COL_DOC,
-      DATA_START_ROW,
-      lastDataRow,
+      linhasVaziasPorCol[COL_DOC]!,
       rangeListas("B", OPCOES_DOC.length),
     );
-    aplicarValidationColuna(
+    aplicarValidationEmLinhas(
       ws,
       COL_CAUTELAR,
-      DATA_START_ROW,
-      lastDataRow,
+      linhasVaziasPorCol[COL_CAUTELAR]!,
       rangeListas("C", OPCOES_CAUTELAR.length),
     );
   }
@@ -276,19 +380,18 @@ export async function gerarRelatorioRepasseProfissional(
 }
 
 /**
- * Aplica data validation (dropdown) numa coluna do range de dados.
+ * Aplica data validation (dropdown) em linhas específicas (não-contíguas).
  *
  * `formula` deve apontar pra um range na aba `_Listas` (ex.: `_Listas!$A$1:$A$3`).
  * Inline values com vírgula quebram em Excel BR — sempre use range.
  */
-function aplicarValidationColuna(
+function aplicarValidationEmLinhas(
   ws: ExcelJS.Worksheet,
   col: number,
-  rowStart: number,
-  rowEnd: number,
+  rows: ReadonlyArray<number>,
   formula: string,
 ) {
-  for (let r = rowStart; r <= rowEnd; r++) {
+  for (const r of rows) {
     const cell = ws.getCell(r, col);
     cell.dataValidation = {
       type: "list",

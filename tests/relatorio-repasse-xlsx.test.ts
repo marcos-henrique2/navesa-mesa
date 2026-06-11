@@ -1,17 +1,20 @@
 /**
  * Testes do XLSX profissional de carros pra repasse.
  *
- * O XLSX agora é 1 aba "Carros pra Repasse" com:
+ * Após Sprint Caminho B: cells dos campos manuais vêm pré-preenchidas a partir
+ * do que Marcos colocou inline no /repasses. Cells vazias mantêm dropdown
+ * (fallback caso queira preencher no Excel). Nova coluna "Valor pra subir"
+ * entre Custo e IPVA — total 18 colunas (era 17).
+ *
+ * Layout: 1 aba "Carros pra Repasse" com:
  *   - Cabeçalho de 3 linhas (título + data + totais)
  *   - Header da tabela na linha 5
- *   - Dados a partir da linha 6 (snapshot do veículo)
- *   - Colunas IPVA/Doc/Cautelar vazias com data validation (dropdown)
- *   - Coluna Observação vazia + wrap text
- *   - AutoFilter no header
- *   - Frozen header (5 linhas)
+ *   - Dados a partir da linha 6 (snapshot + campos manuais)
+ *   - Cells preenchidas: sem dataValidation, com cor de fundo de status
+ *   - Cells vazias: com dataValidation apontando pra `_Listas`
+ *   - AutoFilter + frozen 5 linhas
  *
- * Sem fórmulas vivas — Marcos vai preencher manualmente no Excel e subir
- * pro Auto Avaliar. Quem cuida de venda/margem é o Auto Avaliar.
+ * Quem cuida de venda/margem é o Auto Avaliar.
  */
 
 import { describe, it } from "node:test";
@@ -39,6 +42,11 @@ function buildRepasse(over: Partial<Repasse> = {}): Repasse {
     data_subido: null,
     canal: "auto_avaliar",
     status: "marcado",
+    ipva_status: null,
+    documentacao_status: null,
+    cautelar_status_manual: null,
+    valor_subir: null,
+    observacoes: null,
     criado_em: "2026-05-01T12:00:00Z",
     atualizado_em: "2026-05-01T12:00:00Z",
     ...over,
@@ -118,17 +126,19 @@ describe("gerarRelatorioRepasseProfissional", () => {
     assert.doesNotMatch(linha, /R\$ 150/, "não deveria somar o subido no capital travado");
   });
 
-  it("header da tabela está na linha 5", async () => {
+  it("header da tabela está na linha 5 com 18 colunas (Valor pra subir + IPVA/Doc/Cautelar/Obs)", async () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
     assert.equal(ws.getCell("A5").value, "#");
     assert.equal(ws.getCell("B5").value, "Placa");
     assert.equal(ws.getCell("C5").value, "Chassi");
-    assert.equal(ws.getCell("O5").value, "IPVA");
-    assert.equal(ws.getCell("P5").value, "Doc");
-    assert.equal(ws.getCell("Q5").value, "Cautelar");
-    assert.equal(ws.getCell("R5").value, "Observação");
+    assert.equal(ws.getCell("N5").value, "Custo");
+    assert.equal(ws.getCell("O5").value, "Valor pra subir");
+    assert.equal(ws.getCell("P5").value, "IPVA");
+    assert.equal(ws.getCell("Q5").value, "Doc");
+    assert.equal(ws.getCell("R5").value, "Cautelar");
+    assert.equal(ws.getCell("S5").value, "Observação");
   });
 
   it("dados começam na linha 6 com snapshot do veículo", async () => {
@@ -144,47 +154,72 @@ describe("gerarRelatorioRepasseProfissional", () => {
     assert.equal(ws.getCell("N6").value, 120000); // custo (valor aquisição)
   });
 
-  it("IPVA, Doc, Cautelar e Observação ficam VAZIAS no export", async () => {
+  it("repasse SEM campos manuais: IPVA/Doc/Cautelar/Obs/Valor pra subir ficam VAZIOS", async () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    assert.equal(ws.getCell("O6").value ?? "", "");
-    assert.equal(ws.getCell("P6").value ?? "", "");
-    assert.equal(ws.getCell("Q6").value ?? "", "");
-    assert.equal(ws.getCell("R6").value ?? "", "");
+    assert.equal(ws.getCell("O6").value ?? "", ""); // Valor pra subir
+    assert.equal(ws.getCell("P6").value ?? "", ""); // IPVA
+    assert.equal(ws.getCell("Q6").value ?? "", ""); // Doc
+    assert.equal(ws.getCell("R6").value ?? "", ""); // Cautelar
+    assert.equal(ws.getCell("S6").value ?? "", ""); // Observação
   });
 
-  it("IPVA tem data validation apontando pra range na aba _Listas (BR-safe)", async () => {
+  it("repasse COM campos manuais preenchidos: cells vêm com os labels pt-BR", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([
+      buildRepasse({
+        ipva_status: "pago",
+        documentacao_status: "ok",
+        cautelar_status_manual: "limpa",
+        valor_subir: 138_500,
+        observacoes: "Pneu dianteiro pra trocar",
+      }),
+    ]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    assert.equal(ws.getCell("O6").value, 138500); // numérico
+    assert.equal(ws.getCell("P6").value, "Pago");
+    assert.equal(ws.getCell("Q6").value, "OK");
+    assert.equal(ws.getCell("R6").value, "Limpa");
+    assert.equal(ws.getCell("S6").value, "Pneu dianteiro pra trocar");
+  });
+
+  it("cell preenchida NÃO tem dataValidation (já tem dado)", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([
+      buildRepasse({ ipva_status: "pago" }),
+    ]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    const cell = ws.getCell("P6"); // IPVA preenchido
+    assert.equal(cell.dataValidation, undefined, "IPVA preenchido não deve ter dropdown");
+  });
+
+  it("cell vazia mantém dataValidation pra `_Listas` (fallback Excel)", async () => {
     // Inline values com vírgula quebra em Excel locale BR (separador ";").
     // Solução: planilha auxiliar oculta com valores + range absoluto.
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    const cell = ws.getCell("O6");
-    assert.ok(cell.dataValidation, "IPVA deveria ter dataValidation");
+    const cell = ws.getCell("P6"); // IPVA vazio
+    assert.ok(cell.dataValidation, "IPVA vazio deveria ter dataValidation");
     assert.equal(cell.dataValidation!.type, "list");
     const formula = String((cell.dataValidation!.formulae ?? [])[0] ?? "");
     assert.match(formula, /^_Listas!\$A\$1:\$A\$3$/, `esperado range _Listas, recebido: ${formula}`);
   });
 
-  it("Doc tem data validation apontando pra range na aba _Listas", async () => {
+  it("Doc vazio aponta pra range B (4 valores); Cautelar vazia pra C (3 valores)", async () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    const cell = ws.getCell("P6");
-    assert.ok(cell.dataValidation);
-    const formula = String((cell.dataValidation!.formulae ?? [])[0] ?? "");
-    assert.match(formula, /^_Listas!\$B\$1:\$B\$4$/, `esperado range B, recebido: ${formula}`);
-  });
+    const doc = ws.getCell("Q6");
+    assert.ok(doc.dataValidation);
+    const fDoc = String((doc.dataValidation!.formulae ?? [])[0] ?? "");
+    assert.match(fDoc, /^_Listas!\$B\$1:\$B\$4$/, `Doc: ${fDoc}`);
 
-  it("Cautelar tem data validation apontando pra range na aba _Listas", async () => {
-    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
-    const wb = await abrir(buf);
-    const ws = wb.worksheets[0]!;
-    const cell = ws.getCell("Q6");
-    assert.ok(cell.dataValidation);
-    const formula = String((cell.dataValidation!.formulae ?? [])[0] ?? "");
-    assert.match(formula, /^_Listas!\$C\$1:\$C\$3$/, `esperado range C, recebido: ${formula}`);
+    const caut = ws.getCell("R6");
+    assert.ok(caut.dataValidation);
+    const fCaut = String((caut.dataValidation!.formulae ?? [])[0] ?? "");
+    assert.match(fCaut, /^_Listas!\$C\$1:\$C\$3$/, `Cautelar: ${fCaut}`);
   });
 
   it("aba _Listas existe oculta com opções IPVA/Doc/Cautelar", async () => {
@@ -244,6 +279,17 @@ describe("gerarRelatorioRepasseProfissional", () => {
     assert.match(String(preco.numFmt ?? ""), /R\$/);
     const custo = ws.getCell("N6");
     assert.match(String(custo.numFmt ?? ""), /R\$/);
+  });
+
+  it("Valor pra subir preenchido vem com formato R$ BR", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([
+      buildRepasse({ valor_subir: 138_500 }),
+    ]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    const vs = ws.getCell("O6");
+    assert.equal(vs.value, 138500);
+    assert.match(String(vs.numFmt ?? ""), /R\$/, "Valor pra subir preenchido precisa ter numFmt R$");
   });
 
   it("conta dias parado desde data_marcado", async () => {

@@ -22,25 +22,37 @@
 - Widget dashboard mantido (top 5 candidatos a repasse)
 - 125 testes verdes
 
+### Sprint Caminho B — Inline edit dos 5 campos manuais no /repasses (11/jun/2026)
+
+**Problema:** preencher dados no XLSX = perde tudo a cada nova exportação. Solução: dados vivem no SISTEMA, XLSX vem pré-preenchido.
+
+- Migration 011: `ipva_status` (NEW), `cautelar_status_manual` (NEW), `valor_subir` (NEW); `documentacao_status` legacy relaxado (NULL ok + valor `nao_verificado`); `observacoes` legacy reusada
+- Tipos `IpvaStatus`, `DocStatus`, `CautelarStatus` + LABEL pt-BR + type guards (defesa em profundidade)
+- `updateRepasseCampos(id, patch)` — patch parcial com validação antes do banco
+- `RepassesLista` ganha 5 colunas editáveis inline (selects + inputs com debounce 600ms pra texto)
+- Patch otimista: UI atualiza imediato, rollback em erro
+- XLSX 18 colunas (+1 "Valor pra subir"): cells preenchidas sem dropdown e com cor de fundo de status; cells vazias mantêm dropdown fallback
+- 149 testes verdes (+ 24 desde Sprint 1)
+
 ---
 
 ## 🚦 Em revisão (Marcos avaliando)
 
-### Revisão pós-Sprint 1
-- _(nada pendente — itens consolidados acima)_
+### Revisão pós-Caminho B
+- _(usar com carros reais e listar gaps)_
 
 ---
 
 ## 🔜 Próximos passos sugeridos
 
-### 1. Usar Sprint 1 com 1-2 carros reais — Marcos
-- Cadastrar primeiro repasse end-to-end
-- Baixar XLSX, abrir no Excel/Sheets, editar gasto, ver margem recalcular
-- Listar o que faltou descobrir
+### 1. Usar Caminho B com 1-2 carros reais — Marcos
+- Marcar carro → preencher os 5 campos inline → exportar → conferir XLSX pré-preenchido
+- Persistir dados ao re-exportar (não perder)
 - Output: lista de ajustes pra Sprint 2
 
 ### 2. Sprint 2 — Refinamentos Repasses (6-8h)
-Débitos técnicos da revisão Quinn:
+Débitos técnicos:
+- **Pré-preencher cautelar manual a partir do sistema** (mapeamento `aprovado→limpa`, `com_restricao→com_restricao`) — pulado nesta sprint pra evitar acoplamento client-side
 - **F3** Helper `hojeLocal()` pra evitar UTC-shift de data (queries + 3 modais)
 - **F4** Modal de "subir" via `/repasses` passa valor sugerido
 - **F5** Spinner por linha no checklist de documentação

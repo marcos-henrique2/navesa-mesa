@@ -45,9 +45,55 @@ export type Repasse = {
 
   status: RepasseStatus;
 
+  // ─── Campos manuais (Caminho B — inline edit no /repasses) ────────────
+  ipva_status: IpvaStatus | null;
+  documentacao_status: DocStatus | null;
+  cautelar_status_manual: CautelarStatus | null;
+  valor_subir: number | null;
+  observacoes: string | null;
+
   criado_em: string; // ISO
   atualizado_em: string; // ISO
 };
+
+// ─── Status manuais (Caminho B) ──────────────────────────────────────────────
+
+export type IpvaStatus = "pago" | "em_aberto" | "nao_verificado";
+export type DocStatus = "ok" | "pendente" | "irregular" | "nao_verificado";
+export type CautelarStatus = "limpa" | "com_restricao" | "nao_verificada";
+
+export const IPVA_VALUES: ReadonlyArray<IpvaStatus> = ["pago", "em_aberto", "nao_verificado"];
+export const DOC_VALUES: ReadonlyArray<DocStatus> = ["ok", "pendente", "irregular", "nao_verificado"];
+export const CAUTELAR_VALUES: ReadonlyArray<CautelarStatus> = ["limpa", "com_restricao", "nao_verificada"];
+
+export const IPVA_LABEL: Record<IpvaStatus, string> = {
+  pago: "Pago",
+  em_aberto: "Em aberto",
+  nao_verificado: "Não verificado",
+};
+
+export const DOC_LABEL: Record<DocStatus, string> = {
+  ok: "OK",
+  pendente: "Pendente",
+  irregular: "Irregular",
+  nao_verificado: "Não verificado",
+};
+
+export const CAUTELAR_LABEL: Record<CautelarStatus, string> = {
+  limpa: "Limpa",
+  com_restricao: "Com restrição",
+  nao_verificada: "Não verificada",
+};
+
+export function isIpvaStatus(v: unknown): v is IpvaStatus {
+  return typeof v === "string" && (IPVA_VALUES as ReadonlyArray<string>).includes(v);
+}
+export function isDocStatus(v: unknown): v is DocStatus {
+  return typeof v === "string" && (DOC_VALUES as ReadonlyArray<string>).includes(v);
+}
+export function isCautelarStatus(v: unknown): v is CautelarStatus {
+  return typeof v === "string" && (CAUTELAR_VALUES as ReadonlyArray<string>).includes(v);
+}
 
 // ─── Labels pt-BR ────────────────────────────────────────────────────────────
 
