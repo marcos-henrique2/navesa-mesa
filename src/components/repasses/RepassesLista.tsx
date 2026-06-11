@@ -71,7 +71,14 @@ import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 type StatusFiltro = "marcado" | "subido" | "todos";
 
 export function RepassesLista() {
-  const { lojas } = useInventory();
+  const { lojas, veiculos } = useInventory();
+  // Map chassi → dias_patio ATUAL do estoque (não snapshot da marcação).
+  // Marcos espera ver dias de pátio reais — quanto tempo o carro está parado.
+  const diasPatioPorChassi = useMemo(() => {
+    const m = new Map<string, number | null>();
+    for (const v of veiculos) m.set(v.chassi, v.dias_patio);
+    return m;
+  }, [veiculos]);
   const { removerLocalmente: removerChassiEmRepasse } = useChassisEmRepasse();
   const [repasses, setRepasses] = useState<Repasse[]>([]);
   const [carregando, setCarregando] = useState(true);
@@ -521,6 +528,7 @@ export function RepassesLista() {
         <TabelaRepasses
           repasses={filtrados}
           lojas={lojas}
+          diasPatioPorChassi={diasPatioPorChassi}
           selecionados={selecionados}
           onToggleUm={toggleUm}
           onToggleTodos={toggleTodos}
@@ -565,9 +573,11 @@ function TabelaRepasses({
   onRemover,
   onPatchCampos,
   processando,
+  diasPatioPorChassi,
 }: {
   repasses: Repasse[];
   lojas: ReturnType<typeof useInventory>["lojas"];
+  diasPatioPorChassi: Map<string, number | null>;
   selecionados: Set<number>;
   onToggleUm: (id: number) => void;
   onToggleTodos: () => void;
@@ -608,7 +618,7 @@ function TabelaRepasses({
             <Th className="text-right">KM</Th>
             <Th>Loja</Th>
             <Th>Pátio</Th>
-            <Th className="text-right">Dias</Th>
+            <Th className="text-right">Dias pátio</Th>
             <Th className="text-right">Preço atual</Th>
             <Th className="text-right">Custo</Th>
             {/* Campos manuais (Caminho B — inline edit) */}
@@ -624,7 +634,7 @@ function TabelaRepasses({
         </thead>
         <tbody>
           {repasses.map((r) => {
-            const dias = diasParado(r.data_marcado);
+            const dias = diasPatioPorChassi.get(r.chassi) ?? null;
             const isSel = selecionados.has(r.id);
             // bg que as células sticky precisam carregar pra não ficarem transparentes
             // ao scroll horizontal. Tem que casar com row normal/selecionada/hover.
@@ -1045,14 +1055,4 @@ function formatDataBR(yyyymmdd: string | null): string {
   const [y, m, d] = yyyymmdd.split("-");
   if (!y || !m || !d) return yyyymmdd;
   return `${d}/${m}/${y}`;
-}
-
-function diasParado(dataMarcado: string | null): number | null {
-  if (!dataMarcado) return null;
-  const [y, m, d] = dataMarcado.split("-").map(Number);
-  if (!y || !m || !d) return null;
-  const dt = new Date(y, m - 1, d);
-  const hoje = new Date();
-  const ms = hoje.getTime() - dt.getTime();
-  return Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
 }
