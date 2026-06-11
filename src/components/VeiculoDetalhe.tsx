@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, AlertTriangle } from "lucide-react";
+import { ArrowLeft, AlertTriangle, Repeat } from "lucide-react";
+import { SubirRepasseModal } from "./repasses/SubirRepasseModal";
 import { useInventory, nomeOuCodigo } from "@/lib/store/inventory";
 import { normalizarPlaca } from "@/lib/utils/placa";
 import { classificarPatio, STATUS_LABEL } from "@/lib/inventory/status";
@@ -48,6 +49,7 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
 
   const cautelares = useCautelares();
   const cautelarAtual = veiculo ? cautelares[veiculo.chassi] ?? null : null;
+  const [modalRepasseAberto, setModalRepasseAberto] = useState(false);
 
   const classificacao = useMemo(() => {
     if (!veiculo) return null;
@@ -88,9 +90,18 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/veiculos" className="inline-flex items-center gap-1 text-sm text-[var(--text-muted)] hover:text-[var(--text-strong)]">
-          <ArrowLeft className="h-3 w-3" /> voltar ao estoque
-        </Link>
+        <div className="flex items-center justify-between gap-3">
+          <Link href="/veiculos" className="inline-flex items-center gap-1 text-sm text-[var(--text-muted)] hover:text-[var(--text-strong)]">
+            <ArrowLeft className="h-3 w-3" /> voltar ao estoque
+          </Link>
+          <button
+            type="button"
+            onClick={() => setModalRepasseAberto(true)}
+            className="inline-flex items-center gap-1.5 rounded-md bg-[var(--brand-700)] px-3 py-1.5 text-xs font-medium text-white hover:bg-[var(--brand-800)]"
+          >
+            <Repeat className="h-3.5 w-3.5" /> Subir pra repasse
+          </button>
+        </div>
         <div className="mt-3 flex flex-wrap items-baseline gap-3">
           <h1 className="text-2xl font-bold">{veiculo.marca} {veiculo.modelo}</h1>
           <span className="font-mono text-sm text-[var(--text-muted)]">{veiculo.placa}</span>
@@ -177,6 +188,14 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
       <EstatisticasModelo veiculo={veiculo} />
 
       <FlagsVeiculo chassi={veiculo.chassi} />
+
+      <SubirRepasseModal
+        veiculo={veiculo}
+        valorSubiuSugerido={veiculo.preco_venda}
+        valorMinimoSugerido={veiculo.custo_total}
+        open={modalRepasseAberto}
+        onClose={() => setModalRepasseAberto(false)}
+      />
     </div>
   );
 }

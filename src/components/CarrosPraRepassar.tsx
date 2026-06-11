@@ -23,6 +23,7 @@ import {
   ChevronRight,
   Building2,
   Filter,
+  Repeat,
 } from "lucide-react";
 import { useInventory } from "@/lib/store/inventory";
 import { useFipeBatch } from "@/lib/fipe/useFipeBatch";
@@ -33,6 +34,8 @@ import {
   type MotivoRepasse,
 } from "@/lib/analytics/carros-pra-repassar";
 import { cn, formatBRL, formatInt } from "@/lib/utils";
+import { SubirRepasseModal } from "./repasses/SubirRepasseModal";
+import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 
 export function CarrosPraRepassar() {
   const { veiculos, lojas, isHydrated } = useInventory();
@@ -40,6 +43,13 @@ export function CarrosPraRepassar() {
   const cautelares = useCautelares();
   const [filtroLoja, setFiltroLoja] = useState<string>("all");
   const [scoreMin, setScoreMin] = useState<number>(50);
+  const [veiculoSubindo, setVeiculoSubindo] = useState<VeiculoParsed | null>(null);
+
+  const veiculosPorChassi = useMemo(() => {
+    const map = new Map<string, VeiculoParsed>();
+    for (const v of veiculos) map.set(v.chassi, v);
+    return map;
+  }, [veiculos]);
 
   const carros = useMemo(() => {
     if (!isHydrated) return [];
@@ -131,7 +141,15 @@ export function CarrosPraRepassar() {
       {/* Lista */}
       <div className="space-y-3">
         {filtrados.map((c) => (
-          <CarroCard key={c.chassi} carro={c} nomeLoja={lojas[c.loja]?.nome?.trim() ?? `Loja ${c.loja}`} />
+          <CarroCard
+            key={c.chassi}
+            carro={c}
+            nomeLoja={lojas[c.loja]?.nome?.trim() ?? `Loja ${c.loja}`}
+            onSubirRepasse={() => {
+              const v = veiculosPorChassi.get(c.chassi);
+              if (v) setVeiculoSubindo(v);
+            }}
+          />
         ))}
       </div>
 
@@ -142,19 +160,44 @@ export function CarrosPraRepassar() {
           </p>
         </div>
       )}
+
+      {veiculoSubindo && (
+        <SubirRepasseModal
+          veiculo={veiculoSubindo}
+          valorSubiuSugerido={veiculoSubindo.preco_venda}
+          valorMinimoSugerido={veiculoSubindo.custo_total}
+          open={true}
+          onClose={() => setVeiculoSubindo(null)}
+        />
+      )}
     </div>
   );
 }
 
-function CarroCard({ carro, nomeLoja }: { carro: CarroPraRepassar; nomeLoja: string }) {
+function CarroCard({
+  carro,
+  nomeLoja,
+  onSubirRepasse,
+}: {
+  carro: CarroPraRepassar;
+  nomeLoja: string;
+  onSubirRepasse: () => void;
+}) {
   const router = useRouter();
   const corScore = scoreToColor(carro.score);
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => router.push(`/veiculos/${carro.chassi}`)}
-      className="group block w-full rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4 text-left shadow-[var(--shadow-sm)] transition hover:shadow-[var(--shadow-md)] hover:-translate-y-px"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          router.push(`/veiculos/${carro.chassi}`);
+        }
+      }}
+      className="group block w-full cursor-pointer rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4 text-left shadow-[var(--shadow-sm)] transition hover:shadow-[var(--shadow-md)] hover:-translate-y-px"
     >
       <div className="flex items-start gap-4">
         {/* Score grande */}
@@ -221,9 +264,21 @@ function CarroCard({ carro, nomeLoja }: { carro: CarroPraRepassar; nomeLoja: str
           </div>
         </div>
 
-        <ChevronRight className="mt-1 h-5 w-5 shrink-0 text-[var(--text-subtle)] transition group-hover:translate-x-0.5 group-hover:text-[var(--brand-700)]" />
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSubirRepasse();
+            }}
+            className="inline-flex items-center gap-1.5 rounded-md bg-[var(--brand-700)] px-2.5 py-1 text-xs font-medium text-white hover:bg-[var(--brand-800)]"
+          >
+            <Repeat className="h-3 w-3" /> Subir agora
+          </button>
+          <ChevronRight className="h-5 w-5 text-[var(--text-subtle)] transition group-hover:translate-x-0.5 group-hover:text-[var(--brand-700)]" />
+        </div>
       </div>
-    </button>
+    </div>
   );
 }
 

@@ -8,7 +8,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Car, TrendingUp, Building2, Upload, Menu, X, Sparkles, History, ChevronLeft, ChevronRight, LogOut, Loader2, Search, ArrowRightLeft, LineChart } from "lucide-react";
+import { LayoutDashboard, Car, TrendingUp, Building2, Upload, Menu, X, Sparkles, History, ChevronLeft, ChevronRight, LogOut, Loader2, Search, ArrowRightLeft, LineChart, Repeat } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { DataGate } from "./DataGate";
@@ -33,7 +33,8 @@ const NAV: NavItem[] = [
   { href: "/vendas", label: "Análise de Vendas", icon: <TrendingUp className="h-4 w-4" />, match: (p) => p.startsWith("/vendas") },
   { href: "/insights", label: "Insights", icon: <Sparkles className="h-4 w-4" />, match: (p) => p.startsWith("/insights") },
   { href: "/analise", label: "Análise", icon: <LineChart className="h-4 w-4" />, match: (p) => p.startsWith("/analise") },
-  { href: "/repassar", label: "Pra repassar", icon: <ArrowRightLeft className="h-4 w-4" />, match: (p) => p.startsWith("/repassar") },
+  { href: "/repassar", label: "Pra repassar", icon: <ArrowRightLeft className="h-4 w-4" />, match: (p) => p.startsWith("/repassar") && !p.startsWith("/repasses") },
+  { href: "/repasses", label: "Repasses", icon: <Repeat className="h-4 w-4" />, match: (p) => p.startsWith("/repasses") },
   { href: "/historico", label: "Histórico", icon: <History className="h-4 w-4" />, match: (p) => p.startsWith("/historico") },
   // Chat IA desativado temporariamente — providers gratuitos não suportam volume real e Anthropic paga
   // é cara pra esse uso. Pra reativar: descomente a linha abaixo.
