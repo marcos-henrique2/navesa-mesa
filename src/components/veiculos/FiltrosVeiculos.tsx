@@ -1,6 +1,6 @@
 "use client";
 
-import { SlidersHorizontal, Search } from "lucide-react";
+import { SlidersHorizontal, Search, FilterX } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Classe } from "@/lib/pricing/classificacao";
 import type { StatusCautelar } from "@/lib/inventory/cautelar";
@@ -91,6 +91,9 @@ type FiltrosVeiculosProps = {
   setDiasMin: (v: string) => void;
   diasMax: string;
   setDiasMax: (v: string) => void;
+
+  filtrosAtivos: number;
+  onLimparFiltros: () => void;
 };
 
 export function FiltrosVeiculos(props: FiltrosVeiculosProps) {
@@ -114,7 +117,9 @@ export function FiltrosVeiculos(props: FiltrosVeiculosProps) {
     kmMin, setKmMin, kmMax, setKmMax,
     precoMin, setPrecoMin, precoMax, setPrecoMax,
     diasMin, setDiasMin, diasMax, setDiasMax,
+    filtrosAtivos, onLimparFiltros,
   } = props;
+  const temFiltro = filtrosAtivos > 0;
 
   return (
     <div className="space-y-3 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4">
@@ -169,6 +174,28 @@ export function FiltrosVeiculos(props: FiltrosVeiculosProps) {
           )}
         </button>
 
+        <button
+          type="button"
+          onClick={onLimparFiltros}
+          disabled={!temFiltro}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition",
+            temFiltro
+              ? "border-red-300 bg-red-50 text-red-800 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200"
+              : "cursor-not-allowed border-[var(--border-soft)] bg-[var(--bg-surface)] text-[var(--text-subtle)] opacity-60",
+          )}
+          title={temFiltro ? `Limpar ${filtrosAtivos} filtro${filtrosAtivos === 1 ? "" : "s"} ativo${filtrosAtivos === 1 ? "" : "s"}` : "Nenhum filtro ativo"}
+          aria-label="Limpar todos os filtros"
+        >
+          <FilterX className="h-3 w-3" />
+          Limpar filtros
+          {temFiltro && (
+            <span className="rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+              {filtrosAtivos}
+            </span>
+          )}
+        </button>
+
         <div className="relative ml-auto">
           <Search className="absolute left-2 top-2.5 h-4 w-4 text-[var(--text-subtle)]" />
           <input
@@ -179,6 +206,11 @@ export function FiltrosVeiculos(props: FiltrosVeiculosProps) {
           />
         </div>
       </div>
+
+      {/* Dica de bulk: sempre visível pra Marcos descobrir o checkbox */}
+      <p className="text-[11px] text-[var(--text-muted)]">
+        💡 Marque a caixa de seleção na 1ª coluna pra escolher vários carros e subir tudo de uma vez pra repasse.
+      </p>
 
       {/* Avançados: colapsáveis */}
       <div

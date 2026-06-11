@@ -20,6 +20,7 @@ import { baixarRelatorioGerencial } from "@/lib/export/relatorio-gerencial-estoq
 import { baixarRelatorioGerencialPdf } from "@/lib/export/relatorio-gerencial-estoque-pdf";
 import { showSuccessToast, showErrorToast } from "../ui/Toast";
 import type { SortingState, RowSelectionState } from "@tanstack/react-table";
+import { aplicarLimparFiltros } from "./filtros-iniciais";
 
 function todayISOLocal(): string {
   const d = new Date();
@@ -279,14 +280,34 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
   }, [filteredExceptStatus]);
 
   const limparFiltros = () => {
-    setStatusFiltro("all"); setSearch(""); setFiltroLoja("all"); setFiltroMarca("all");
-    setFiltroCor("all"); setFiltroComb("all"); setFiltroSituacao("all"); setFiltroPatio("all");
-    setFiltroClasse("all"); setFiltroFipe("all"); setFiltroCautelar("all"); setFiltroFlag("all");
-    setFiltroRepasse("all");
-    setAnoMin(""); setAnoMax(""); setKmMin(""); setKmMax("");
-    setPrecoMin(""); setPrecoMax(""); setDiasMin(""); setDiasMax("");
-    setIdadeMin(""); setIdadeMax(""); setMargemMin(""); setMargemMax("");
-    fecharModoPrioridade();
+    aplicarLimparFiltros({
+      setStatusFiltro,
+      setSearch,
+      setFiltroLoja,
+      setFiltroMarca,
+      setFiltroCor,
+      setFiltroComb,
+      setFiltroSituacao,
+      setFiltroPatio,
+      setFiltroClasse,
+      setFiltroFipe,
+      setFiltroCautelar,
+      setFiltroFlag,
+      setFiltroRepasse,
+      setAnoMin,
+      setAnoMax,
+      setKmMin,
+      setKmMax,
+      setPrecoMin,
+      setPrecoMax,
+      setDiasMin,
+      setDiasMax,
+      setIdadeMin,
+      setIdadeMax,
+      setMargemMin,
+      setMargemMax,
+      fecharModoPrioridade,
+    });
   };
 
   const [exportandoSelecao, setExportandoSelecao] = useState(false);

@@ -28,7 +28,7 @@ import { calcularDesvioFipe } from "@/lib/fipe/batch";
 import { MarcarRepasseModal } from "./repasses/MarcarRepasseModal";
 import { BulkMarcarRepasseModal } from "./repasses/BulkMarcarRepasseModal";
 import { particionarParaBulkSubir } from "@/lib/repasses/bulk";
-import { showInfoToast } from "./ui/Toast";
+import { showInfoToast, showSuccessToast } from "./ui/Toast";
 
 function ehPreparacao(v: VeiculoParsed): boolean {
   return classificarPatio(v.patio) === "preparacao";
@@ -334,6 +334,12 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
     [selecionados, chassisEmRepasse],
   );
 
+  const handleLimparFiltros = () => {
+    if (filtrosAtivos === 0) return;
+    limparFiltros();
+    showSuccessToast("Filtros limpos");
+  };
+
   if (!isHydrated) return <p className="text-sm text-[var(--text-muted)]">Carregando…</p>;
 
   if (veiculos.length === 0) {
@@ -365,44 +371,6 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
         )}
 
         <div className="ml-auto flex items-center gap-3">
-          {selecionados.length > 0 && (
-            <div className="flex items-center gap-2 rounded-lg border border-[var(--border-base)] bg-[var(--bg-surface)] px-3 py-1.5 text-xs">
-              <span className="font-semibold text-[var(--text-strong)]">{selecionados.length} selecionados:</span>
-              <button onClick={() => copiarPlacas(selecionados)} className="inline-flex items-center gap-1 hover:text-[var(--brand-600)]"><ClipboardCheck className="h-3 w-3" /> Placas</button>
-              <button onClick={() => exportarSelecionados(selecionados)} className="inline-flex items-center gap-1 hover:text-[var(--brand-600)]" disabled={exportandoSelecao}>{exportandoSelecao ? "Exportando…" : "Gerencial (XLSX)"}</button>
-              <div className="flex flex-col items-end gap-0.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (previewBulk.jaEmRepasse.length > 0) {
-                      showInfoToast(
-                        `${previewBulk.jaEmRepasse.length} carro${previewBulk.jaEmRepasse.length === 1 ? "" : "s"} já em repasse — ignorado${previewBulk.jaEmRepasse.length === 1 ? "" : "s"}`,
-                      );
-                    }
-                    if (previewBulk.elegiveis.length === 0) return;
-                    setBulkVeiculos(previewBulk.elegiveis);
-                  }}
-                  disabled={previewBulk.elegiveis.length === 0}
-                  className="inline-flex items-center gap-1 rounded-md bg-[var(--brand-700)] px-2 py-0.5 text-white hover:bg-[var(--brand-800)] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Repeat className="h-3 w-3" /> Subir {previewBulk.elegiveis.length} pra repasse
-                </button>
-                {previewBulk.jaEmRepasse.length > 0 && (
-                  <span className="text-[10px] text-[var(--text-muted)]">
-                    {previewBulk.jaEmRepasse.length} já em repasse — ignorado{previewBulk.jaEmRepasse.length === 1 ? "" : "s"}
-                  </span>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => setRowSelection({})}
-                className="inline-flex items-center gap-1 text-[var(--text-muted)] hover:text-[var(--text-strong)]"
-                title="Limpar seleção"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          )}
           <ExportDropdown
             disabled={exportandoConf || filtered.length === 0}
             trigger={<><ClipboardCheck className="h-4 w-4" /> {exportandoConf ? "Gerando…" : "Imprimir conferência"}</>}
@@ -448,7 +416,59 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
         kmMin={kmMin} setKmMin={setKmMin} kmMax={kmMax} setKmMax={setKmMax}
         precoMin={precoMin} setPrecoMin={setPrecoMin} precoMax={precoMax} setPrecoMax={setPrecoMax}
         diasMin={diasMin} setDiasMin={setDiasMin} diasMax={diasMax} setDiasMax={setDiasMax}
+        filtrosAtivos={filtrosAtivos} onLimparFiltros={handleLimparFiltros}
       />
+
+      {selecionados.length > 0 && (
+        <div className="sticky top-2 z-30 flex flex-wrap items-center gap-2 rounded-lg border-2 border-[var(--brand-500)] bg-[var(--brand-50)] px-4 py-2.5 text-sm shadow-md dark:bg-[var(--brand-900)]/30">
+          <span className="font-semibold text-[var(--brand-900)] dark:text-[var(--brand-100)]">
+            {selecionados.length} carro{selecionados.length === 1 ? "" : "s"} selecionado{selecionados.length === 1 ? "" : "s"}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              if (previewBulk.jaEmRepasse.length > 0) {
+                showInfoToast(
+                  `${previewBulk.jaEmRepasse.length} carro${previewBulk.jaEmRepasse.length === 1 ? "" : "s"} já em repasse — ignorado${previewBulk.jaEmRepasse.length === 1 ? "" : "s"}`,
+                );
+              }
+              if (previewBulk.elegiveis.length === 0) return;
+              setBulkVeiculos(previewBulk.elegiveis);
+            }}
+            disabled={previewBulk.elegiveis.length === 0}
+            className="inline-flex items-center gap-1.5 rounded-md bg-[var(--brand-700)] px-3 py-1.5 text-xs font-medium text-white hover:bg-[var(--brand-800)] disabled:cursor-not-allowed disabled:opacity-50"
+            title={previewBulk.elegiveis.length === 0 ? "Nenhum carro elegível (todos já em repasse)" : `Subir ${previewBulk.elegiveis.length} carro(s) pra repasse`}
+          >
+            <Repeat className="h-3.5 w-3.5" /> Marcar {previewBulk.elegiveis.length} pra subir
+          </button>
+          {previewBulk.jaEmRepasse.length > 0 && (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+              {previewBulk.jaEmRepasse.length} já em repasse — ignorado{previewBulk.jaEmRepasse.length === 1 ? "" : "s"}
+            </span>
+          )}
+          <button
+            onClick={() => copiarPlacas(selecionados)}
+            className="inline-flex items-center gap-1 rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-2.5 py-1 text-xs hover:bg-[var(--bg-muted)]"
+          >
+            <ClipboardCheck className="h-3 w-3" /> Copiar placas
+          </button>
+          <button
+            onClick={() => exportarSelecionados(selecionados)}
+            disabled={exportandoSelecao}
+            className="inline-flex items-center gap-1 rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-2.5 py-1 text-xs hover:bg-[var(--bg-muted)] disabled:opacity-50"
+          >
+            <BarChart3 className="h-3 w-3" /> {exportandoSelecao ? "Exportando…" : "Exportar XLSX"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setRowSelection({})}
+            className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--text-muted)] hover:bg-[var(--bg-muted)] hover:text-[var(--text-strong)]"
+            title="Limpar seleção"
+          >
+            <X className="h-3 w-3" /> Limpar seleção
+          </button>
+        </div>
+      )}
 
       <p className="text-sm text-[var(--text-body)]">
         {filtrosAtivos > 0 ? (
@@ -456,7 +476,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
         ) : (
           <><strong>{formatInt(veiculos.length)}</strong> veículos no total</>
         )}
-        {filtrosAtivos > 0 && <button onClick={limparFiltros} className="ml-2 text-blue-700 underline dark:text-blue-400">Limpar filtros</button>}
+        {filtrosAtivos > 0 && <button onClick={handleLimparFiltros} className="ml-2 text-blue-700 underline dark:text-blue-400">Limpar filtros</button>}
       </p>
 
       {/* Mobile: card view (md:hidden) */}
@@ -552,10 +572,10 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
           open={true}
           onClose={() => setVeiculoSubindo(null)}
           onSuccess={(repasseId) => {
-            const chassi = veiculoSubindo.chassi;
-            marcarChassiEmRepasse(chassi, repasseId);
+            // Não redireciona — Marcos fica na tabela de estoque pra continuar
+            // marcando outros carros. Indicador "Em repasse" aparece sem reload.
+            marcarChassiEmRepasse(veiculoSubindo.chassi, repasseId);
             setVeiculoSubindo(null);
-            router.push(`/repasses`);
           }}
         />
       )}

@@ -193,6 +193,11 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
         veiculo={veiculo}
         open={modalRepasseAberto}
         onClose={() => setModalRepasseAberto(false)}
+        onSuccess={() => {
+          // Não redireciona — Marcos fica na tela do carro pra continuar
+          // analisando. Pra ver a lista de repasses ele usa o menu.
+          setModalRepasseAberto(false);
+        }}
       />
     </div>
   );

@@ -28,6 +28,7 @@ import {
   TruckIcon,
   Wallet,
   Filter,
+  FilterX,
   CheckCircle2,
   Trash2,
 } from "lucide-react";
@@ -131,6 +132,21 @@ export function RepassesLista() {
     for (const r of repasses) if (r.loja_origem != null) set.add(r.loja_origem);
     return [...set].sort((a, b) => a - b);
   }, [repasses]);
+
+  const filtrosAtivos =
+    (statusFiltro !== "todos" ? 1 : 0) +
+    (lojaFiltro !== "all" ? 1 : 0) +
+    (periodoIni ? 1 : 0) +
+    (periodoFim ? 1 : 0);
+
+  function limparFiltrosRepasses() {
+    if (filtrosAtivos === 0) return;
+    setStatusFiltro("todos");
+    setLojaFiltro("all");
+    setPeriodoIni("");
+    setPeriodoFim("");
+    showSuccessToast("Filtros limpos");
+  }
 
   const selecionadosArr = useMemo(
     () => filtrados.filter((r) => selecionados.has(r.id)),
@@ -400,6 +416,28 @@ export function RepassesLista() {
             </select>
           </label>
         )}
+
+        <button
+          type="button"
+          onClick={limparFiltrosRepasses}
+          disabled={filtrosAtivos === 0}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition",
+            filtrosAtivos > 0
+              ? "border-red-300 bg-red-50 text-red-800 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200"
+              : "cursor-not-allowed border-[var(--border-soft)] bg-[var(--bg-surface)] text-[var(--text-subtle)] opacity-60",
+          )}
+          title={filtrosAtivos > 0 ? `Limpar ${filtrosAtivos} filtro${filtrosAtivos === 1 ? "" : "s"} ativo${filtrosAtivos === 1 ? "" : "s"}` : "Nenhum filtro ativo"}
+          aria-label="Limpar todos os filtros"
+        >
+          <FilterX className="h-3 w-3" />
+          Limpar filtros
+          {filtrosAtivos > 0 && (
+            <span className="rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+              {filtrosAtivos}
+            </span>
+          )}
+        </button>
 
         <div className="ml-auto flex items-center gap-2">
           <button
