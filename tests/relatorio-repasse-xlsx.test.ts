@@ -1,24 +1,26 @@
 /**
- * Testes da geração de relatório XLSX por repasse.
+ * Testes do XLSX profissional de carros pra repasse.
  *
- * Verifica:
- *   - As 4 abas existem (Resumo, Gastos, Documentação, Cálculos)
- *   - B17 da Resumo tem fórmula SUM dinâmica apontando pra aba Gastos (não valor fixo)
- *   - B18 = B14 + B17 (custo total)
- *   - B20 condicional com IF
- *   - B21 (margem %) protege contra divisão por zero (valor_vendido = 0)
- *   - Aba Gastos lista os gastos passados + linha total com SUM dinâmica
- *   - Rodapé TOTAL em row 5 mesmo quando gastos = [] (sem erro de fórmula)
- *   - Aba Cálculos referencia Resumo!B14/B15/B16/B18
+ * O XLSX agora é 1 aba "Carros pra Repasse" com:
+ *   - Cabeçalho de 3 linhas (título + data + totais)
+ *   - Header da tabela na linha 5
+ *   - Dados a partir da linha 6 (snapshot do veículo)
+ *   - Colunas IPVA/Doc/Cautelar vazias com data validation (dropdown)
+ *   - Coluna Observação vazia + wrap text
+ *   - AutoFilter no header
+ *   - Frozen header (5 linhas)
+ *
+ * Sem fórmulas vivas — Marcos vai preencher manualmente no Excel e subir
+ * pro Auto Avaliar. Quem cuida de venda/margem é o Auto Avaliar.
  */
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
-import { gerarRelatorioRepasseXlsx } from "@/lib/export/relatorio-repasse-xlsx";
-import type { Repasse, RepasseGasto, RepasseDocumento } from "@/lib/repasses/types";
+import { gerarRelatorioRepasseProfissional } from "@/lib/export/relatorio-repasse-xlsx";
+import type { Repasse } from "@/lib/repasses/types";
 
-function buildRepasse(): Repasse {
+function buildRepasse(over: Partial<Repasse> = {}): Repasse {
   return {
     id: 42,
     chassi: "9BWZZZ377VT004251",
@@ -32,211 +34,231 @@ function buildRepasse(): Repasse {
     loja_origem: 2,
     patio_origem: "AEROPORTO",
     valor_aquisicao: 120000,
-    valor_subiu: 145000,
-    valor_minimo: 138000,
-    valor_vendido: null,
-    data_subiu: "2026-05-01",
-    data_vendido: null,
+    preco_atual: 145000,
+    data_marcado: "2026-05-01",
+    data_subido: null,
     canal: "auto_avaliar",
-    status: "subido",
-    documentacao_status: "pendente",
-    descricao: null,
-    opcionais: null,
-    comprador: null,
-    observacoes: null,
+    status: "marcado",
     criado_em: "2026-05-01T12:00:00Z",
     atualizado_em: "2026-05-01T12:00:00Z",
+    ...over,
   };
-}
-
-function buildGastos(): RepasseGasto[] {
-  return [
-    {
-      id: 1,
-      repasse_id: 42,
-      tipo: "documentacao",
-      descricao: "Transferência",
-      valor: 350,
-      data: "2026-05-02",
-      observacao: null,
-      criado_em: "",
-    },
-    {
-      id: 2,
-      repasse_id: 42,
-      tipo: "vistoria",
-      descricao: "Vistoria DETRAN",
-      valor: 180,
-      data: "2026-05-03",
-      observacao: null,
-      criado_em: "",
-    },
-  ];
-}
-
-function buildDocs(): RepasseDocumento[] {
-  return [
-    {
-      id: 1,
-      repasse_id: 42,
-      tipo: "crv",
-      status: "ok",
-      observacao: null,
-      data_verificacao: "2026-05-02",
-      criado_em: "",
-      atualizado_em: "",
-    },
-    {
-      id: 2,
-      repasse_id: 42,
-      tipo: "ipva",
-      status: "pendente",
-      observacao: "aguardando 2ª parcela",
-      data_verificacao: null,
-      criado_em: "",
-      atualizado_em: "",
-    },
-  ];
 }
 
 async function abrir(buffer: Buffer): Promise<ExcelJS.Workbook> {
   const wb = new ExcelJS.Workbook();
-  // exceljs.load aceita ArrayBuffer | Buffer (typing legado); cast pra evitar
-  // mismatch entre Buffer<ArrayBufferLike> do Node 22 e o ArrayBuffer esperado.
   const ab = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
   await wb.xlsx.load(ab as ArrayBuffer);
   return wb;
 }
 
-describe("gerarRelatorioRepasseXlsx", () => {
+describe("gerarRelatorioRepasseProfissional", () => {
   it("retorna um Buffer não vazio", async () => {
-    const buf = await gerarRelatorioRepasseXlsx(buildRepasse(), buildGastos(), buildDocs());
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     assert.ok(Buffer.isBuffer(buf));
     assert.ok(buf.length > 1000);
   });
 
-  it("contém as 4 abas: Resumo, Gastos, Documentação, Cálculos", async () => {
-    const buf = await gerarRelatorioRepasseXlsx(buildRepasse(), buildGastos(), buildDocs());
+  it("tem aba principal 'Carros pra Repasse' + aba auxiliar oculta '_Listas'", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
-    const nomes = wb.worksheets.map((w) => w.name);
-    assert.deepEqual(nomes, ["Resumo", "Gastos", "Documentação", "Cálculos"]);
+    // 2 abas: a principal visível + _Listas oculta (workaround locale BR pra
+    // data validation). _Listas fica hidden — Marcos não vê.
+    assert.equal(wb.worksheets.length, 2);
+    assert.equal(wb.worksheets[0]!.name, "Carros pra Repasse");
+    const aux = wb.getWorksheet("_Listas");
+    assert.ok(aux, "aba auxiliar _Listas deveria existir");
+    assert.equal(aux!.state, "hidden");
   });
 
-  it("Resumo!B17 tem fórmula SUM dinâmica apontando pra Gastos — não valor fixo", async () => {
-    const buf = await gerarRelatorioRepasseXlsx(buildRepasse(), buildGastos(), buildDocs());
+  it("cabeçalho linha 1 contém título NAVESA + linha 2 data de geração", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
-    const ws = wb.getWorksheet("Resumo");
-    assert.ok(ws);
-    const cell = ws.getCell("B17");
-    // exceljs serializa fórmulas como { formula: "..." }
-    const value = cell.value as { formula?: string } | unknown;
-    assert.ok(
-      value && typeof value === "object" && "formula" in value,
-      "B17 deveria ser uma célula de fórmula",
-    );
-    // Range dinâmico: com 2 gastos vira D2:D3 (linhas 2..gastos.length+1)
-    assert.match((value as { formula: string }).formula, /SUM\(Gastos!D2:D3\)/);
+    const ws = wb.worksheets[0]!;
+    const titulo = String(ws.getCell("A1").value ?? "");
+    assert.match(titulo, /NAVESA/);
+    assert.match(titulo, /Repasse/i);
+
+    const dataLinha = String(ws.getCell("A2").value ?? "");
+    assert.match(dataLinha, /Gerado em:/);
   });
 
-  it("Resumo!B18 = B14 + B17 (custo total via fórmula)", async () => {
-    const buf = await gerarRelatorioRepasseXlsx(buildRepasse(), buildGastos(), buildDocs());
+  it("linha 3 mostra total + capital travado (marcados)", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([
+      buildRepasse({ id: 1, placa: "AAA1A11", preco_atual: 100_000 }),
+      buildRepasse({ id: 2, placa: "BBB2B22", preco_atual: 50_000 }),
+    ]);
     const wb = await abrir(buf);
-    const ws = wb.getWorksheet("Resumo")!;
-    const cell = ws.getCell("B18");
-    const value = cell.value as { formula?: string };
-    assert.ok(value.formula);
-    assert.match(value.formula, /B14\s*\+\s*B17/);
+    const ws = wb.worksheets[0]!;
+    const linha = String(ws.getCell("A3").value ?? "");
+    assert.match(linha, /Total: 2 veículos/);
+    assert.match(linha, /Capital travado \(marcados\)/);
+    assert.match(linha, /R\$ 150/); // capital travado 150.000,00
   });
 
-  it("Resumo!B20 (margem real) é condicional via IF", async () => {
-    const buf = await gerarRelatorioRepasseXlsx(buildRepasse(), buildGastos(), buildDocs());
+  it("Capital travado SÓ soma rows com status='marcado' (subidos não contam)", async () => {
+    // Misto: 1 marcado (100k) + 1 subido (50k). Capital travado = 100k só.
+    // Subidos já foram pro Auto Avaliar, não estão mais travados — mesmo
+    // critério do KPI da tela /repasses.
+    const buf = await gerarRelatorioRepasseProfissional([
+      buildRepasse({ id: 1, placa: "AAA1A11", preco_atual: 100_000, status: "marcado" }),
+      buildRepasse({
+        id: 2,
+        placa: "BBB2B22",
+        preco_atual: 50_000,
+        status: "subido",
+        data_subido: "2026-05-15",
+      }),
+    ]);
     const wb = await abrir(buf);
-    const ws = wb.getWorksheet("Resumo")!;
-    const cell = ws.getCell("B20");
-    const value = cell.value as { formula?: string };
-    assert.ok(value.formula);
-    assert.match(value.formula, /^IF\(B19=/);
+    const ws = wb.worksheets[0]!;
+    const linha = String(ws.getCell("A3").value ?? "");
+    assert.match(linha, /Total: 2 veículos/);
+    assert.match(linha, /Capital travado \(marcados\): R\$ 100/, `linha: ${linha}`);
+    assert.doesNotMatch(linha, /R\$ 150/, "não deveria somar o subido no capital travado");
   });
 
-  it("aba Gastos contém uma linha por gasto + linha TOTAL com SUM dinâmico", async () => {
-    const buf = await gerarRelatorioRepasseXlsx(buildRepasse(), buildGastos(), buildDocs());
+  it("header da tabela está na linha 5", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
-    const ws = wb.getWorksheet("Gastos")!;
-    // Header em row 1, gastos em rows 2 e 3
-    assert.equal(ws.getCell("C2").value, "Transferência");
-    assert.equal(ws.getCell("D2").value, 350);
-    assert.equal(ws.getCell("C3").value, "Vistoria DETRAN");
-
-    // Total — procura por uma célula com fórmula SUM em col D.
-    // Range dinâmico: 2 gastos → D2:D3 (não engloba a row TOTAL).
-    let achouTotal = false;
-    ws.eachRow((row) => {
-      const v = row.getCell(4).value as { formula?: string } | unknown;
-      if (v && typeof v === "object" && "formula" in v && /SUM\(D2:D3\)/.test((v as { formula: string }).formula)) {
-        achouTotal = true;
-      }
-    });
-    assert.ok(achouTotal, "deveria haver linha TOTAL com SUM(D2:D3) na aba Gastos");
+    const ws = wb.worksheets[0]!;
+    assert.equal(ws.getCell("A5").value, "#");
+    assert.equal(ws.getCell("B5").value, "Placa");
+    assert.equal(ws.getCell("C5").value, "Chassi");
+    assert.equal(ws.getCell("O5").value, "IPVA");
+    assert.equal(ws.getCell("P5").value, "Doc");
+    assert.equal(ws.getCell("Q5").value, "Cautelar");
+    assert.equal(ws.getCell("R5").value, "Observação");
   });
 
-  it("aba Cálculos referencia Resumo (breakeven, margens, ROI)", async () => {
-    const buf = await gerarRelatorioRepasseXlsx(buildRepasse(), buildGastos(), buildDocs());
+  it("dados começam na linha 6 com snapshot do veículo", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
-    const ws = wb.getWorksheet("Cálculos")!;
-
-    const b3 = ws.getCell("B3").value as { formula?: string };
-    assert.match(b3.formula ?? "", /Resumo!B18/);
-
-    const b4 = ws.getCell("B4").value as { formula?: string };
-    assert.match(b4.formula ?? "", /Resumo!B15-Resumo!B18/);
-
-    const b5 = ws.getCell("B5").value as { formula?: string };
-    assert.match(b5.formula ?? "", /Resumo!B16-Resumo!B18/);
-
-    const b7 = ws.getCell("B7").value as { formula?: string };
-    assert.match(b7.formula ?? "", /Resumo!B15\s*\*\s*0\.05/);
+    const ws = wb.worksheets[0]!;
+    assert.equal(ws.getCell("A6").value, 1);
+    assert.equal(ws.getCell("B6").value, "ABC1D23");
+    assert.equal(ws.getCell("C6").value, "9BWZZZ377VT004251");
+    assert.equal(ws.getCell("D6").value, "Ford");
+    assert.equal(ws.getCell("E6").value, "RANGER XLT 3.2");
+    assert.equal(ws.getCell("M6").value, 145000); // preço atual
+    assert.equal(ws.getCell("N6").value, 120000); // custo (valor aquisição)
   });
 
-  it("gastos vazios: rodapé TOTAL na linha 5 com SUM(D2:D2) — sem erro de fórmula", async () => {
-    // Regressão F1: range hardcoded SUM(D2:D100) englobaria a row TOTAL quando
-    // gastos = []. Agora com range dinâmico, garantimos que dataEnd < totalRow
-    // (2 < 5) mesmo no caso vazio.
-    const buf = await gerarRelatorioRepasseXlsx(buildRepasse(), [], buildDocs());
+  it("IPVA, Doc, Cautelar e Observação ficam VAZIAS no export", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
-    const ws = wb.getWorksheet("Gastos")!;
-
-    // TOTAL deve aparecer em row 5 (gastos.length + 3 = 3, clampado pra 5)
-    assert.equal(ws.getCell("C5").value, "TOTAL");
-    const total = ws.getCell("D5").value as { formula?: string };
-    assert.ok(total.formula, "D5 deveria ter fórmula SUM");
-    assert.match(total.formula, /SUM\(D2:D2\)/);
-
-    // E B17 da Resumo idem: SUM(Gastos!D2:D2)
-    const resumo = wb.getWorksheet("Resumo")!;
-    const b17 = resumo.getCell("B17").value as { formula?: string };
-    assert.match(b17.formula ?? "", /SUM\(Gastos!D2:D2\)/);
+    const ws = wb.worksheets[0]!;
+    assert.equal(ws.getCell("O6").value ?? "", "");
+    assert.equal(ws.getCell("P6").value ?? "", "");
+    assert.equal(ws.getCell("Q6").value ?? "", "");
+    assert.equal(ws.getCell("R6").value ?? "", "");
   });
 
-  it("Resumo!B21 (margem %) protege contra divisão por zero quando valor_vendido = 0", async () => {
-    // Regressão F2: fórmula original IF(B19="","",B20/B19*100) gerava #DIV/0!
-    // quando o usuário digitava 0 em valor_vendido. Agora usa OR(B19="",B19=0).
-    const repasse = { ...buildRepasse(), valor_vendido: 0 };
-    const buf = await gerarRelatorioRepasseXlsx(repasse, buildGastos(), buildDocs());
+  it("IPVA tem data validation apontando pra range na aba _Listas (BR-safe)", async () => {
+    // Inline values com vírgula quebra em Excel locale BR (separador ";").
+    // Solução: planilha auxiliar oculta com valores + range absoluto.
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
-    const ws = wb.getWorksheet("Resumo")!;
-    const b21 = ws.getCell("B21").value as { formula?: string };
-    assert.ok(b21.formula, "B21 deveria ser fórmula");
-    assert.match(b21.formula, /OR\(B19="",\s*B19=0\)/);
+    const ws = wb.worksheets[0]!;
+    const cell = ws.getCell("O6");
+    assert.ok(cell.dataValidation, "IPVA deveria ter dataValidation");
+    assert.equal(cell.dataValidation!.type, "list");
+    const formula = String((cell.dataValidation!.formulae ?? [])[0] ?? "");
+    assert.match(formula, /^_Listas!\$A\$1:\$A\$3$/, `esperado range _Listas, recebido: ${formula}`);
   });
 
-  it("aba Documentação lista cada documento com emoji + label", async () => {
-    const buf = await gerarRelatorioRepasseXlsx(buildRepasse(), buildGastos(), buildDocs());
+  it("Doc tem data validation apontando pra range na aba _Listas", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
-    const ws = wb.getWorksheet("Documentação")!;
-    // row 1 = header
-    assert.equal(ws.getCell("A2").value, "CRV");
-    assert.match(String(ws.getCell("B2").value), /✅/);
-    assert.equal(ws.getCell("A3").value, "IPVA");
-    assert.match(String(ws.getCell("B3").value), /⏳/);
+    const ws = wb.worksheets[0]!;
+    const cell = ws.getCell("P6");
+    assert.ok(cell.dataValidation);
+    const formula = String((cell.dataValidation!.formulae ?? [])[0] ?? "");
+    assert.match(formula, /^_Listas!\$B\$1:\$B\$4$/, `esperado range B, recebido: ${formula}`);
+  });
+
+  it("Cautelar tem data validation apontando pra range na aba _Listas", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    const cell = ws.getCell("Q6");
+    assert.ok(cell.dataValidation);
+    const formula = String((cell.dataValidation!.formulae ?? [])[0] ?? "");
+    assert.match(formula, /^_Listas!\$C\$1:\$C\$3$/, `esperado range C, recebido: ${formula}`);
+  });
+
+  it("aba _Listas existe oculta com opções IPVA/Doc/Cautelar", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
+    const wb = await abrir(buf);
+    const aux = wb.getWorksheet("_Listas");
+    assert.ok(aux, "aba _Listas deveria existir");
+    assert.equal(aux!.state, "hidden");
+    // Coluna A = IPVA (3 valores)
+    assert.equal(aux!.getCell("A1").value, "Pago");
+    assert.equal(aux!.getCell("A2").value, "Em aberto");
+    assert.equal(aux!.getCell("A3").value, "Não verificado");
+    // Coluna B = Doc (4 valores)
+    assert.equal(aux!.getCell("B1").value, "OK");
+    assert.equal(aux!.getCell("B2").value, "Pendente");
+    assert.equal(aux!.getCell("B3").value, "Irregular");
+    assert.equal(aux!.getCell("B4").value, "Não verificado");
+    // Coluna C = Cautelar (3 valores)
+    assert.equal(aux!.getCell("C1").value, "Limpa");
+    assert.equal(aux!.getCell("C2").value, "Com restrição");
+    assert.equal(aux!.getCell("C3").value, "Não verificada");
+  });
+
+  it("aplica AutoFilter no header da tabela", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    assert.ok(ws.autoFilter, "deveria ter autoFilter configurado");
+  });
+
+  it("congela linhas do cabeçalho (primeiras 5)", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    const view = (ws.views ?? [])[0];
+    assert.ok(view);
+    assert.equal(view!.state, "frozen");
+    assert.equal(view!.ySplit, 5);
+  });
+
+  it("lista vazia: gera mesmo assim com cabeçalho + header, sem linhas de dados", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    assert.equal(ws.getCell("A5").value, "#");
+    // Linha 6 vazia (não tem dado nenhum)
+    assert.equal(ws.getCell("A6").value ?? "", "");
+    const linha3 = String(ws.getCell("A3").value ?? "");
+    assert.match(linha3, /Total: 0 veículos/);
+  });
+
+  it("preço atual e custo vêm formatados como R$ (numFmt BRL)", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    const preco = ws.getCell("M6");
+    assert.match(String(preco.numFmt ?? ""), /R\$/);
+    const custo = ws.getCell("N6");
+    assert.match(String(custo.numFmt ?? ""), /R\$/);
+  });
+
+  it("conta dias parado desde data_marcado", async () => {
+    // Carro marcado há ~30 dias
+    const trintaDiasAtras = new Date();
+    trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
+    const yyyy = trintaDiasAtras.getFullYear();
+    const mm = String(trintaDiasAtras.getMonth() + 1).padStart(2, "0");
+    const dd = String(trintaDiasAtras.getDate()).padStart(2, "0");
+    const buf = await gerarRelatorioRepasseProfissional([
+      buildRepasse({ data_marcado: `${yyyy}-${mm}-${dd}` }),
+    ]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    const dias = Number(ws.getCell("L6").value);
+    assert.ok(dias >= 29 && dias <= 31, `esperado ~30, recebido ${dias}`);
   });
 });

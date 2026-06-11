@@ -5,23 +5,22 @@
  *
  * Tudo client-side via o singleton getSupabase(). Erros são propagados como
  * Error — UI captura via try/catch e exibe toast.
+ *
+ * Schema: tabela `repasses` ainda tem colunas legacy (valor_subiu, valor_minimo,
+ * valor_vendido, doc_status, gastos, etc.) — mantemos como zumbis. A UI nova
+ * só usa snapshot do veículo + status + datas.
+ *
+ * Mapeamento legacy → novo:
+ *   - `data_subiu` (legacy NOT NULL) → preenchido com hoje no INSERT, exposto
+ *     como `data_marcado` no domínio
+ *   - `data_subido` (nova coluna, migration 010) → null até "Já subi"
  */
 
-import { getSupabase, selectAll } from "@/lib/data/supabase";
+import { getSupabase } from "@/lib/data/supabase";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import { buildChassisEmRepasseMap, type RepasseAtivoRow } from "./chassis-em-repasse";
-import { mapearErroCriarRepasse } from "./erros";
-import { DOCUMENTOS_PADRAO } from "./types";
-import type {
-  Repasse,
-  RepasseGasto,
-  RepasseDocumento,
-  RepasseStatus,
-  DocStatus,
-  RepasseCanal,
-  GastoTipo,
-  DocumentoTipo,
-} from "./types";
+import { criarErroRepasse } from "./erros";
+import type { Repasse, RepasseCanal } from "./types";
 
 // ─── REPASSES ────────────────────────────────────────────────────────────────
 
@@ -37,51 +36,98 @@ export type RepasseInput = {
   loja_origem: number | null;
   patio_origem: string | null;
   valor_aquisicao: number | null;
-  valor_subiu: number | null;
-  valor_minimo: number | null;
+  preco_atual: number | null;
   canal?: RepasseCanal;
 };
+
+/**
+ * Row crua do banco antes do mapeamento pro domínio.
+ * `data_subiu` é o campo legacy (NOT NULL com default `current_date`) —
+ * reaproveitado como "data marcado pra subir" no novo fluxo.
+ */
+type RepasseRow = {
+  id: number;
+  chassi: string;
+  placa: string;
+  modelo: string;
+  marca: string | null;
+  cor: string | null;
+  ano_modelo: number | null;
+  ano_fabricacao: number | null;
+  km: number | null;
+  loja_origem: number | null;
+  patio_origem: string | null;
+  valor_aquisicao: number | null;
+  valor_subiu: number | null;
+  data_subiu: string;
+  data_subido: string | null;
+  canal: RepasseCanal;
+  status: string;
+  criado_em: string;
+  atualizado_em: string;
+};
+
+function rowToRepasse(row: RepasseRow): Repasse {
+  // Status legacy ("vendido", "nao_vendido") aparecerão como "marcado" pra UI
+  // nova — defensivo, não deve ocorrer na prática (UI nunca cria esses).
+  const status =
+    row.status === "marcado" || row.status === "subido" || row.status === "cancelado"
+      ? row.status
+      : "marcado";
+  return {
+    id: row.id,
+    chassi: row.chassi,
+    placa: row.placa,
+    modelo: row.modelo,
+    marca: row.marca,
+    cor: row.cor,
+    ano_modelo: row.ano_modelo,
+    ano_fabricacao: row.ano_fabricacao,
+    km: row.km,
+    loja_origem: row.loja_origem,
+    patio_origem: row.patio_origem,
+    valor_aquisicao: row.valor_aquisicao,
+    preco_atual: row.valor_subiu, // reusa coluna legacy como "preço atual do estoque no momento da marcação"
+    data_marcado: row.data_subiu,
+    data_subido: row.data_subido,
+    canal: row.canal,
+    status,
+    criado_em: row.criado_em,
+    atualizado_em: row.atualizado_em,
+  };
+}
 
 /** Lista todos os repasses, mais recentes primeiro. */
 export async function listRepasses(): Promise<Repasse[]> {
   const sb = getSupabase();
-  return selectAll<Repasse>(sb, "repasses", { orderBy: "id" }).then((rows) =>
-    [...rows].sort((a, b) => b.id - a.id),
-  );
+  const { data, error } = await sb.from("repasses").select("*").order("id", { ascending: false });
+  if (error) throw new Error(`Falha ao listar repasses: ${error.message}`);
+  return ((data ?? []) as RepasseRow[]).map(rowToRepasse);
 }
 
 /**
- * Lista os chassis com repasse status='subido' (em andamento).
- * Retorna Map<chassi, repasse_id> pra UI saber quais carros já estão em repasse
- * e linkar direto pro detalhe.
- *
- * Usado em /estoque pra desabilitar o botão "Subir pra repasse" e mostrar
- * indicador visual nas linhas que já têm repasse ativo.
+ * Lista os chassis com repasse em andamento (status='marcado' OU 'subido').
+ * Retorna Map<chassi, repasse_id> pra UI saber quais carros já estão em fluxo
+ * de repasse e desabilitar o botão "Marcar pra subir" no estoque.
  */
 export async function listChassisEmRepasse(): Promise<Map<string, number>> {
   const sb = getSupabase();
   const { data, error } = await sb
     .from("repasses")
     .select("id, chassi")
-    .eq("status", "subido");
+    .in("status", ["marcado", "subido"]);
   if (error) throw new Error(`Falha ao listar chassis em repasse: ${error.message}`);
   return buildChassisEmRepasseMap((data ?? []) as ReadonlyArray<RepasseAtivoRow>);
 }
 
-export async function getRepasse(id: number): Promise<Repasse | null> {
-  const sb = getSupabase();
-  const { data, error } = await sb
-    .from("repasses")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
-  if (error) throw new Error(`Falha ao ler repasse: ${error.message}`);
-  return (data as Repasse | null) ?? null;
-}
-
 /**
- * Cria um repasse a partir de um snapshot de veículo + valores iniciais.
- * Já cria os 5 documentos padrão como "pendente".
+ * Cria um repasse a partir de um snapshot de veículo.
+ *
+ * Status inicial = "marcado". `data_subido` fica null até o usuário clicar
+ * em "Já subi" no /repasses.
+ *
+ * O snapshot grava o preço de venda atual do estoque (`preco_atual`) na coluna
+ * legacy `valor_subiu` — é só registro histórico, não tem cálculo em cima.
  */
 export async function createRepasse(input: RepasseInput): Promise<Repasse> {
   const sb = getSupabase();
@@ -99,59 +145,49 @@ export async function createRepasse(input: RepasseInput): Promise<Repasse> {
       loja_origem: input.loja_origem,
       patio_origem: input.patio_origem,
       valor_aquisicao: input.valor_aquisicao,
-      valor_subiu: input.valor_subiu,
-      valor_minimo: input.valor_minimo,
+      valor_subiu: input.preco_atual,
       canal: input.canal ?? "auto_avaliar",
+      status: "marcado",
     })
     .select("*")
     .single();
-  if (error || !data) throw new Error(mapearErroCriarRepasse(error));
-
-  const repasse = data as Repasse;
-
-  // Cria checklist padrão (best-effort — se falhar, ainda assim retornamos o repasse criado)
-  try {
-    await sb.from("repasse_documentos").insert(
-      DOCUMENTOS_PADRAO.map((tipo) => ({
-        repasse_id: repasse.id,
-        tipo,
-        status: "pendente" as DocStatus,
-      })),
-    );
-  } catch {
-    // checklist falhou — usuário pode adicionar manualmente depois
-  }
-
-  return repasse;
+  if (error || !data) throw criarErroRepasse(error);
+  return rowToRepasse(data as RepasseRow);
 }
 
-export type RepassePatch = Partial<
-  Pick<
-    Repasse,
-    | "valor_subiu"
-    | "valor_minimo"
-    | "valor_vendido"
-    | "data_vendido"
-    | "canal"
-    | "status"
-    | "documentacao_status"
-    | "descricao"
-    | "opcionais"
-    | "comprador"
-    | "observacoes"
-  >
->;
-
-export async function updateRepasse(id: number, patch: RepassePatch): Promise<Repasse> {
+/** Marca como "subido" (já foi enviado pro Auto Avaliar). */
+export async function marcarComoSubido(id: number): Promise<Repasse> {
   const sb = getSupabase();
+  const hoje = new Date().toISOString().slice(0, 10);
   const { data, error } = await sb
     .from("repasses")
-    .update(patch)
+    .update({ status: "subido", data_subido: hoje })
     .eq("id", id)
     .select("*")
     .single();
-  if (error || !data) throw new Error(`Falha ao atualizar repasse: ${error?.message ?? "sem dados"}`);
-  return data as Repasse;
+  if (error || !data) throw new Error(`Falha ao marcar como subido: ${error?.message ?? "sem dados"}`);
+  return rowToRepasse(data as RepasseRow);
+}
+
+/**
+ * Marca em lote como "subido". Retorna número de atualizados.
+ *
+ * Filtra por `status='marcado'` (defesa em profundidade) pra não sobrescrever
+ * `data_subido` de rows que já estão "subido" — caso a UI passe ids fora do
+ * filtro por algum bug.
+ */
+export async function marcarVariosComoSubido(ids: ReadonlyArray<number>): Promise<number> {
+  if (ids.length === 0) return 0;
+  const sb = getSupabase();
+  const hoje = new Date().toISOString().slice(0, 10);
+  const { data, error } = await sb
+    .from("repasses")
+    .update({ status: "subido", data_subido: hoje })
+    .in("id", [...ids])
+    .eq("status", "marcado")
+    .select("id");
+  if (error) throw new Error(`Falha ao marcar como subidos: ${error.message}`);
+  return (data ?? []).length;
 }
 
 export async function deleteRepasse(id: number): Promise<void> {
@@ -160,108 +196,16 @@ export async function deleteRepasse(id: number): Promise<void> {
   if (error) throw new Error(`Falha ao excluir repasse: ${error.message}`);
 }
 
-/**
- * Marca como vendido (atualiza status + valor + data + comprador num único update).
- * `data_vendido` default = hoje.
- */
-export async function marcarVendido(
-  id: number,
-  payload: { valor_vendido: number; data_vendido?: string; comprador?: string | null },
-): Promise<Repasse> {
-  return updateRepasse(id, {
-    status: "vendido",
-    valor_vendido: payload.valor_vendido,
-    data_vendido: payload.data_vendido ?? new Date().toISOString().slice(0, 10),
-    comprador: payload.comprador ?? null,
-  });
-}
-
-export async function marcarNaoVendido(id: number, motivo: string): Promise<Repasse> {
-  return updateRepasse(id, {
-    status: "nao_vendido",
-    observacoes: motivo,
-  });
-}
-
-// ─── GASTOS ──────────────────────────────────────────────────────────────────
-
-export async function listGastos(repasseId: number): Promise<RepasseGasto[]> {
+export async function deleteRepasses(ids: ReadonlyArray<number>): Promise<number> {
+  if (ids.length === 0) return 0;
   const sb = getSupabase();
   const { data, error } = await sb
-    .from("repasse_gastos")
-    .select("*")
-    .eq("repasse_id", repasseId)
-    .order("data", { ascending: true });
-  if (error) throw new Error(`Falha ao ler gastos: ${error.message}`);
-  return (data ?? []) as RepasseGasto[];
-}
-
-export type GastoInput = {
-  tipo: GastoTipo;
-  descricao: string;
-  valor: number;
-  data: string;
-  observacao?: string | null;
-};
-
-export async function addGasto(repasseId: number, input: GastoInput): Promise<RepasseGasto> {
-  const sb = getSupabase();
-  const { data, error } = await sb
-    .from("repasse_gastos")
-    .insert({
-      repasse_id: repasseId,
-      tipo: input.tipo,
-      descricao: input.descricao,
-      valor: input.valor,
-      data: input.data,
-      observacao: input.observacao ?? null,
-    })
-    .select("*")
-    .single();
-  if (error || !data) throw new Error(`Falha ao adicionar gasto: ${error?.message ?? "sem dados"}`);
-  return data as RepasseGasto;
-}
-
-export async function removeGasto(gastoId: number): Promise<void> {
-  const sb = getSupabase();
-  const { error } = await sb.from("repasse_gastos").delete().eq("id", gastoId);
-  if (error) throw new Error(`Falha ao remover gasto: ${error.message}`);
-}
-
-// ─── DOCUMENTOS ──────────────────────────────────────────────────────────────
-
-export async function listDocumentos(repasseId: number): Promise<RepasseDocumento[]> {
-  const sb = getSupabase();
-  const { data, error } = await sb
-    .from("repasse_documentos")
-    .select("*")
-    .eq("repasse_id", repasseId);
-  if (error) throw new Error(`Falha ao ler documentos: ${error.message}`);
-  return (data ?? []) as RepasseDocumento[];
-}
-
-export async function upsertDocumento(
-  repasseId: number,
-  tipo: DocumentoTipo,
-  patch: { status: DocStatus; observacao?: string | null; data_verificacao?: string | null },
-): Promise<RepasseDocumento> {
-  const sb = getSupabase();
-  const { data, error } = await sb
-    .from("repasse_documentos")
-    .upsert(
-      {
-        repasse_id: repasseId,
-        tipo,
-        status: patch.status,
-        observacao: patch.observacao ?? null,
-        data_verificacao: patch.data_verificacao ?? null,
-      },
-      { onConflict: "repasse_id,tipo" },
-    )
-    .select("*")
-    .single();
-  if (error || !data) throw new Error(`Falha ao atualizar documento: ${error?.message ?? "sem dados"}`);
-  return data as RepasseDocumento;
+    .from("repasses")
+    .delete()
+    .in("id", [...ids])
+    .select("id");
+  if (error) throw new Error(`Falha ao excluir repasses: ${error.message}`);
+  return (data ?? []).length;
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
@@ -269,10 +213,12 @@ export async function upsertDocumento(
 /**
  * Constrói um RepasseInput a partir de um VeiculoParsed do estoque.
  * Centraliza a cópia de campos pra evitar divergência entre callers.
+ *
+ * `preco_atual` = preco_venda do estoque no momento da marcação (snapshot).
  */
 export function snapshotFromVeiculo(
   v: VeiculoParsed,
-  valores: { valor_subiu: number | null; valor_minimo: number | null; canal?: RepasseCanal },
+  opts?: { canal?: RepasseCanal },
 ): RepasseInput {
   return {
     chassi: v.chassi,
@@ -286,10 +232,7 @@ export function snapshotFromVeiculo(
     loja_origem: v.cod_empresa,
     patio_origem: v.patio,
     valor_aquisicao: v.valor_aquisicao,
-    valor_subiu: valores.valor_subiu,
-    valor_minimo: valores.valor_minimo,
-    canal: valores.canal,
+    preco_atual: v.preco_venda,
+    canal: opts?.canal,
   };
 }
-
-export type StatusFilter = "all" | RepasseStatus;

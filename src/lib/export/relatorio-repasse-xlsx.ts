@@ -1,41 +1,41 @@
 /**
- * Gerador de planilha XLSX por repasse (uma planilha = um carro).
+ * Gerador de planilha XLSX profissional pra carros marcados pra repasse.
+ *
+ * Uma planilha = lista de carros. Marcos baixa, preenche IPVA/Doc/Cautelar/
+ * Observação no Excel (dropdowns + observação livre), e sobe no Auto Avaliar.
+ *
+ * Layout: 1 aba só ("Carros pra Repasse").
+ *   - Linhas 1-3: cabeçalho com título, data de geração, total + capital travado
+ *   - Linha 5: header da tabela (17 colunas)
+ *   - Linha 6+: dados dos carros (snapshot)
+ *   - Colunas IPVA / Doc / Cautelar / Observação: vazias, com data validation
+ *   - AutoFilter no header + frozen header (5 linhas)
  *
  * Por que `exceljs` e não `xlsx` (SheetJS)?
- *   - exceljs suporta fórmulas vivas com referências cruzadas entre abas.
- *     O Marcos precisa editar gastos dentro da própria planilha e ver
- *     breakeven/margem recalcularem sozinhos.
- *   - SheetJS free é usado no resto do projeto pra leitura/escrita simples,
- *     mas não dá pra manter referências de fórmula confiáveis.
- *
- * Estrutura: 4 abas
- *   1. Resumo — identificação, valores e status (B17 = total gastos via SUM Gastos!D:D)
- *   2. Gastos — linhas editáveis com total no rodapé
- *   3. Documentação — checklist com emoji
- *   4. Cálculos — breakeven, margens projetadas, ROI, comissão (referências a Resumo)
- *
- * API node-only: usa Buffer. Pra uso no browser (download), o caller converte
- * Buffer→Uint8Array→Blob (já feito em ExportDropdown e similares no projeto).
+ *   - Precisa de data validation (dropdowns) por célula
+ *   - Estilos de borda/fundo/fonte
+ *   - AutoFilter + frozen panes
  */
 
 import ExcelJS from "exceljs";
-import {
-  CANAL_LABEL,
-  DOC_STATUS_ICON,
-  DOC_STATUS_LABEL,
-  DOCUMENTO_TIPO_LABEL,
-  GASTO_TIPO_LABEL,
-  STATUS_LABEL,
-} from "@/lib/repasses/types";
-import type {
-  Repasse,
-  RepasseGasto,
-  RepasseDocumento,
-} from "@/lib/repasses/types";
+import { CANAL_LABEL, STATUS_LABEL } from "@/lib/repasses/types";
+import type { Repasse } from "@/lib/repasses/types";
 
 const FMT_BRL = '"R$" #,##0.00;[Red]-"R$" #,##0.00';
-const FMT_PCT = '0.00"%"';
-const FMT_DATE = "dd/mm/yyyy";
+const FMT_INT = "#,##0";
+
+const COR_TITULO_BG = "FF1E3A8A"; // azul escuro
+const COR_TITULO_FG = "FFFFFFFF";
+const COR_HEADER_BG = "FF3B82F6"; // azul Tailwind blue-500
+const COR_HEADER_FG = "FFFFFFFF";
+const COR_ZEBRA = "FFF3F4F6"; // cinza claro
+
+const BORDA_FINA: Partial<ExcelJS.Borders> = {
+  top: { style: "thin", color: { argb: "FFD1D5DB" } },
+  bottom: { style: "thin", color: { argb: "FFD1D5DB" } },
+  left: { style: "thin", color: { argb: "FFD1D5DB" } },
+  right: { style: "thin", color: { argb: "FFD1D5DB" } },
+};
 
 /** Formata YYYY-MM-DD pra Date local (sem timezone shift). null vira null. */
 function dateOnly(value: string | null): Date | null {
@@ -45,289 +45,282 @@ function dateOnly(value: string | null): Date | null {
   return new Date(y, m - 1, d);
 }
 
-/** Adiciona uma linha "label | valor" e retorna o range pra estilizar depois. */
-function addLabeledRow(
-  ws: ExcelJS.Worksheet,
-  row: number,
-  label: string,
-  value: string | number | Date | null,
-  numFmt?: string,
-) {
-  ws.getCell(`A${row}`).value = label;
-  ws.getCell(`A${row}`).font = { bold: true };
-  const cell = ws.getCell(`B${row}`);
-  cell.value = value;
-  if (numFmt) cell.numFmt = numFmt;
+/** Calcula dias entre data_marcado (YYYY-MM-DD) e hoje. */
+function diasParado(dataMarcado: string): number | null {
+  const d = dateOnly(dataMarcado);
+  if (!d) return null;
+  const hoje = new Date();
+  const ms = hoje.getTime() - d.getTime();
+  return Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
 }
 
-export async function gerarRelatorioRepasseXlsx(
-  repasse: Repasse,
-  gastos: ReadonlyArray<RepasseGasto>,
-  documentos: ReadonlyArray<RepasseDocumento>,
+/**
+ * Soma `preco_atual` SÓ dos repasses com status='marcado' — usado pro KPI
+ * "capital travado". Subidos já foram pro Auto Avaliar, então não contam
+ * como capital travado mesmo se aparecem no export (filtro "Todos").
+ *
+ * Consistente com o KPI da tela de /repasses.
+ */
+function somarPrecoAtualMarcados(repasses: ReadonlyArray<Repasse>): number {
+  let total = 0;
+  for (const r of repasses) {
+    if (r.status === "marcado" && r.preco_atual != null) total += r.preco_atual;
+  }
+  return total;
+}
+
+/** Definições de coluna da tabela (header → key → largura). */
+const COLUNAS: ReadonlyArray<{ key: string; header: string; width: number }> = [
+  { key: "n", header: "#", width: 5 },
+  { key: "placa", header: "Placa", width: 11 },
+  { key: "chassi", header: "Chassi", width: 22 },
+  { key: "marca", header: "Marca", width: 14 },
+  { key: "modelo", header: "Modelo", width: 32 },
+  { key: "ano_fab", header: "Ano Fab", width: 9 },
+  { key: "ano_mod", header: "Ano Mod", width: 9 },
+  { key: "km", header: "KM", width: 11 },
+  { key: "cor", header: "Cor", width: 12 },
+  { key: "loja", header: "Loja", width: 8 },
+  { key: "patio", header: "Pátio", width: 14 },
+  { key: "dias_parado", header: "Dias parado", width: 11 },
+  { key: "preco_atual", header: "Preço atual", width: 14 },
+  { key: "custo", header: "Custo", width: 14 },
+  { key: "ipva", header: "IPVA", width: 16 },
+  { key: "doc", header: "Doc", width: 16 },
+  { key: "cautelar", header: "Cautelar", width: 16 },
+  { key: "observacao", header: "Observação", width: 40 },
+];
+
+const COL_IPVA = COLUNAS.findIndex((c) => c.key === "ipva") + 1; // 1-based
+const COL_DOC = COLUNAS.findIndex((c) => c.key === "doc") + 1;
+const COL_CAUTELAR = COLUNAS.findIndex((c) => c.key === "cautelar") + 1;
+const COL_OBS = COLUNAS.findIndex((c) => c.key === "observacao") + 1;
+const COL_PRECO = COLUNAS.findIndex((c) => c.key === "preco_atual") + 1;
+const COL_CUSTO = COLUNAS.findIndex((c) => c.key === "custo") + 1;
+const COL_KM = COLUNAS.findIndex((c) => c.key === "km") + 1;
+
+const HEADER_ROW = 5;
+const DATA_START_ROW = 6;
+
+/**
+ * Opções de dropdown pra IPVA / Doc / Cautelar. Mantidas em ranges nomeados
+ * numa aba auxiliar oculta (`_Listas`) — workaround pra data validation
+ * funcionar em qualquer locale (Excel pt-BR usa `;` como separador, e o
+ * `formulae: ['"a,b,c"']` inline quebra).
+ */
+const OPCOES_IPVA: ReadonlyArray<string> = ["Pago", "Em aberto", "Não verificado"];
+const OPCOES_DOC: ReadonlyArray<string> = ["OK", "Pendente", "Irregular", "Não verificado"];
+const OPCOES_CAUTELAR: ReadonlyArray<string> = ["Limpa", "Com restrição", "Não verificada"];
+
+export async function gerarRelatorioRepasseProfissional(
+  repasses: ReadonlyArray<Repasse>,
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = "Navesa Mesa";
   wb.created = new Date();
 
-  // ─── Aba RESUMO ────────────────────────────────────────────────────────────
-  const resumo = wb.addWorksheet("Resumo");
-  resumo.getColumn("A").width = 28;
-  resumo.getColumn("B").width = 32;
-
-  // Título
-  resumo.mergeCells("A1:B1");
-  resumo.getCell("A1").value = `Repasse — ${repasse.modelo} (${repasse.placa})`;
-  resumo.getCell("A1").font = { bold: true, size: 14 };
-
-  // Identificação (A3..B11)
-  resumo.getCell("A3").value = "Identificação";
-  resumo.getCell("A3").font = { bold: true, size: 11 };
-  addLabeledRow(resumo, 4, "Placa", repasse.placa);
-  addLabeledRow(resumo, 5, "Modelo", repasse.modelo);
-  addLabeledRow(resumo, 6, "Chassi", repasse.chassi);
-  addLabeledRow(resumo, 7, "Marca", repasse.marca ?? "—");
-  addLabeledRow(resumo, 8, "Cor", repasse.cor ?? "—");
-  addLabeledRow(
-    resumo,
-    9,
-    "Ano fab/modelo",
-    [repasse.ano_fabricacao, repasse.ano_modelo].filter(Boolean).join("/") || "—",
-  );
-  addLabeledRow(resumo, 10, "KM", repasse.km ?? "—");
-  addLabeledRow(resumo, 11, "Loja origem", repasse.loja_origem ?? "—");
-
-  // Valores (A13..B21) — fórmulas vivas
-  resumo.getCell("A13").value = "Valores";
-  resumo.getCell("A13").font = { bold: true, size: 11 };
-
-  addLabeledRow(resumo, 14, "Valor de aquisição", repasse.valor_aquisicao ?? 0, FMT_BRL);
-  addLabeledRow(resumo, 15, "Valor que subiu", repasse.valor_subiu ?? 0, FMT_BRL);
-  addLabeledRow(resumo, 16, "Valor mínimo", repasse.valor_minimo ?? 0, FMT_BRL);
-
-  // Range dinâmico dos gastos: linhas 2..(gastos.length + 1).
-  // Se a lista estiver vazia, usa D2:D2 (célula vazia → SUM = 0, válido).
-  // Mantém o range exato dos dados pra evitar que a fórmula englobe o rodapé
-  // TOTAL (que vai em Math.max(gastos.length + 3, 5)).
-  const gastosDataStart = 2;
-  const gastosDataEnd = Math.max(gastos.length + 1, gastosDataStart);
-  const gastosTotalRow = Math.max(gastos.length + 3, 5);
-  const gastosSumRange = `D${gastosDataStart}:D${gastosDataEnd}`;
-
-  // B17 = soma viva da aba Gastos
-  resumo.getCell("A17").value = "Total de gastos";
-  resumo.getCell("A17").font = { bold: true };
-  resumo.getCell("B17").value = { formula: `SUM(Gastos!${gastosSumRange})` };
-  resumo.getCell("B17").numFmt = FMT_BRL;
-
-  // B18 = aquisição + gastos
-  resumo.getCell("A18").value = "Custo total (aquisição + gastos)";
-  resumo.getCell("A18").font = { bold: true };
-  resumo.getCell("B18").value = { formula: "B14+B17" };
-  resumo.getCell("B18").numFmt = FMT_BRL;
-
-  addLabeledRow(resumo, 19, "Valor vendido", repasse.valor_vendido ?? "", FMT_BRL);
-
-  // B20 = margem real (R$) condicional
-  resumo.getCell("A20").value = "Margem real (R$)";
-  resumo.getCell("A20").font = { bold: true };
-  resumo.getCell("B20").value = { formula: 'IF(B19="","",B19-B18)' };
-  resumo.getCell("B20").numFmt = FMT_BRL;
-
-  // B21 = margem %
-  // Protege contra valor_vendido = 0 (divisão por zero → #DIV/0!),
-  // espelhando calcularMargemPct em [calc.ts:59](src/lib/repasses/calc.ts#L59).
-  resumo.getCell("A21").value = "Margem (%)";
-  resumo.getCell("A21").font = { bold: true };
-  resumo.getCell("B21").value = { formula: 'IF(OR(B19="",B19=0),"",B20/B19*100)' };
-  resumo.getCell("B21").numFmt = FMT_PCT;
-
-  // Status (A23..B27)
-  resumo.getCell("A23").value = "Status";
-  resumo.getCell("A23").font = { bold: true, size: 11 };
-  addLabeledRow(resumo, 24, "Status", STATUS_LABEL[repasse.status]);
-  addLabeledRow(
-    resumo,
-    25,
-    "Documentação",
-    DOC_STATUS_LABEL[repasse.documentacao_status],
-  );
-  addLabeledRow(resumo, 26, "Canal", CANAL_LABEL[repasse.canal] ?? repasse.canal);
-  addLabeledRow(resumo, 27, "Data subiu", dateOnly(repasse.data_subiu), FMT_DATE);
-  addLabeledRow(resumo, 28, "Data vendido", dateOnly(repasse.data_vendido), FMT_DATE);
-
-  // ─── Aba GASTOS ────────────────────────────────────────────────────────────
-  const ws = wb.addWorksheet("Gastos");
-  ws.columns = [
-    { header: "#", key: "n", width: 6 },
-    { header: "Tipo", key: "tipo", width: 18 },
-    { header: "Descrição", key: "descricao", width: 36 },
-    { header: "Valor (R$)", key: "valor", width: 14 },
-    { header: "Data", key: "data", width: 12 },
-    { header: "Observação", key: "observacao", width: 32 },
-  ];
-  ws.getRow(1).font = { bold: true };
-  ws.getRow(1).fill = {
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: "FFE5E7EB" },
-  };
-
-  gastos.forEach((g, i) => {
-    const r = ws.addRow({
-      n: i + 1,
-      tipo: GASTO_TIPO_LABEL[g.tipo],
-      descricao: g.descricao,
-      valor: g.valor,
-      data: dateOnly(g.data),
-      observacao: g.observacao ?? "",
-    });
-    r.getCell("valor").numFmt = FMT_BRL;
-    r.getCell("data").numFmt = FMT_DATE;
+  const ws = wb.addWorksheet("Carros pra Repasse", {
+    pageSetup: { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+    views: [{ state: "frozen", ySplit: HEADER_ROW }],
   });
 
-  // Total no rodapé — usa range dinâmico baseado em gastos.length pra evitar
-  // truncar com ≥100 linhas e evitar que a fórmula englobe a própria célula TOTAL.
-  // Invariante: gastosDataEnd < gastosTotalRow (sempre).
-  const totalRow = ws.getRow(gastosTotalRow);
-  totalRow.getCell(3).value = "TOTAL";
-  totalRow.getCell(3).font = { bold: true };
-  totalRow.getCell(3).alignment = { horizontal: "right" };
-  totalRow.getCell(4).value = { formula: `SUM(${gastosSumRange})` };
-  totalRow.getCell(4).font = { bold: true };
-  totalRow.getCell(4).numFmt = FMT_BRL;
+  // Aba auxiliar oculta com listas de valores pras data validations.
+  // Mantida oculta — usuário não vê, mas o Excel resolve as referências.
+  const aux = wb.addWorksheet("_Listas", { state: "hidden" });
+  preencherColuna(aux, 1, OPCOES_IPVA);
+  preencherColuna(aux, 2, OPCOES_DOC);
+  preencherColuna(aux, 3, OPCOES_CAUTELAR);
 
-  // ─── Aba DOCUMENTAÇÃO ──────────────────────────────────────────────────────
-  const wd = wb.addWorksheet("Documentação");
-  wd.columns = [
-    { header: "Item", key: "item", width: 22 },
-    { header: "Status", key: "status", width: 16 },
-    { header: "Observação", key: "obs", width: 36 },
-    { header: "Data verificação", key: "data", width: 18 },
-  ];
-  wd.getRow(1).font = { bold: true };
-  wd.getRow(1).fill = {
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: "FFE5E7EB" },
-  };
-
-  for (const doc of documentos) {
-    const r = wd.addRow({
-      item: DOCUMENTO_TIPO_LABEL[doc.tipo],
-      status: `${DOC_STATUS_ICON[doc.status]} ${DOC_STATUS_LABEL[doc.status]}`,
-      obs: doc.observacao ?? "",
-      data: dateOnly(doc.data_verificacao),
-    });
-    r.getCell("data").numFmt = FMT_DATE;
+  // ─── Larguras das colunas ──────────────────────────────────────────────────
+  for (let i = 0; i < COLUNAS.length; i++) {
+    ws.getColumn(i + 1).width = COLUNAS[i]!.width;
   }
 
-  // ─── Aba CÁLCULOS ──────────────────────────────────────────────────────────
-  const wc = wb.addWorksheet("Cálculos");
-  wc.getColumn("A").width = 36;
-  wc.getColumn("B").width = 22;
+  const lastCol = COLUNAS.length;
+  const totalRegistros = repasses.length;
+  const capitalTravado = somarPrecoAtualMarcados(repasses);
+  const agora = new Date();
+  const dataGeradaBR = `${String(agora.getDate()).padStart(2, "0")}/${String(
+    agora.getMonth() + 1,
+  ).padStart(2, "0")}/${agora.getFullYear()} ${String(agora.getHours()).padStart(2, "0")}:${String(
+    agora.getMinutes(),
+  ).padStart(2, "0")}`;
 
-  wc.getCell("A1").value = "Cenários e indicadores";
-  wc.getCell("A1").font = { bold: true, size: 12 };
+  // ─── Cabeçalho (linhas 1-3) ────────────────────────────────────────────────
+  ws.mergeCells(1, 1, 1, lastCol);
+  const titulo = ws.getCell(1, 1);
+  titulo.value = "NAVESA — Relatório de Carros pra Repasse";
+  titulo.font = { name: "Calibri", size: 16, bold: true, color: { argb: COR_TITULO_FG } };
+  titulo.alignment = { horizontal: "center", vertical: "middle" };
+  titulo.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COR_TITULO_BG } };
+  ws.getRow(1).height = 30;
 
-  wc.getCell("A3").value = "Breakeven (custo total)";
-  wc.getCell("B3").value = { formula: "Resumo!B18" };
-  wc.getCell("B3").numFmt = FMT_BRL;
+  ws.mergeCells(2, 1, 2, lastCol);
+  const sub = ws.getCell(2, 1);
+  sub.value = `Gerado em: ${dataGeradaBR}`;
+  sub.font = { name: "Calibri", size: 10, color: { argb: COR_TITULO_FG } };
+  sub.alignment = { horizontal: "center", vertical: "middle" };
+  sub.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } };
+  ws.getRow(2).height = 18;
 
-  wc.getCell("A4").value = "Margem se vender pelo subido";
-  wc.getCell("B4").value = { formula: "Resumo!B15-Resumo!B18" };
-  wc.getCell("B4").numFmt = FMT_BRL;
+  ws.mergeCells(3, 1, 3, lastCol);
+  const totais = ws.getCell(3, 1);
+  totais.value = `Total: ${totalRegistros} veículo${totalRegistros === 1 ? "" : "s"} | Capital travado (marcados): ${formatBRLPlain(capitalTravado)}`;
+  totais.font = { name: "Calibri", size: 10, color: { argb: COR_TITULO_FG }, bold: true };
+  totais.alignment = { horizontal: "center", vertical: "middle" };
+  totais.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } };
+  ws.getRow(3).height = 18;
 
-  wc.getCell("A5").value = "Margem se vender pelo mínimo";
-  wc.getCell("B5").value = { formula: "Resumo!B16-Resumo!B18" };
-  wc.getCell("B5").numFmt = FMT_BRL;
+  // ─── Header da tabela (linha 5) ────────────────────────────────────────────
+  const headerRow = ws.getRow(HEADER_ROW);
+  for (let i = 0; i < COLUNAS.length; i++) {
+    const cell = headerRow.getCell(i + 1);
+    cell.value = COLUNAS[i]!.header;
+    cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: COR_HEADER_FG } };
+    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COR_HEADER_BG } };
+    cell.border = BORDA_FINA;
+  }
+  headerRow.height = 22;
 
-  wc.getCell("A6").value = "ROI sobre aquisição (%)";
-  wc.getCell("B6").value = {
-    formula: 'IF(Resumo!B14=0,"",B3/Resumo!B14*100)',
-  };
-  wc.getCell("B6").numFmt = FMT_PCT;
+  // ─── Dados (linha 6+) ──────────────────────────────────────────────────────
+  repasses.forEach((r, idx) => {
+    const rowNum = DATA_START_ROW + idx;
+    const row = ws.getRow(rowNum);
+    const zebra = idx % 2 === 1;
 
-  wc.getCell("A7").value = "Comissão estimada (5% do valor subido)";
-  wc.getCell("B7").value = { formula: "Resumo!B15*0.05" };
-  wc.getCell("B7").numFmt = FMT_BRL;
+    const valores: Array<string | number | Date | null> = [
+      idx + 1,
+      r.placa,
+      r.chassi,
+      r.marca ?? "",
+      r.modelo,
+      r.ano_fabricacao ?? "",
+      r.ano_modelo ?? "",
+      r.km ?? "",
+      r.cor ?? "",
+      r.loja_origem ?? "",
+      r.patio_origem ?? "",
+      diasParado(r.data_marcado) ?? "",
+      r.preco_atual ?? "",
+      r.valor_aquisicao ?? "",
+      "", // IPVA — preencher no Excel
+      "", // Doc — preencher no Excel
+      "", // Cautelar — preencher no Excel
+      "", // Observação — preencher no Excel
+    ];
 
-  // ─── Serialização ─────────────────────────────────────────────────────────
-  const arrayBuffer = await wb.xlsx.writeBuffer();
-  return Buffer.from(arrayBuffer);
-}
-
-// ─── Export consolidado de uma lista de repasses (1 aba) ──────────────────────
-
-export type RepasseConsolidadoRow = {
-  repasse: Repasse;
-  totalGastos: number;
-  custoTotal: number | null;
-  margemReal: number | null;
-  margemPct: number | null;
-};
-
-export async function gerarConsolidadoRepassesXlsx(
-  rows: ReadonlyArray<RepasseConsolidadoRow>,
-): Promise<Buffer> {
-  const wb = new ExcelJS.Workbook();
-  wb.creator = "Navesa Mesa";
-  wb.created = new Date();
-
-  const ws = wb.addWorksheet("Repasses");
-  ws.columns = [
-    { header: "Placa", key: "placa", width: 12 },
-    { header: "Modelo", key: "modelo", width: 30 },
-    { header: "Marca", key: "marca", width: 14 },
-    { header: "Ano modelo", key: "ano", width: 12 },
-    { header: "KM", key: "km", width: 12 },
-    { header: "Subido em", key: "subido_em", width: 14 },
-    { header: "Canal", key: "canal", width: 14 },
-    { header: "Aquisição", key: "aquisicao", width: 14 },
-    { header: "Subiu por", key: "subiu", width: 14 },
-    { header: "Mínimo", key: "minimo", width: 14 },
-    { header: "Gastos", key: "gastos", width: 14 },
-    { header: "Custo total", key: "custo", width: 14 },
-    { header: "Vendido por", key: "vendido", width: 14 },
-    { header: "Margem (R$)", key: "margem", width: 14 },
-    { header: "Margem (%)", key: "margem_pct", width: 12 },
-    { header: "Status", key: "status", width: 16 },
-    { header: "Documentação", key: "doc", width: 16 },
-  ];
-
-  ws.getRow(1).font = { bold: true };
-  ws.getRow(1).fill = {
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: "FFE5E7EB" },
-  };
-
-  for (const { repasse, totalGastos, custoTotal, margemReal, margemPct } of rows) {
-    const r = ws.addRow({
-      placa: repasse.placa,
-      modelo: repasse.modelo,
-      marca: repasse.marca ?? "",
-      ano: repasse.ano_modelo ?? "",
-      km: repasse.km ?? "",
-      subido_em: dateOnly(repasse.data_subiu),
-      canal: CANAL_LABEL[repasse.canal] ?? repasse.canal,
-      aquisicao: repasse.valor_aquisicao ?? "",
-      subiu: repasse.valor_subiu ?? "",
-      minimo: repasse.valor_minimo ?? "",
-      gastos: totalGastos,
-      custo: custoTotal ?? "",
-      vendido: repasse.valor_vendido ?? "",
-      margem: margemReal ?? "",
-      margem_pct: margemPct ?? "",
-      status: STATUS_LABEL[repasse.status],
-      doc: DOC_STATUS_LABEL[repasse.documentacao_status],
-    });
-    for (const key of ["aquisicao", "subiu", "minimo", "gastos", "custo", "vendido", "margem"] as const) {
-      r.getCell(key).numFmt = FMT_BRL;
+    for (let i = 0; i < valores.length; i++) {
+      const cell = row.getCell(i + 1);
+      cell.value = valores[i] ?? "";
+      cell.border = BORDA_FINA;
+      if (zebra) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COR_ZEBRA } };
+      }
     }
-    r.getCell("margem_pct").numFmt = FMT_PCT;
-    r.getCell("subido_em").numFmt = FMT_DATE;
+
+    row.getCell(COL_PRECO).numFmt = FMT_BRL;
+    row.getCell(COL_CUSTO).numFmt = FMT_BRL;
+    row.getCell(COL_KM).numFmt = FMT_INT;
+    row.getCell(COL_OBS).alignment = { wrapText: true, vertical: "top" };
+    row.height = 20;
+  });
+
+  const lastDataRow = totalRegistros > 0 ? DATA_START_ROW + totalRegistros - 1 : DATA_START_ROW;
+
+  // ─── Data validation (dropdowns) ───────────────────────────────────────────
+  // Referência range na aba "_Listas" (oculta). Funciona em qualquer locale
+  // do Excel — string inline com vírgula quebra em Excel BR (separador ";").
+  if (totalRegistros > 0) {
+    aplicarValidationColuna(
+      ws,
+      COL_IPVA,
+      DATA_START_ROW,
+      lastDataRow,
+      rangeListas("A", OPCOES_IPVA.length),
+    );
+    aplicarValidationColuna(
+      ws,
+      COL_DOC,
+      DATA_START_ROW,
+      lastDataRow,
+      rangeListas("B", OPCOES_DOC.length),
+    );
+    aplicarValidationColuna(
+      ws,
+      COL_CAUTELAR,
+      DATA_START_ROW,
+      lastDataRow,
+      rangeListas("C", OPCOES_CAUTELAR.length),
+    );
+  }
+
+  // ─── AutoFilter ────────────────────────────────────────────────────────────
+  ws.autoFilter = {
+    from: { row: HEADER_ROW, column: 1 },
+    to: { row: HEADER_ROW, column: lastCol },
+  };
+
+  // ─── Footer ────────────────────────────────────────────────────────────────
+  if (totalRegistros > 0) {
+    const footerRow = lastDataRow + 2;
+    const footer = ws.getCell(footerRow, 1);
+    ws.mergeCells(footerRow, 1, footerRow, lastCol);
+    footer.value = `TOTAL: ${totalRegistros} veículo${totalRegistros === 1 ? "" : "s"} | Capital travado (marcados): ${formatBRLPlain(capitalTravado)}`;
+    footer.font = { name: "Calibri", size: 11, bold: true };
+    footer.alignment = { horizontal: "right", vertical: "middle" };
   }
 
   const arrayBuffer = await wb.xlsx.writeBuffer();
   return Buffer.from(arrayBuffer);
 }
+
+/**
+ * Aplica data validation (dropdown) numa coluna do range de dados.
+ *
+ * `formula` deve apontar pra um range na aba `_Listas` (ex.: `_Listas!$A$1:$A$3`).
+ * Inline values com vírgula quebram em Excel BR — sempre use range.
+ */
+function aplicarValidationColuna(
+  ws: ExcelJS.Worksheet,
+  col: number,
+  rowStart: number,
+  rowEnd: number,
+  formula: string,
+) {
+  for (let r = rowStart; r <= rowEnd; r++) {
+    const cell = ws.getCell(r, col);
+    cell.dataValidation = {
+      type: "list",
+      allowBlank: true,
+      formulae: [formula],
+      showErrorMessage: true,
+      errorTitle: "Valor inválido",
+      error: "Use o dropdown pra selecionar uma opção.",
+    };
+  }
+}
+
+/** Preenche uma coluna (1-based) da aba `_Listas` com os valores. */
+function preencherColuna(ws: ExcelJS.Worksheet, col: number, valores: ReadonlyArray<string>) {
+  for (let i = 0; i < valores.length; i++) {
+    ws.getCell(i + 1, col).value = valores[i] ?? "";
+  }
+}
+
+/** Monta a fórmula de range absoluto pra aba `_Listas` (ex.: `_Listas!$A$1:$A$3`). */
+function rangeListas(coluna: "A" | "B" | "C", n: number): string {
+  return `_Listas!$${coluna}$1:$${coluna}$${n}`;
+}
+
+/** BRL sem usar Intl (evita locale do Excel) — pro footer/título. */
+function formatBRLPlain(value: number): string {
+  return `R$ ${value.toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+// ─── Re-exports / debug helpers (mantidos pra simplificar import nos callers) ──
+
+export { STATUS_LABEL, CANAL_LABEL };
