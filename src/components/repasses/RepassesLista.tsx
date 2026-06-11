@@ -61,6 +61,7 @@ import { useChassisEmRepasse } from "@/lib/repasses/useChassisEmRepasse";
 import { usePersistedState } from "@/lib/hooks/usePersistedState";
 import { useInventory, nomeOuCodigo } from "@/lib/store/inventory";
 import { cn, formatBRL, formatInt } from "@/lib/utils";
+import { parseValorBR } from "@/lib/utils/parse-br";
 import { showErrorToast, showSuccessToast } from "@/components/ui/Toast";
 import { MarcarRepasseModal } from "./MarcarRepasseModal";
 import { EscolherVeiculoModal } from "./EscolherVeiculoModal";
@@ -807,34 +808,6 @@ function CautelarSelect({
 }
 
 /**
- * Parse de número BR-tolerante:
- *   - "138.500,00" → 138500
- *   - "138500.50"  → 138500.5
- *   - "" / inválido → null
- * Aceita ponto OU vírgula como decimal — escolhe o último separador como decimal,
- * e remove os outros (assume serem milhar).
- */
-function parseValorBR(raw: string): number | null {
-  const s = raw.trim().replace(/[R$\s]/g, "");
-  if (s === "") return null;
-  const lastComma = s.lastIndexOf(",");
-  const lastDot = s.lastIndexOf(".");
-  let normalizado: string;
-  if (lastComma > lastDot) {
-    // vírgula é decimal — tira pontos (milhar), troca vírgula por ponto.
-    normalizado = s.replace(/\./g, "").replace(",", ".");
-  } else if (lastDot > lastComma) {
-    // ponto é decimal — tira vírgulas (milhar).
-    normalizado = s.replace(/,/g, "");
-  } else {
-    normalizado = s;
-  }
-  const n = Number(normalizado);
-  if (!Number.isFinite(n) || n < 0) return null;
-  return n;
-}
-
-/**
  * Input pra valor R$. Mantém estado local (string) durante edição;
  * commita no banco apenas no blur ou Enter — evita request a cada tecla.
  * Sem debounce porque o blur já cobre o caso natural de "perdi o foco".
@@ -909,12 +882,19 @@ function ObservacaoInput({
   // Debounce 600ms — caso usuário digite muito sem dar blur.
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  function commit(immediate: boolean) {
+  /**
+   * `override` existe pra evitar stale closure: como `setDraft` é async, o
+   * draft do state no onChange seguinte ainda reflete o render anterior.
+   * Quando o caller já tem o valor "fresh" (ex.: e.target.value), passa via
+   * override pra garantir que o commit use o que o usuário acabou de digitar.
+   */
+  function commit(immediate: boolean, override?: string) {
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
     }
-    const novo = draft.trim() === "" ? null : draft;
+    const fonte = override ?? draft;
+    const novo = fonte.trim() === "" ? null : fonte;
     const atual = value ?? null;
     if (novo === atual) return;
     if (immediate) {
@@ -939,7 +919,7 @@ function ObservacaoInput({
       value={draft}
       onChange={(e) => {
         setDraft(e.target.value);
-        commit(false);
+        commit(false, e.target.value);
       }}
       onBlur={() => commit(true)}
       onKeyDown={(e) => {
