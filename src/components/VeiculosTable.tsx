@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
   useReactTable,
   getCoreRowModel,
@@ -10,7 +10,7 @@ import {
   flexRender,
   type ColumnDef,
 } from "@tanstack/react-table";
-import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, X, ClipboardCheck, BarChart3 } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, X, ClipboardCheck, BarChart3, Repeat, ExternalLink } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { classificarPatio } from "@/lib/inventory/status";
 import { CLASSE_COR } from "@/lib/pricing/classificacao";
@@ -25,6 +25,10 @@ import { useVeiculosTable, type FiltrosPrioridade } from "./veiculos/useVeiculos
 import { FiltrosVeiculos } from "./veiculos/FiltrosVeiculos";
 import { VeiculoCardMobile } from "./veiculos/VeiculoCardMobile";
 import { calcularDesvioFipe } from "@/lib/fipe/batch";
+import { SubirRepasseModal } from "./repasses/SubirRepasseModal";
+import { BulkSubirRepasseModal } from "./repasses/BulkSubirRepasseModal";
+import { particionarParaBulkSubir } from "@/lib/repasses/bulk";
+import { showInfoToast } from "./ui/Toast";
 
 function ehPreparacao(v: VeiculoParsed): boolean {
   return classificarPatio(v.patio) === "preparacao";
@@ -39,6 +43,8 @@ export type VeiculosTableProps = {
 export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
   const router = useRouter();
   const vState = useVeiculosTable({ filtrosPrioridade });
+  const [veiculoSubindo, setVeiculoSubindo] = useState<VeiculoParsed | null>(null);
+  const [bulkVeiculos, setBulkVeiculos] = useState<VeiculoParsed[] | null>(null);
 
   const {
     isHydrated,
@@ -71,6 +77,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
     idadeMin, setIdadeMin, idadeMax, setIdadeMax,
     margemMin, setMargemMin, margemMax, setMargemMax,
     fipeBatch,
+    chassisEmRepasse, marcarChassiEmRepasse,
     modoPrioridade, fecharModoPrioridade,
     filtered,
     kpis,
@@ -126,7 +133,27 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
         </span>
       );
     } },
-    { accessorKey: "placa", header: "Placa", cell: (info) => <span className="font-mono text-xs whitespace-nowrap">{info.getValue<string>()}</span> },
+    {
+      accessorKey: "placa",
+      header: "Placa",
+      cell: ({ row }) => {
+        const placa = row.original.placa;
+        const emRepasse = chassisEmRepasse.has(row.original.chassi);
+        return (
+          <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+            <span className="font-mono text-xs">{placa}</span>
+            {emRepasse && (
+              <span
+                className="inline-flex items-center gap-0.5 rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-blue-800 dark:bg-blue-950/40 dark:text-blue-300"
+                title="Já existe um repasse ativo pra este carro"
+              >
+                <Repeat className="h-2.5 w-2.5" /> Em repasse
+              </span>
+            )}
+          </span>
+        );
+      },
+    },
     {
       id: "classe",
       header: "Classe",
@@ -241,7 +268,47 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
       size: 70,
     },
     { accessorKey: "dias_patio", header: "Dias", cell: (info) => <span className="tabular-nums whitespace-nowrap text-xs">{info.getValue<number | null>() ?? "—"}</span>, size: 50 },
-  ], [lojas, classifMap, cautelares, fipeBatch]);
+    {
+      id: "acao_repasse",
+      header: "Ação",
+      cell: ({ row }) => {
+        const v = row.original;
+        const repasseId = chassisEmRepasse.get(v.chassi);
+        if (repasseId != null) {
+          return (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                router.push(`/repasses/${repasseId}`);
+              }}
+              className="inline-flex items-center justify-center rounded-md p-1 text-blue-700 hover:bg-blue-100 dark:text-blue-300 dark:hover:bg-blue-950/40"
+              title="Ver repasse"
+              aria-label="Ver repasse"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+            </button>
+          );
+        }
+        return (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setVeiculoSubindo(v);
+            }}
+            className="inline-flex items-center justify-center rounded-md p-1 text-[var(--brand-700)] hover:bg-[var(--brand-50)] dark:text-[var(--brand-300)] dark:hover:bg-[var(--brand-900)]/40"
+            title="Subir pra repasse"
+            aria-label="Subir pra repasse"
+          >
+            <Repeat className="h-3.5 w-3.5" />
+          </button>
+        );
+      },
+      size: 50,
+      enableSorting: false,
+    },
+  ], [lojas, classifMap, cautelares, fipeBatch, chassisEmRepasse, router]);
 
   // TanStack Table v8 retorna funções não-puras que o React Compiler não consegue memorizar.
   // Limitação conhecida — remover este disable quando migrarmos pra v9 (compatível).
@@ -261,6 +328,12 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
     initialState: { pagination: { pageSize: 25 } },
   });
 
+  const selecionados = table.getSelectedRowModel().rows.map((r) => r.original);
+  const previewBulk = useMemo(
+    () => particionarParaBulkSubir(selecionados, chassisEmRepasse),
+    [selecionados, chassisEmRepasse],
+  );
+
   if (!isHydrated) return <p className="text-sm text-[var(--text-muted)]">Carregando…</p>;
 
   if (veiculos.length === 0) {
@@ -271,8 +344,6 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
       </div>
     );
   }
-
-  const selecionados = table.getSelectedRowModel().rows.map((r) => r.original);
 
   return (
     <div className="space-y-6">
@@ -299,6 +370,37 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
               <span className="font-semibold text-[var(--text-strong)]">{selecionados.length} selecionados:</span>
               <button onClick={() => copiarPlacas(selecionados)} className="inline-flex items-center gap-1 hover:text-[var(--brand-600)]"><ClipboardCheck className="h-3 w-3" /> Placas</button>
               <button onClick={() => exportarSelecionados(selecionados)} className="inline-flex items-center gap-1 hover:text-[var(--brand-600)]" disabled={exportandoSelecao}>{exportandoSelecao ? "Exportando…" : "Gerencial (XLSX)"}</button>
+              <div className="flex flex-col items-end gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (previewBulk.jaEmRepasse.length > 0) {
+                      showInfoToast(
+                        `${previewBulk.jaEmRepasse.length} carro${previewBulk.jaEmRepasse.length === 1 ? "" : "s"} já em repasse — ignorado${previewBulk.jaEmRepasse.length === 1 ? "" : "s"}`,
+                      );
+                    }
+                    if (previewBulk.elegiveis.length === 0) return;
+                    setBulkVeiculos(previewBulk.elegiveis);
+                  }}
+                  disabled={previewBulk.elegiveis.length === 0}
+                  className="inline-flex items-center gap-1 rounded-md bg-[var(--brand-700)] px-2 py-0.5 text-white hover:bg-[var(--brand-800)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Repeat className="h-3 w-3" /> Subir {previewBulk.elegiveis.length} pra repasse
+                </button>
+                {previewBulk.jaEmRepasse.length > 0 && (
+                  <span className="text-[10px] text-[var(--text-muted)]">
+                    {previewBulk.jaEmRepasse.length} já em repasse — ignorado{previewBulk.jaEmRepasse.length === 1 ? "" : "s"}
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setRowSelection({})}
+                className="inline-flex items-center gap-1 text-[var(--text-muted)] hover:text-[var(--text-strong)]"
+                title="Limpar seleção"
+              >
+                <X className="h-3 w-3" />
+              </button>
             </div>
           )}
           <ExportDropdown
@@ -364,19 +466,23 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
             Nenhum veículo nessa página.
           </p>
         ) : (
-          table.getRowModel().rows.map((row) => (
-            <VeiculoCardMobile
-              key={row.id}
-              veiculo={row.original}
-              loja={lojas[row.original.cod_empresa]}
-              classif={classifMap.get(row.original.chassi) ?? null}
-              cautelar={cautelares[row.original.chassi] ?? null}
-              flags={flags[row.original.chassi] ?? null}
-              fipeItem={fipeBatch?.items?.[row.original.chassi] ?? null}
-              selecionado={row.getIsSelected()}
-              onToggleSelect={() => row.toggleSelected()}
-            />
-          ))
+          table.getRowModel().rows.map((row) => {
+            const emRepasse = chassisEmRepasse.has(row.original.chassi);
+            return (
+              <div key={row.id} className={cn(emRepasse && "opacity-60")}>
+                <VeiculoCardMobile
+                  veiculo={row.original}
+                  loja={lojas[row.original.cod_empresa]}
+                  classif={classifMap.get(row.original.chassi) ?? null}
+                  cautelar={cautelares[row.original.chassi] ?? null}
+                  flags={flags[row.original.chassi] ?? null}
+                  fipeItem={fipeBatch?.items?.[row.original.chassi] ?? null}
+                  selecionado={row.getIsSelected()}
+                  onToggleSelect={() => row.toggleSelected()}
+                />
+              </div>
+            );
+          })
         )}
         {/* Paginação mobile */}
         <div className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] px-3 py-2 text-xs">
@@ -409,13 +515,24 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
               ))}
             </thead>
             <tbody>
-              {table.getRowModel().rows.map((row) => (
-                <tr key={row.id} onClick={() => router.push(`/veiculos/${row.original.chassi}`)} className="cursor-pointer border-b border-[var(--border-soft)] last:border-0 hover:bg-[var(--bg-muted)]" title="Ver detalhe">
-                  {row.getVisibleCells().map((cell) => (
-                    <td key={cell.id} className="px-2 py-1.5 align-middle">{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>
-                  ))}
-                </tr>
-              ))}
+              {table.getRowModel().rows.map((row) => {
+                const emRepasse = chassisEmRepasse.has(row.original.chassi);
+                return (
+                  <tr
+                    key={row.id}
+                    onClick={() => router.push(`/veiculos/${row.original.chassi}`)}
+                    className={cn(
+                      "cursor-pointer border-b border-[var(--border-soft)] last:border-0 hover:bg-[var(--bg-muted)]",
+                      emRepasse && "opacity-60",
+                    )}
+                    title={emRepasse ? "Carro em repasse ativo" : "Ver detalhe"}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <td key={cell.id} className="px-2 py-1.5 align-middle">{flexRender(cell.column.columnDef.cell, cell.getContext())}</td>
+                    ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -428,6 +545,44 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
         </div>
       </div>
       <ResumoPorDimensao veiculos={filtered} lojas={lojas} />
+
+      {veiculoSubindo && (
+        <SubirRepasseModal
+          veiculo={veiculoSubindo}
+          valorSubiuSugerido={veiculoSubindo.preco_venda}
+          valorMinimoSugerido={veiculoSubindo.custo_total}
+          open={true}
+          onClose={() => setVeiculoSubindo(null)}
+          onSuccess={(repasseId) => {
+            const chassi = veiculoSubindo.chassi;
+            marcarChassiEmRepasse(chassi, repasseId);
+            setVeiculoSubindo(null);
+            router.push(`/repasses/${repasseId}`);
+          }}
+        />
+      )}
+
+      {bulkVeiculos && (
+        <BulkSubirRepasseModal
+          veiculos={bulkVeiculos}
+          open={true}
+          onClose={(processados) => {
+            setBulkVeiculos(null);
+            // Limpa SÓ os processados (subidos + pulados). Quem sobrou
+            // continua marcado pro próximo bulk.
+            if (processados.length > 0) {
+              setRowSelection((prev) => {
+                const next = { ...prev };
+                for (const chassi of processados) delete next[chassi];
+                return next;
+              });
+            }
+          }}
+          onRepasseCriado={(chassi, repasseId) => {
+            marcarChassiEmRepasse(chassi, repasseId);
+          }}
+        />
+      )}
     </div>
   );
 }

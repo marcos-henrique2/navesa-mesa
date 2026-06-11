@@ -3,9 +3,10 @@
 /**
  * Modal pra subir um veículo do estoque pra repasse.
  *
- * Reutilizável: usado em /veiculos/[chassi] e em /repassar (botão "Subir agora").
- * Quem chama passa o veículo + valor sugerido inicial; após criar o repasse,
- * redireciona pra /repasses/[id].
+ * Reutilizável: usado em /veiculos/[chassi], no /estoque (botão por linha
+ * + bulk) e no widget de repasses no dashboard. Quem chama passa o veículo
+ * + valor sugerido inicial; após criar o repasse, navega pra /repasses/[id]
+ * (ou delega o pós-sucesso via prop `onSuccess`).
  */
 
 import { useState } from "react";
@@ -16,19 +17,36 @@ import { createRepasse, snapshotFromVeiculo } from "@/lib/repasses/queries";
 import { CANAIS_DISPONIVEIS } from "@/lib/repasses/types";
 import { showErrorToast, showSuccessToast } from "@/components/ui/Toast";
 
+export type SubirRepasseModalProps = {
+  veiculo: VeiculoParsed;
+  valorSubiuSugerido?: number | null;
+  valorMinimoSugerido?: number | null;
+  open: boolean;
+  onClose: () => void;
+  /**
+   * Callback opcional executado após sucesso. Quando passado, o modal NÃO
+   * navega pra /repasses/[id] — quem controla o pós-sucesso é o caller.
+   *
+   * Usado no fluxo bulk (avança fila) e onde o /estoque quer só atualizar
+   * o map local + redirecionar via router próprio.
+   */
+  onSuccess?: (repasseId: number) => void;
+  /** Texto do botão de submit. Default: "Subir pra repasse". */
+  labelSubmit?: string;
+  /** Conteúdo extra opcional renderizado no topo do modal (ex.: progresso da fila). */
+  topSlot?: React.ReactNode;
+};
+
 export function SubirRepasseModal({
   veiculo,
   valorSubiuSugerido,
   valorMinimoSugerido,
   open,
   onClose,
-}: {
-  veiculo: VeiculoParsed;
-  valorSubiuSugerido?: number | null;
-  valorMinimoSugerido?: number | null;
-  open: boolean;
-  onClose: () => void;
-}) {
+  onSuccess,
+  labelSubmit,
+  topSlot,
+}: SubirRepasseModalProps) {
   const router = useRouter();
   const [valorSubiu, setValorSubiu] = useState<string>(
     valorSubiuSugerido != null ? String(valorSubiuSugerido) : "",
@@ -53,8 +71,12 @@ export function SubirRepasseModal({
       });
       const repasse = await createRepasse(input);
       showSuccessToast(`Repasse #${repasse.id} criado.`);
-      onClose();
-      router.push(`/repasses/${repasse.id}`);
+      if (onSuccess) {
+        onSuccess(repasse.id);
+      } else {
+        onClose();
+        router.push(`/repasses/${repasse.id}`);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       showErrorToast(msg);
@@ -68,6 +90,7 @@ export function SubirRepasseModal({
         className="w-full max-w-md rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
+        {topSlot && <div className="mb-3">{topSlot}</div>}
         <div className="mb-4 flex items-start justify-between">
           <div>
             <h2 className="text-lg font-bold text-[var(--text-strong)]">Subir pra repasse</h2>
@@ -141,7 +164,7 @@ export function SubirRepasseModal({
               className="inline-flex items-center gap-2 rounded-md bg-[var(--brand-700)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--brand-800)] disabled:opacity-50"
             >
               {salvando && <Loader2 className="h-4 w-4 animate-spin" />}
-              Subir pra repasse
+              {labelSubmit ?? "Subir pra repasse"}
             </button>
           </div>
         </form>

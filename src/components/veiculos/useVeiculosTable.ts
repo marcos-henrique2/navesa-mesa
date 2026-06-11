@@ -10,6 +10,7 @@ import { calcularDesvioFipe } from "@/lib/fipe/batch";
 import { useCautelares, type StatusCautelar } from "@/lib/inventory/cautelar";
 import { useFlagsTodas } from "@/lib/data/flags-veiculo";
 import { ehPraRepasse } from "@/lib/analytics/carros-pra-repassar";
+import { useChassisEmRepasse } from "@/lib/repasses/useChassisEmRepasse";
 import { computarDiagnosticoLista, type DiagnosticoStatus } from "@/lib/pricing/diagnostico";
 import { calcularMedianasKm } from "@/lib/pricing/medianas";
 import { usePersistedState } from "@/lib/hooks/usePersistedState";
@@ -86,6 +87,7 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
   const fipeBatch = useFipeBatch();
   const cautelares = useCautelares();
   const flags = useFlagsTodas();
+  const { chassisEmRepasse, marcarLocalmente: marcarChassiEmRepasse, refresh: refreshChassisEmRepasse } = useChassisEmRepasse();
   const [avancadoOpen, setAvancadoOpen] = useState(false);
   const [anoMin, setAnoMin] = usePersistedState<string>("veiculos:anoMin", "");
   const [anoMax, setAnoMax] = usePersistedState<string>("veiculos:anoMax", "");
@@ -484,6 +486,9 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
     cautelares,
     flags,
     fipeBatch,
+    chassisEmRepasse,
+    marcarChassiEmRepasse,
+    refreshChassisEmRepasse,
     modoPrioridade,
     fecharModoPrioridade,
     diagnosticosPrioridade,

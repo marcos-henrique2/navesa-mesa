@@ -9,6 +9,8 @@
 
 import { getSupabase, selectAll } from "@/lib/data/supabase";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
+import { buildChassisEmRepasseMap, type RepasseAtivoRow } from "./chassis-em-repasse";
+import { mapearErroCriarRepasse } from "./erros";
 import { DOCUMENTOS_PADRAO } from "./types";
 import type {
   Repasse,
@@ -48,6 +50,24 @@ export async function listRepasses(): Promise<Repasse[]> {
   );
 }
 
+/**
+ * Lista os chassis com repasse status='subido' (em andamento).
+ * Retorna Map<chassi, repasse_id> pra UI saber quais carros já estão em repasse
+ * e linkar direto pro detalhe.
+ *
+ * Usado em /estoque pra desabilitar o botão "Subir pra repasse" e mostrar
+ * indicador visual nas linhas que já têm repasse ativo.
+ */
+export async function listChassisEmRepasse(): Promise<Map<string, number>> {
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("repasses")
+    .select("id, chassi")
+    .eq("status", "subido");
+  if (error) throw new Error(`Falha ao listar chassis em repasse: ${error.message}`);
+  return buildChassisEmRepasseMap((data ?? []) as ReadonlyArray<RepasseAtivoRow>);
+}
+
 export async function getRepasse(id: number): Promise<Repasse | null> {
   const sb = getSupabase();
   const { data, error } = await sb
@@ -85,7 +105,7 @@ export async function createRepasse(input: RepasseInput): Promise<Repasse> {
     })
     .select("*")
     .single();
-  if (error || !data) throw new Error(`Falha ao criar repasse: ${error?.message ?? "sem dados"}`);
+  if (error || !data) throw new Error(mapearErroCriarRepasse(error));
 
   const repasse = data as Repasse;
 

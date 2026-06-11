@@ -11,7 +11,7 @@ import { AlertasOperacionais } from "./AlertasOperacionais";
 import { ComparativoMesAnterior } from "./ComparativoMesAnterior";
 import { HeatmapLojas } from "./HeatmapLojas";
 import { UltimosDiasCard } from "./UltimosDiasCard";
-import { CardRepasseDashboard } from "./CardRepasseDashboard";
+import { RepassesWidget } from "./dashboard/RepassesWidget";
 
 export function DashboardHome() {
   const { meta, veiculos, vendasMeta, vendas, custosPorPlaca, isHydrated } = useInventory();
@@ -71,8 +71,8 @@ export function DashboardHome() {
             {/* Resumo dos últimos 7 dias */}
             <UltimosDiasCard dias={7} />
 
-            {/* Top 5 carros pra repassar essa semana */}
-            <CardRepasseDashboard />
+            {/* Top 5 carros pra repasse — porta de entrada principal do fluxo */}
+            <RepassesWidget />
 
             {/* Hero KPIs — Estoque */}
             {isHydrated && veiculos.length > 0 && (
