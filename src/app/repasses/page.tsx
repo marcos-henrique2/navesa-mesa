@@ -8,7 +8,7 @@ export default function RepassesPage() {
         title="Repasses"
         subtitle="Carros marcados pra subir pra Auto Avaliar — exportar XLSX, marcar como subidos"
       />
-      <div className="mx-auto max-w-7xl px-6 py-8">
+      <div className="px-6 py-8">
         <RepassesLista />
       </div>
     </>
