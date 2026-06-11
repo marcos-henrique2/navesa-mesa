@@ -3,27 +3,21 @@
  *
  * Datas vêm do Supabase como string (ISO ou YYYY-MM-DD pra `date`). Mantemos
  * elas como string aqui — quem precisa de objeto Date converte no ponto de uso.
+ *
+ * Modelo novo (Sprint 1 refactor):
+ *   - Marcos marca carros pra subir → status="marcado"
+ *   - Exporta XLSX, preenche IPVA/Doc/Cautelar/Observação no Excel
+ *   - Sobe no Auto Avaliar (fora do sistema) e volta marcando como "subido"
+ *
+ * Status "vendido" e "nao_vendido" são legacy do schema original — não são
+ * mais usados pela UI (venda fica no Auto Avaliar). Ainda existem no banco
+ * por compatibilidade com o CHECK constraint histórico.
  */
 
-export type RepasseStatus = "subido" | "vendido" | "nao_vendido" | "cancelado";
+export type RepasseStatus = "marcado" | "subido" | "cancelado";
 
-export type DocStatus = "ok" | "pendente" | "irregular";
-
-export type GastoTipo =
-  | "documentacao"
-  | "vistoria"
-  | "pintura"
-  | "mecanica"
-  | "multas"
-  | "outro";
-
-export type DocumentoTipo =
-  | "crv"
-  | "ipva"
-  | "licenciamento"
-  | "multas"
-  | "transferencia"
-  | "outro";
+/** Inclui status legacy ainda permitidos no banco (não usados pela UI nova). */
+export type RepasseStatusBanco = RepasseStatus | "vendido" | "nao_vendido";
 
 /** Canal de repasse. String aberta — `auto_avaliar` é o default. */
 export type RepasseCanal = "auto_avaliar" | (string & {});
@@ -43,104 +37,25 @@ export type Repasse = {
   patio_origem: string | null;
 
   valor_aquisicao: number | null;
-  valor_subiu: number | null;
-  valor_minimo: number | null;
-  valor_vendido: number | null;
+  preco_atual: number | null;
 
-  data_subiu: string; // YYYY-MM-DD
-  data_vendido: string | null; // YYYY-MM-DD | null
+  data_marcado: string; // YYYY-MM-DD — alias de data_subiu legacy
+  data_subido: string | null; // YYYY-MM-DD | null — quando virou "subido"
   canal: RepasseCanal;
 
   status: RepasseStatus;
-  documentacao_status: DocStatus;
-
-  descricao: string | null;
-  opcionais: string | null;
-  comprador: string | null;
-  observacoes: string | null;
 
   criado_em: string; // ISO
   atualizado_em: string; // ISO
 };
 
-export type RepasseGasto = {
-  id: number;
-  repasse_id: number;
-  tipo: GastoTipo;
-  descricao: string;
-  valor: number;
-  data: string; // YYYY-MM-DD
-  observacao: string | null;
-  criado_em: string;
-};
-
-export type RepasseDocumento = {
-  id: number;
-  repasse_id: number;
-  tipo: DocumentoTipo;
-  status: DocStatus;
-  observacao: string | null;
-  data_verificacao: string | null; // YYYY-MM-DD | null
-  criado_em: string;
-  atualizado_em: string;
-};
-
-export type RepasseFoto = {
-  id: number;
-  repasse_id: number;
-  url: string;
-  ordem: number;
-  legenda: string | null;
-  criado_em: string;
-};
-
 // ─── Labels pt-BR ────────────────────────────────────────────────────────────
 
 export const STATUS_LABEL: Record<RepasseStatus, string> = {
+  marcado: "Marcado",
   subido: "Subido",
-  vendido: "Vendido",
-  nao_vendido: "Não vendido",
   cancelado: "Cancelado",
 };
-
-export const DOC_STATUS_LABEL: Record<DocStatus, string> = {
-  ok: "OK",
-  pendente: "Pendente",
-  irregular: "Irregular",
-};
-
-export const DOC_STATUS_ICON: Record<DocStatus, string> = {
-  ok: "✅",
-  pendente: "⏳",
-  irregular: "❌",
-};
-
-export const GASTO_TIPO_LABEL: Record<GastoTipo, string> = {
-  documentacao: "Documentação",
-  vistoria: "Vistoria",
-  pintura: "Pintura",
-  mecanica: "Mecânica",
-  multas: "Multas",
-  outro: "Outro",
-};
-
-export const DOCUMENTO_TIPO_LABEL: Record<DocumentoTipo, string> = {
-  crv: "CRV",
-  ipva: "IPVA",
-  licenciamento: "Licenciamento",
-  multas: "Multas",
-  transferencia: "Transferência",
-  outro: "Outro",
-};
-
-/** Itens fixos no checklist (ordem importa pra exibição). */
-export const DOCUMENTOS_PADRAO: ReadonlyArray<DocumentoTipo> = [
-  "crv",
-  "ipva",
-  "licenciamento",
-  "multas",
-  "transferencia",
-] as const;
 
 export const CANAL_LABEL: Record<string, string> = {
   auto_avaliar: "Auto Avaliar",

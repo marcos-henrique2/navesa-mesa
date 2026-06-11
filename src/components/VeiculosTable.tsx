@@ -25,8 +25,8 @@ import { useVeiculosTable, type FiltrosPrioridade } from "./veiculos/useVeiculos
 import { FiltrosVeiculos } from "./veiculos/FiltrosVeiculos";
 import { VeiculoCardMobile } from "./veiculos/VeiculoCardMobile";
 import { calcularDesvioFipe } from "@/lib/fipe/batch";
-import { SubirRepasseModal } from "./repasses/SubirRepasseModal";
-import { BulkSubirRepasseModal } from "./repasses/BulkSubirRepasseModal";
+import { MarcarRepasseModal } from "./repasses/MarcarRepasseModal";
+import { BulkMarcarRepasseModal } from "./repasses/BulkMarcarRepasseModal";
 import { particionarParaBulkSubir } from "@/lib/repasses/bulk";
 import { showInfoToast } from "./ui/Toast";
 
@@ -280,11 +280,11 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                router.push(`/repasses/${repasseId}`);
+                router.push(`/repasses`);
               }}
               className="inline-flex items-center justify-center rounded-md p-1 text-blue-700 hover:bg-blue-100 dark:text-blue-300 dark:hover:bg-blue-950/40"
-              title="Ver repasse"
-              aria-label="Ver repasse"
+              title="Ver na lista de repasses"
+              aria-label="Ver na lista de repasses"
             >
               <ExternalLink className="h-3.5 w-3.5" />
             </button>
@@ -547,29 +547,27 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
       <ResumoPorDimensao veiculos={filtered} lojas={lojas} />
 
       {veiculoSubindo && (
-        <SubirRepasseModal
+        <MarcarRepasseModal
           veiculo={veiculoSubindo}
-          valorSubiuSugerido={veiculoSubindo.preco_venda}
-          valorMinimoSugerido={veiculoSubindo.custo_total}
           open={true}
           onClose={() => setVeiculoSubindo(null)}
           onSuccess={(repasseId) => {
             const chassi = veiculoSubindo.chassi;
             marcarChassiEmRepasse(chassi, repasseId);
             setVeiculoSubindo(null);
-            router.push(`/repasses/${repasseId}`);
+            router.push(`/repasses`);
           }}
         />
       )}
 
       {bulkVeiculos && (
-        <BulkSubirRepasseModal
+        <BulkMarcarRepasseModal
           veiculos={bulkVeiculos}
           open={true}
           onClose={(processados) => {
             setBulkVeiculos(null);
-            // Limpa SÓ os processados (subidos + pulados). Quem sobrou
-            // continua marcado pro próximo bulk.
+            // Limpa SÓ os processados (sucesso + 23505). Quem sobrou (falha)
+            // continua marcado pro próximo retry.
             if (processados.length > 0) {
               setRowSelection((prev) => {
                 const next = { ...prev };

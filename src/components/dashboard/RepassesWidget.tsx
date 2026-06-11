@@ -24,7 +24,7 @@ import {
   type MotivoRepasse,
 } from "@/lib/analytics/carros-pra-repassar";
 import { cn, formatBRL } from "@/lib/utils";
-import { SubirRepasseModal } from "../repasses/SubirRepasseModal";
+import { MarcarRepasseModal } from "../repasses/MarcarRepasseModal";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 
 // Sincroniza com `usePersistedState`: prefixo "navesa-mesa:filtros:" + sessionStorage
@@ -129,9 +129,9 @@ export function RepassesWidget() {
                     if (v) setVeiculoSubindo(v);
                   }}
                   className="inline-flex items-center gap-1 rounded-md bg-[var(--brand-700)] px-2 py-1 text-[11px] font-medium text-white hover:bg-[var(--brand-800)]"
-                  title="Subir pra repasse"
+                  title="Marcar pra subir pra repasse"
                 >
-                  <Repeat className="h-3 w-3" /> Subir agora
+                  <Repeat className="h-3 w-3" /> Marcar pra subir
                 </button>
                 <ChevronRight className="h-4 w-4 shrink-0 text-[var(--text-subtle)]" />
               </div>
@@ -151,10 +151,8 @@ export function RepassesWidget() {
       </footer>
 
       {veiculoSubindo && (
-        <SubirRepasseModal
+        <MarcarRepasseModal
           veiculo={veiculoSubindo}
-          valorSubiuSugerido={veiculoSubindo.preco_venda}
-          valorMinimoSugerido={veiculoSubindo.custo_total}
           open={true}
           onClose={() => setVeiculoSubindo(null)}
         />

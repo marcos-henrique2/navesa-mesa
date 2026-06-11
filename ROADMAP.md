@@ -7,15 +7,20 @@
 
 ## ✅ Concluído
 
-### Sprint 1 — Repasses (cadastro + XLSX)
-- Schema (4 tabelas) + RLS + triggers
-- Telas `/repasses` (lista + KPIs + filtros) e `/repasses/[id]` (detalhe editável)
-- Geração XLSX com 4 abas + fórmulas vivas (Excel/Sheets recalcula sozinho)
-- Integração com `/veiculos/[chassi]` e widget "Carros pra repassar" no dashboard
-- Botão "Subir pra repasse" direto na tabela do estoque (`/veiculos`) — ponto de entrada principal
-- Filtro `repasse=sim` em `/veiculos` pra triagem rápida
-- Rota `/repassar` removida (substituída pelo widget no dashboard + filtro `repasse=sim` no estoque)
-- 25 testes novos (111/111 verde), CI green
+### Sprint 1 — Repasses (refatorado em 11/jun/2026)
+
+**Versão original (substituída):** schema com gastos/documentação/valores; tela de detalhe editável; XLSX 4 abas com fórmulas vivas.
+
+**Versão atual (vigente):** fluxo enxuto — marcar carros pra subir, exportar XLSX profissional, marcar como subidos. Gestão de valor/margem/venda fica no Auto Avaliar.
+
+- Status novo: `marcado` (default) → `subido` (pós envio Auto Avaliar) — migration 010
+- Lista `/repasses` apenas-leitura + filtros (status/período/loja) + seleção em lote
+- Modal `MarcarRepasseModal` mínimo (sem campos de valor) + bulk silencioso
+- XLSX profissional (1 aba): cabeçalho NAVESA, header colorido, zebra, AutoFilter, frozen header, dropdowns IPVA/Doc/Cautelar pra preencher no Excel
+- Página detalhe `/repasses/[id]` e modais MarcarVendido/MarcarNaoVendido deletados
+- Colunas legacy do schema (`valor_subiu`, `valor_vendido`, gastos, etc.) mantidas como zumbis pra zero risco
+- Widget dashboard mantido (top 5 candidatos a repasse)
+- 125 testes verdes
 
 ---
 

@@ -1,5 +1,5 @@
 /**
- * Helpers do fluxo de bulk-subir-pra-repasse no /estoque.
+ * Helpers do fluxo de bulk-marcar-pra-subir no /estoque.
  *
  * Funções puras (sem React/Supabase) pra ficarem testáveis no Node.
  */
@@ -7,7 +7,7 @@
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 
 export type BulkParticionado<T> = {
-  /** Carros elegíveis pra subir (não têm repasse ativo) */
+  /** Carros elegíveis pra marcar (não têm repasse ativo) */
   elegiveis: T[];
   /** Carros que já têm repasse ativo (pulados silenciosamente) */
   jaEmRepasse: T[];
@@ -16,7 +16,7 @@ export type BulkParticionado<T> = {
 /**
  * Separa os selecionados em (elegíveis) vs (já em repasse).
  *
- * Usada pelo BulkSubirRepasseModal: só os elegíveis entram na fila;
+ * Usada pelo BulkMarcarRepasseModal: só os elegíveis entram no batch;
  * os "ja em repasse" são reportados em toast informativo.
  */
 export function particionarParaBulkSubir<T extends { chassi: string }>(

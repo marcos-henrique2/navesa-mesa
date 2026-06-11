@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, AlertTriangle, Repeat } from "lucide-react";
-import { SubirRepasseModal } from "./repasses/SubirRepasseModal";
+import { MarcarRepasseModal } from "./repasses/MarcarRepasseModal";
 import { useInventory, nomeOuCodigo } from "@/lib/store/inventory";
 import { normalizarPlaca } from "@/lib/utils/placa";
 import { classificarPatio, STATUS_LABEL } from "@/lib/inventory/status";
@@ -99,7 +99,7 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
             onClick={() => setModalRepasseAberto(true)}
             className="inline-flex items-center gap-1.5 rounded-md bg-[var(--brand-700)] px-3 py-1.5 text-xs font-medium text-white hover:bg-[var(--brand-800)]"
           >
-            <Repeat className="h-3.5 w-3.5" /> Subir pra repasse
+            <Repeat className="h-3.5 w-3.5" /> Marcar pra subir
           </button>
         </div>
         <div className="mt-3 flex flex-wrap items-baseline gap-3">
@@ -189,10 +189,8 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
 
       <FlagsVeiculo chassi={veiculo.chassi} />
 
-      <SubirRepasseModal
+      <MarcarRepasseModal
         veiculo={veiculo}
-        valorSubiuSugerido={veiculo.preco_venda}
-        valorMinimoSugerido={veiculo.custo_total}
         open={modalRepasseAberto}
         onClose={() => setModalRepasseAberto(false)}
       />

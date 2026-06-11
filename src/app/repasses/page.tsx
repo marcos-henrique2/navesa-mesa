@@ -6,7 +6,7 @@ export default function RepassesPage() {
     <>
       <PageHeader
         title="Repasses"
-        subtitle="Gestão dos carros subidos pra Auto Avaliar — valores, gastos, documentação e planilha"
+        subtitle="Carros marcados pra subir pra Auto Avaliar — exportar XLSX, marcar como subidos"
       />
       <div className="mx-auto max-w-7xl px-6 py-8">
         <RepassesLista />
