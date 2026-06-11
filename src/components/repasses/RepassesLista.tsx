@@ -582,10 +582,16 @@ function TabelaRepasses({
 
   return (
     <div className="overflow-x-auto rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)]">
-      <table className="w-full text-sm">
+      {/*
+       * `min-w-max` força a tabela a crescer pra acomodar todas as colunas com
+       * espaço respiratório (os min-w dos selects/inputs viram lei). Quando o
+       * total ultrapassa a largura disponível, o `overflow-x-auto` do parent
+       * ativa scroll horizontal. Placa e Ações ficam sticky pra navegação.
+       */}
+      <table className="min-w-max text-sm">
         <thead className="border-b border-[var(--border-soft)] bg-[var(--bg-muted)] text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
           <tr>
-            <Th>
+            <Th className="sticky left-0 z-20 bg-[var(--bg-muted)]">
               <input
                 type="checkbox"
                 checked={todosSelecionados}
@@ -596,7 +602,7 @@ function TabelaRepasses({
                 aria-label="Selecionar todos"
               />
             </Th>
-            <Th>Placa</Th>
+            <Th className="sticky left-[44px] z-20 bg-[var(--bg-muted)]">Placa</Th>
             <Th>Modelo</Th>
             <Th>Ano</Th>
             <Th className="text-right">KM</Th>
@@ -613,29 +619,35 @@ function TabelaRepasses({
             <Th>Observação</Th>
             <Th>Status</Th>
             <Th>Data marcado</Th>
-            <Th />
+            <Th className="sticky right-0 z-20 bg-[var(--bg-muted)]" />
           </tr>
         </thead>
         <tbody>
           {repasses.map((r) => {
             const dias = diasParado(r.data_marcado);
+            const isSel = selecionados.has(r.id);
+            // bg que as células sticky precisam carregar pra não ficarem transparentes
+            // ao scroll horizontal. Tem que casar com row normal/selecionada/hover.
+            const stickyBg = isSel
+              ? "bg-[var(--brand-50)] group-hover:bg-[var(--brand-100)] dark:bg-[#1a2540] dark:group-hover:bg-[#23304f]"
+              : "bg-[var(--bg-surface)] group-hover:bg-[var(--bg-muted)]";
             return (
               <tr
                 key={r.id}
                 className={cn(
-                  "border-b border-[var(--border-soft)] last:border-0 hover:bg-[var(--bg-muted)]",
-                  selecionados.has(r.id) && "bg-[var(--brand-50)]/50 dark:bg-[var(--brand-900)]/10",
+                  "group border-b border-[var(--border-soft)] last:border-0 hover:bg-[var(--bg-muted)]",
+                  isSel && "bg-[var(--brand-50)]/50 dark:bg-[var(--brand-900)]/10",
                 )}
               >
-                <Td>
+                <Td className={cn("sticky left-0 z-10", stickyBg)}>
                   <input
                     type="checkbox"
-                    checked={selecionados.has(r.id)}
+                    checked={isSel}
                     onChange={() => onToggleUm(r.id)}
                     aria-label={`Selecionar ${r.placa}`}
                   />
                 </Td>
-                <Td className="font-mono text-xs">{r.placa}</Td>
+                <Td className={cn("sticky left-[44px] z-10 font-mono text-xs", stickyBg)}>{r.placa}</Td>
                 <Td>
                   <div className="font-medium text-[var(--text-strong)]">{r.modelo}</div>
                   {r.marca && <div className="text-[10px] text-[var(--text-subtle)]">{r.marca}</div>}
@@ -699,7 +711,7 @@ function TabelaRepasses({
                   <StatusBadge status={r.status} />
                 </Td>
                 <Td className="text-xs text-[var(--text-muted)]">{formatDataBR(r.data_marcado)}</Td>
-                <Td>
+                <Td className={cn("sticky right-0 z-10", stickyBg)}>
                   <div className="flex items-center gap-2">
                     {r.status === "marcado" && (
                       <button
@@ -770,7 +782,7 @@ function IpvaSelect({
   return (
     <select
       aria-label={`IPVA de ${placa}`}
-      className={cn(SELECT_BASE, "min-w-[110px]", corIpva(value))}
+      className={cn(SELECT_BASE, "min-w-[130px]", corIpva(value))}
       value={value ?? ""}
       onChange={(e) => {
         const v = e.target.value;
@@ -799,7 +811,7 @@ function DocSelect({
   return (
     <select
       aria-label={`Documentação de ${placa}`}
-      className={cn(SELECT_BASE, "min-w-[110px]", corDoc(value))}
+      className={cn(SELECT_BASE, "min-w-[140px]", corDoc(value))}
       value={value ?? ""}
       onChange={(e) => {
         const v = e.target.value;
@@ -828,7 +840,7 @@ function CautelarSelect({
   return (
     <select
       aria-label={`Cautelar de ${placa}`}
-      className={cn(SELECT_BASE, "min-w-[110px]", corCautelar(value))}
+      className={cn(SELECT_BASE, "min-w-[140px]", corCautelar(value))}
       value={value ?? ""}
       onChange={(e) => {
         const v = e.target.value;
@@ -879,7 +891,7 @@ function ValorSubirInput({
       aria-label={`Valor pra subir de ${placa}`}
       placeholder="R$"
       className={cn(
-        "w-full min-w-[120px] rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-1.5 py-0.5 text-right text-[11px] tabular-nums text-[var(--text-body)] focus:border-[var(--brand-500)] focus:outline-none",
+        "w-full min-w-[140px] rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-1.5 py-0.5 text-right text-[11px] tabular-nums text-[var(--text-body)] focus:border-[var(--brand-500)] focus:outline-none",
         value != null && "bg-emerald-50 dark:bg-emerald-950/30",
       )}
       value={draft}
@@ -953,7 +965,7 @@ function ObservacaoInput({
       type="text"
       aria-label={`Observação de ${placa}`}
       placeholder="—"
-      className="w-full min-w-[180px] truncate rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-1.5 py-0.5 text-[11px] text-[var(--text-body)] focus:border-[var(--brand-500)] focus:outline-none"
+      className="w-full min-w-[220px] truncate rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-1.5 py-0.5 text-[11px] text-[var(--text-body)] focus:border-[var(--brand-500)] focus:outline-none"
       value={draft}
       onChange={(e) => {
         setDraft(e.target.value);
