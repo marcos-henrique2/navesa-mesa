@@ -1,6 +1,7 @@
 import type { VendaParsed } from "@/lib/parsers/nbs-vendas-xlsx";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import type { CustoDetalhado } from "@/lib/parsers/nbs-custos-xls";
+import type { Repasse } from "@/lib/repasses/types";
 
 /** Cria uma VendaParsed completa com defaults; sobrescreva o que o teste precisar. */
 export function venda(over: Partial<VendaParsed> = {}): VendaParsed {
@@ -91,4 +92,35 @@ export function veiculo(over: Partial<VeiculoParsed> = {}): VeiculoParsed {
     vendedor_recebeu: null,
     ...over,
   } as VeiculoParsed;
+}
+
+/** Cria um Repasse completo com defaults; sobrescreva o que o teste precisar. */
+export function repasse(over: Partial<Repasse> = {}): Repasse {
+  return {
+    id: 1,
+    chassi: "CHASSI000000000",
+    placa: "ABC1D23",
+    modelo: "MODELO TESTE",
+    marca: "Ford",
+    cor: "PRETO",
+    ano_modelo: 2021,
+    ano_fabricacao: 2020,
+    km: 134694,
+    loja_origem: 2,
+    patio_origem: "AEROPORTO",
+    valor_aquisicao: 90000,
+    preco_atual: 110000,
+    data_marcado: "2026-06-01",
+    data_subido: null,
+    canal: "auto_avaliar",
+    status: "marcado",
+    ipva_status: null,
+    documentacao_status: null,
+    cautelar_status_manual: null,
+    valor_subir: null,
+    observacoes: null,
+    criado_em: "2026-06-01T00:00:00.000Z",
+    atualizado_em: "2026-06-01T00:00:00.000Z",
+    ...over,
+  };
 }

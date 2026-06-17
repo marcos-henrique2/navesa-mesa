@@ -31,6 +31,7 @@ import {
   FilterX,
   CheckCircle2,
   Trash2,
+  FileText,
 } from "lucide-react";
 import {
   deleteRepasse,
@@ -66,6 +67,7 @@ import { parseValorBR } from "@/lib/utils/parse-br";
 import { showErrorToast, showSuccessToast } from "@/components/ui/Toast";
 import { MarcarRepasseModal } from "./MarcarRepasseModal";
 import { EscolherVeiculoModal } from "./EscolherVeiculoModal";
+import { AnuncioModal } from "./AnuncioModal";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 
 type StatusFiltro = "marcado" | "subido" | "todos";
@@ -93,6 +95,7 @@ export function RepassesLista() {
   const [selecionados, setSelecionados] = useState<Set<number>>(new Set());
   const [escolherVeiculo, setEscolherVeiculo] = useState(false);
   const [veiculoSelecionado, setVeiculoSelecionado] = useState<VeiculoParsed | null>(null);
+  const [anuncioRepasse, setAnuncioRepasse] = useState<Repasse | null>(null);
   const [exportando, setExportando] = useState(false);
   const [processando, setProcessando] = useState(false);
 
@@ -535,6 +538,7 @@ export function RepassesLista() {
           onMarcarSubido={handleMarcarSubido}
           onRemover={handleRemover}
           onPatchCampos={handlePatchCampos}
+          onGerarAnuncio={setAnuncioRepasse}
           processando={processando}
         />
       )}
@@ -559,6 +563,15 @@ export function RepassesLista() {
           }}
         />
       )}
+
+      {anuncioRepasse && (
+        <AnuncioModal
+          key={anuncioRepasse.id}
+          repasse={anuncioRepasse}
+          open={true}
+          onClose={() => setAnuncioRepasse(null)}
+        />
+      )}
     </div>
   );
 }
@@ -572,6 +585,7 @@ function TabelaRepasses({
   onMarcarSubido,
   onRemover,
   onPatchCampos,
+  onGerarAnuncio,
   processando,
   diasPatioPorChassi,
 }: {
@@ -584,6 +598,7 @@ function TabelaRepasses({
   onMarcarSubido: (id: number) => void;
   onRemover: (id: number) => void;
   onPatchCampos: (id: number, patch: RepasseCamposManuaisPatch) => void | Promise<void>;
+  onGerarAnuncio: (repasse: Repasse) => void;
   processando: boolean;
 }) {
   const todosSelecionados =
@@ -723,6 +738,15 @@ function TabelaRepasses({
                 <Td className="text-xs text-[var(--text-muted)]">{formatDataBR(r.data_marcado)}</Td>
                 <Td className={cn("sticky right-0 z-10", stickyBg)}>
                   <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onGerarAnuncio(r)}
+                      className="inline-flex items-center gap-1 rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-2 py-0.5 text-[11px] font-medium text-[var(--text-body)] hover:bg-[var(--bg-muted)]"
+                      title="Gerar texto de anúncio pro Auto Avaliar"
+                      aria-label={`Gerar anúncio de ${r.placa}`}
+                    >
+                      <FileText className="h-3 w-3" /> Anúncio
+                    </button>
                     {r.status === "marcado" && (
                       <button
                         type="button"
