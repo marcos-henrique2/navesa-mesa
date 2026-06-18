@@ -62,6 +62,7 @@ import { gerarRelatorioRepasseProfissional } from "@/lib/export/relatorio-repass
 import { useChassisEmRepasse } from "@/lib/repasses/useChassisEmRepasse";
 import { usePersistedState } from "@/lib/hooks/usePersistedState";
 import { useInventory, nomeOuCodigo } from "@/lib/store/inventory";
+import { estaReservado } from "@/lib/inventory/reservado";
 import { cn, formatBRL, formatInt } from "@/lib/utils";
 import { parseValorBR } from "@/lib/utils/parse-br";
 import { showErrorToast, showSuccessToast } from "@/components/ui/Toast";
@@ -79,6 +80,14 @@ export function RepassesLista() {
   const diasPatioPorChassi = useMemo(() => {
     const m = new Map<string, number | null>();
     for (const v of veiculos) m.set(v.chassi, v.dias_patio);
+    return m;
+  }, [veiculos]);
+  // Map chassi → reservado ATUAL do estoque (cod_proposta != null). Igual ao
+  // diasPatioPorChassi: status vem do estoque vivo, não do snapshot do repasse —
+  // a reserva muda com o tempo. Aviso pra Marcos não subir no Auto Avaliar.
+  const reservadoPorChassi = useMemo(() => {
+    const m = new Map<string, boolean>();
+    for (const v of veiculos) m.set(v.chassi, estaReservado(v));
     return m;
   }, [veiculos]);
   const { removerLocalmente: removerChassiEmRepasse } = useChassisEmRepasse();
@@ -312,7 +321,11 @@ export function RepassesLista() {
     if (exportando || lista.length === 0) return;
     setExportando(true);
     try {
-      const buf = await gerarRelatorioRepasseProfissional(lista, diasPatioPorChassi);
+      const buf = await gerarRelatorioRepasseProfissional(
+        lista,
+        diasPatioPorChassi,
+        reservadoPorChassi,
+      );
       const blob = new Blob([new Uint8Array(buf)], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       });
@@ -532,6 +545,7 @@ export function RepassesLista() {
           repasses={filtrados}
           lojas={lojas}
           diasPatioPorChassi={diasPatioPorChassi}
+          reservadoPorChassi={reservadoPorChassi}
           selecionados={selecionados}
           onToggleUm={toggleUm}
           onToggleTodos={toggleTodos}
@@ -588,10 +602,12 @@ function TabelaRepasses({
   onGerarAnuncio,
   processando,
   diasPatioPorChassi,
+  reservadoPorChassi,
 }: {
   repasses: Repasse[];
   lojas: ReturnType<typeof useInventory>["lojas"];
   diasPatioPorChassi: Map<string, number | null>;
+  reservadoPorChassi: Map<string, boolean>;
   selecionados: Set<number>;
   onToggleUm: (id: number) => void;
   onToggleTodos: () => void;
@@ -650,6 +666,7 @@ function TabelaRepasses({
         <tbody>
           {repasses.map((r) => {
             const dias = diasPatioPorChassi.get(r.chassi) ?? null;
+            const reservado = reservadoPorChassi.get(r.chassi) === true;
             const isSel = selecionados.has(r.id);
             // bg que as células sticky precisam carregar pra não ficarem transparentes
             // ao scroll horizontal. Tem que casar com row normal/selecionada/hover.
@@ -674,7 +691,17 @@ function TabelaRepasses({
                 </Td>
                 <Td className={cn("sticky left-[44px] z-10 font-mono text-xs", stickyBg)}>{r.placa}</Td>
                 <Td>
-                  <div className="font-medium text-[var(--text-strong)]">{r.modelo}</div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-medium text-[var(--text-strong)]">{r.modelo}</span>
+                    {reservado && (
+                      <span
+                        className="inline-flex items-center rounded-full bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-800 dark:bg-red-950/40 dark:text-red-300"
+                        title="Carro reservado no estoque — não subir no Auto Avaliar"
+                      >
+                        Reservado
+                      </span>
+                    )}
+                  </div>
                   {r.marca && <div className="text-[10px] text-[var(--text-subtle)]">{r.marca}</div>}
                 </Td>
                 <Td className="text-xs text-[var(--text-muted)]">{r.ano_modelo ?? "—"}</Td>

@@ -47,6 +47,7 @@ const COR_OK = "FFD1FAE5"; // emerald-100
 const COR_WARN = "FFFEF3C7"; // amber-100
 const COR_BAD = "FFFEE2E2"; // red-100
 const COR_NEUTRO = "FFE5E7EB"; // gray-200
+const COR_RESERVADO_BG = "FFDC2626"; // red-600 — aviso forte "não subir"
 
 const BORDA_FINA: Partial<ExcelJS.Borders> = {
   top: { style: "thin", color: { argb: "FFD1D5DB" } },
@@ -77,6 +78,10 @@ function somarPrecoAtualMarcados(repasses: ReadonlyArray<Repasse>): number {
 const COLUNAS: ReadonlyArray<{ key: string; header: string; width: number }> = [
   { key: "n", header: "#", width: 5 },
   { key: "placa", header: "Placa", width: 11 },
+  // "Reservado" logo após a placa: aviso forte pra Marcos NÃO subir esse carro
+  // no Auto Avaliar (tem proposta ativa no estoque). Vem do estoque ATUAL via
+  // map por chassi (não do snapshot do repasse — reserva muda com o tempo).
+  { key: "reservado", header: "Reservado", width: 13 },
   { key: "chassi", header: "Chassi", width: 22 },
   { key: "marca", header: "Marca", width: 14 },
   { key: "modelo", header: "Modelo", width: 32 },
@@ -106,6 +111,7 @@ const COL_OBS = COLUNAS.findIndex((c) => c.key === "observacao") + 1;
 const COL_PRECO = COLUNAS.findIndex((c) => c.key === "preco_atual") + 1;
 const COL_CUSTO = COLUNAS.findIndex((c) => c.key === "custo") + 1;
 const COL_KM = COLUNAS.findIndex((c) => c.key === "km") + 1;
+const COL_RESERVADO = COLUNAS.findIndex((c) => c.key === "reservado") + 1;
 
 const HEADER_ROW = 4;
 const DATA_START_ROW = 5;
@@ -160,6 +166,7 @@ function corCautelar(s: CautelarStatus): string {
 export async function gerarRelatorioRepasseProfissional(
   repasses: ReadonlyArray<Repasse>,
   diasPatioPorChassi?: Map<string, number | null>,
+  reservadoPorChassi?: Map<string, boolean>,
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = "Navesa Mesa";
@@ -249,9 +256,12 @@ export async function gerarRelatorioRepasseProfissional(
       ? CAUTELAR_LABEL[r.cautelar_status_manual]
       : "";
 
+    const reservado = reservadoPorChassi?.get(r.chassi) === true;
+
     const valores: Array<string | number | Date | null> = [
       idx + 1,
       r.placa,
+      reservado ? "RESERVADO" : "",
       r.chassi,
       r.marca ?? "",
       r.modelo,
@@ -289,6 +299,16 @@ export async function gerarRelatorioRepasseProfissional(
     }
     row.getCell(COL_OBS).alignment = { wrapText: true, vertical: "top" };
     row.height = 20;
+
+    // Aviso "RESERVADO" — destaque forte (fonte branca/negrito sobre fundo
+    // vermelho) pra Marcos não subir esse carro no Auto Avaliar.
+    if (reservado) {
+      const cell = row.getCell(COL_RESERVADO);
+      cell.value = "RESERVADO";
+      cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: COR_TITULO_FG } };
+      cell.alignment = { horizontal: "center", vertical: "middle" };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COR_RESERVADO_BG } };
+    }
 
     // Cor de fundo + tracking de cells vazias pros dropdowns.
     if (r.ipva_status) {
