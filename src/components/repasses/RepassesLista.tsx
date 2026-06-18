@@ -312,7 +312,7 @@ export function RepassesLista() {
     if (exportando || lista.length === 0) return;
     setExportando(true);
     try {
-      const buf = await gerarRelatorioRepasseProfissional(lista);
+      const buf = await gerarRelatorioRepasseProfissional(lista, diasPatioPorChassi);
       const blob = new Blob([new Uint8Array(buf)], {
         type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       });

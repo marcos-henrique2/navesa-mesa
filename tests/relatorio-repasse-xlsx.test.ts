@@ -292,19 +292,31 @@ describe("gerarRelatorioRepasseProfissional", () => {
     assert.match(String(vs.numFmt ?? ""), /R\$/, "Valor pra subir preenchido precisa ter numFmt R$");
   });
 
-  it("conta dias parado desde data_marcado", async () => {
-    // Carro marcado há ~30 dias
-    const trintaDiasAtras = new Date();
-    trintaDiasAtras.setDate(trintaDiasAtras.getDate() - 30);
-    const yyyy = trintaDiasAtras.getFullYear();
-    const mm = String(trintaDiasAtras.getMonth() + 1).padStart(2, "0");
-    const dd = String(trintaDiasAtras.getDate()).padStart(2, "0");
-    const buf = await gerarRelatorioRepasseProfissional([
-      buildRepasse({ data_marcado: `${yyyy}-${mm}-${dd}` }),
-    ]);
+  it("Dias parado usa dias_patio REAL do estoque (via map por chassi)", async () => {
+    // Coluna L = "Dias parado". Agora reflete o dias_patio atual do estoque
+    // (quanto tempo o carro está parado no pátio), igual à tela /repasses —
+    // NÃO dias desde data_marcado.
+    const r = buildRepasse({ chassi: "9BWZZZ377VT004251" });
+    const map = new Map<string, number | null>([["9BWZZZ377VT004251", 217]]);
+    const buf = await gerarRelatorioRepasseProfissional([r], map);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    const dias = Number(ws.getCell("L6").value);
-    assert.ok(dias >= 29 && dias <= 31, `esperado ~30, recebido ${dias}`);
+    assert.equal(ws.getCell("L6").value, 217);
+  });
+
+  it("Dias parado: chassi sem entrada no map → célula vazia (não quebra)", async () => {
+    const r = buildRepasse({ chassi: "9BWZZZ377VT004251" });
+    const map = new Map<string, number | null>([["OUTRO_CHASSI", 99]]);
+    const buf = await gerarRelatorioRepasseProfissional([r], map);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    assert.equal(ws.getCell("L6").value ?? "", "");
+  });
+
+  it("Dias parado: sem map (param undefined) → célula vazia (não quebra)", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    assert.equal(ws.getCell("L6").value ?? "", "");
   });
 });

@@ -55,23 +55,6 @@ const BORDA_FINA: Partial<ExcelJS.Borders> = {
   right: { style: "thin", color: { argb: "FFD1D5DB" } },
 };
 
-/** Formata YYYY-MM-DD pra Date local (sem timezone shift). null vira null. */
-function dateOnly(value: string | null): Date | null {
-  if (!value) return null;
-  const [y, m, d] = value.split("-").map(Number);
-  if (!y || !m || !d) return null;
-  return new Date(y, m - 1, d);
-}
-
-/** Calcula dias entre data_marcado (YYYY-MM-DD) e hoje. */
-function diasParado(dataMarcado: string): number | null {
-  const d = dateOnly(dataMarcado);
-  if (!d) return null;
-  const hoje = new Date();
-  const ms = hoje.getTime() - d.getTime();
-  return Math.max(0, Math.floor(ms / (1000 * 60 * 60 * 24)));
-}
-
 /**
  * Soma `preco_atual` SÓ dos repasses com status='marcado' — usado pro KPI
  * "capital travado". Subidos já foram pro Auto Avaliar, então não contam
@@ -174,6 +157,7 @@ function corCautelar(s: CautelarStatus): string {
 
 export async function gerarRelatorioRepasseProfissional(
   repasses: ReadonlyArray<Repasse>,
+  diasPatioPorChassi?: Map<string, number | null>,
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = "Navesa Mesa";
@@ -275,7 +259,7 @@ export async function gerarRelatorioRepasseProfissional(
       r.cor ?? "",
       r.loja_origem ?? "",
       r.patio_origem ?? "",
-      diasParado(r.data_marcado) ?? "",
+      diasPatioPorChassi?.get(r.chassi) ?? "",
       r.preco_atual ?? "",
       r.valor_aquisicao ?? "",
       r.valor_subir ?? "",
