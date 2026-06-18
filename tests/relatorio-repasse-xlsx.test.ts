@@ -126,19 +126,25 @@ describe("gerarRelatorioRepasseProfissional", () => {
     assert.doesNotMatch(linha, /R\$ 150/, "não deveria somar o subido no capital travado");
   });
 
-  it("header da tabela está na linha 5 com 18 colunas (Valor pra subir + IPVA/Doc/Cautelar/Obs)", async () => {
+  it("header da tabela está na linha 5 com 24 colunas (5 novas de comparação Auto Avaliar)", async () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
     assert.equal(ws.getCell("A5").value, "#");
     assert.equal(ws.getCell("B5").value, "Placa");
     assert.equal(ws.getCell("C5").value, "Chassi");
+    assert.equal(ws.getCell("M5").value, "Preço atual");
     assert.equal(ws.getCell("N5").value, "Custo");
-    assert.equal(ws.getCell("O5").value, "Valor pra subir");
-    assert.equal(ws.getCell("P5").value, "IPVA");
-    assert.equal(ws.getCell("Q5").value, "Doc");
-    assert.equal(ws.getCell("R5").value, "Cautelar");
-    assert.equal(ws.getCell("S5").value, "Observação");
+    assert.equal(ws.getCell("O5").value, "Valor Auto Avaliar");
+    assert.equal(ws.getCell("P5").value, "Dif. vs Custo (R$)");
+    assert.equal(ws.getCell("Q5").value, "Dif. vs Custo (%)");
+    assert.equal(ws.getCell("R5").value, "Dif. vs Preço (R$)");
+    assert.equal(ws.getCell("S5").value, "Dif. vs Preço (%)");
+    assert.equal(ws.getCell("T5").value, "Valor pra subir");
+    assert.equal(ws.getCell("U5").value, "IPVA");
+    assert.equal(ws.getCell("V5").value, "Doc");
+    assert.equal(ws.getCell("W5").value, "Cautelar");
+    assert.equal(ws.getCell("X5").value, "Observação");
   });
 
   it("dados começam na linha 6 com snapshot do veículo", async () => {
@@ -158,11 +164,11 @@ describe("gerarRelatorioRepasseProfissional", () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    assert.equal(ws.getCell("O6").value ?? "", ""); // Valor pra subir
-    assert.equal(ws.getCell("P6").value ?? "", ""); // IPVA
-    assert.equal(ws.getCell("Q6").value ?? "", ""); // Doc
-    assert.equal(ws.getCell("R6").value ?? "", ""); // Cautelar
-    assert.equal(ws.getCell("S6").value ?? "", ""); // Observação
+    assert.equal(ws.getCell("T6").value ?? "", ""); // Valor pra subir
+    assert.equal(ws.getCell("U6").value ?? "", ""); // IPVA
+    assert.equal(ws.getCell("V6").value ?? "", ""); // Doc
+    assert.equal(ws.getCell("W6").value ?? "", ""); // Cautelar
+    assert.equal(ws.getCell("X6").value ?? "", ""); // Observação
   });
 
   it("repasse COM campos manuais preenchidos: cells vêm com os labels pt-BR", async () => {
@@ -177,11 +183,11 @@ describe("gerarRelatorioRepasseProfissional", () => {
     ]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    assert.equal(ws.getCell("O6").value, 138500); // numérico
-    assert.equal(ws.getCell("P6").value, "Pago");
-    assert.equal(ws.getCell("Q6").value, "OK");
-    assert.equal(ws.getCell("R6").value, "Limpa");
-    assert.equal(ws.getCell("S6").value, "Pneu dianteiro pra trocar");
+    assert.equal(ws.getCell("T6").value, 138500); // Valor pra subir (numérico)
+    assert.equal(ws.getCell("U6").value, "Pago");
+    assert.equal(ws.getCell("V6").value, "OK");
+    assert.equal(ws.getCell("W6").value, "Limpa");
+    assert.equal(ws.getCell("X6").value, "Pneu dianteiro pra trocar");
   });
 
   it("cell preenchida NÃO tem dataValidation (já tem dado)", async () => {
@@ -190,7 +196,7 @@ describe("gerarRelatorioRepasseProfissional", () => {
     ]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    const cell = ws.getCell("P6"); // IPVA preenchido
+    const cell = ws.getCell("U6"); // IPVA preenchido
     assert.equal(cell.dataValidation, undefined, "IPVA preenchido não deve ter dropdown");
   });
 
@@ -200,7 +206,7 @@ describe("gerarRelatorioRepasseProfissional", () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    const cell = ws.getCell("P6"); // IPVA vazio
+    const cell = ws.getCell("U6"); // IPVA vazio
     assert.ok(cell.dataValidation, "IPVA vazio deveria ter dataValidation");
     assert.equal(cell.dataValidation!.type, "list");
     const formula = String((cell.dataValidation!.formulae ?? [])[0] ?? "");
@@ -211,12 +217,12 @@ describe("gerarRelatorioRepasseProfissional", () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    const doc = ws.getCell("Q6");
+    const doc = ws.getCell("V6");
     assert.ok(doc.dataValidation);
     const fDoc = String((doc.dataValidation!.formulae ?? [])[0] ?? "");
     assert.match(fDoc, /^_Listas!\$B\$1:\$B\$4$/, `Doc: ${fDoc}`);
 
-    const caut = ws.getCell("R6");
+    const caut = ws.getCell("W6");
     assert.ok(caut.dataValidation);
     const fCaut = String((caut.dataValidation!.formulae ?? [])[0] ?? "");
     assert.match(fCaut, /^_Listas!\$C\$1:\$C\$3$/, `Cautelar: ${fCaut}`);
@@ -287,7 +293,7 @@ describe("gerarRelatorioRepasseProfissional", () => {
     ]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    const vs = ws.getCell("O6");
+    const vs = ws.getCell("T6");
     assert.equal(vs.value, 138500);
     assert.match(String(vs.numFmt ?? ""), /R\$/, "Valor pra subir preenchido precisa ter numFmt R$");
   });
@@ -318,5 +324,126 @@ describe("gerarRelatorioRepasseProfissional", () => {
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
     assert.equal(ws.getCell("L6").value ?? "", "");
+  });
+
+  // ─── Colunas de comparação NBS vs Auto Avaliar (5 novas) ───────────────────
+
+  it("header tem as 5 colunas novas na ordem certa (O→S)", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    assert.equal(ws.getCell("O5").value, "Valor Auto Avaliar");
+    assert.equal(ws.getCell("P5").value, "Dif. vs Custo (R$)");
+    assert.equal(ws.getCell("Q5").value, "Dif. vs Custo (%)");
+    assert.equal(ws.getCell("R5").value, "Dif. vs Preço (R$)");
+    assert.equal(ws.getCell("S5").value, "Dif. vs Preço (%)");
+  });
+
+  it("'Valor Auto Avaliar' vem VAZIA (manual) com formato R$", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([
+      buildRepasse({ valor_aquisicao: 120_000, preco_atual: 145_000 }),
+    ]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    const aa = ws.getCell("O6");
+    assert.equal(aa.value ?? "", "", "Valor Auto Avaliar não pode vir pré-preenchido");
+    assert.match(String(aa.numFmt ?? ""), /R\$/, "Valor Auto Avaliar precisa ter numFmt R$");
+    assert.equal(aa.dataValidation, undefined, "não deve ter dropdown");
+  });
+
+  it("as 4 células de diferença contêm FÓRMULA (objeto .formula), não valor fixo", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    for (const ref of ["P6", "Q6", "R6", "S6"]) {
+      const cell = ws.getCell(ref);
+      const val = cell.value as { formula?: string } | null;
+      assert.ok(
+        val && typeof val === "object" && typeof val.formula === "string",
+        `${ref} deveria conter uma fórmula, recebido: ${JSON.stringify(cell.value)}`,
+      );
+    }
+  });
+
+  it("Dif. vs Custo (R$) referencia Valor Auto Avaliar (O) e Custo (N) com proteção de vazio", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    const f = (ws.getCell("P6").value as { formula: string }).formula;
+    // Referencia AA (O6) e Custo (N6), trata vazio (IF(...="",""))
+    assert.match(f, /\$O6/, `fórmula deve referenciar Valor Auto Avaliar (O6): ${f}`);
+    assert.match(f, /\$N6/, `fórmula deve referenciar Custo (N6): ${f}`);
+    assert.match(f, /=""/, `fórmula deve tratar Valor Auto Avaliar vazio: ${f}`);
+    assert.equal(f, 'IF($O6="","",$O6-$N6)');
+  });
+
+  it("Dif. vs Custo (%) referencia Custo + tem proteção contra divisão por zero", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    const f = (ws.getCell("Q6").value as { formula: string }).formula;
+    assert.match(f, /\$O6/, `% deve referenciar Valor Auto Avaliar (O6): ${f}`);
+    assert.match(f, /\$N6/, `% deve referenciar Custo (N6): ${f}`);
+    assert.match(f, /OR\(/, `% deve usar OR(...) pra proteção: ${f}`);
+    assert.match(f, /\$N6=0/, `% deve proteger divisão por zero (Custo=0): ${f}`);
+    assert.match(f, /\*100/, `% deve multiplicar por 100: ${f}`);
+    assert.equal(f, 'IF(OR($O6="",$N6="",$N6=0),"",($O6-$N6)/$N6*100)');
+  });
+
+  it("Dif. vs Preço referencia Preço atual (M); R$ e % com proteções", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    const fRs = (ws.getCell("R6").value as { formula: string }).formula;
+    const fPct = (ws.getCell("S6").value as { formula: string }).formula;
+    assert.equal(fRs, 'IF($O6="","",$O6-$M6)');
+    assert.equal(fPct, 'IF(OR($O6="",$M6="",$M6=0),"",($O6-$M6)/$M6*100)');
+  });
+
+  it("fórmulas apontam pra linha certa em múltiplas linhas (offset do header)", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([
+      buildRepasse({ id: 1, placa: "AAA1A11" }),
+      buildRepasse({ id: 2, placa: "BBB2B22" }),
+      buildRepasse({ id: 3, placa: "CCC3C33" }),
+    ]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    // Linha 6 = primeiro carro, linha 8 = terceiro
+    assert.equal((ws.getCell("P6").value as { formula: string }).formula, 'IF($O6="","",$O6-$N6)');
+    assert.equal((ws.getCell("P8").value as { formula: string }).formula, 'IF($O8="","",$O8-$N8)');
+    assert.equal(
+      (ws.getCell("S8").value as { formula: string }).formula,
+      'IF(OR($O8="",$M8="",$M8=0),"",($O8-$M8)/$M8*100)',
+    );
+  });
+
+  it("colunas % têm numFmt percentual com sinal", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    assert.match(String(ws.getCell("Q6").numFmt ?? ""), /%/, "Dif vs Custo % precisa de numFmt %");
+    assert.match(String(ws.getCell("S6").numFmt ?? ""), /%/, "Dif vs Preço % precisa de numFmt %");
+    assert.match(String(ws.getCell("P6").numFmt ?? ""), /R\$/, "Dif vs Custo R$ precisa de numFmt R$");
+    assert.match(String(ws.getCell("R6").numFmt ?? ""), /R\$/, "Dif vs Preço R$ precisa de numFmt R$");
+  });
+
+  it("legenda na linha 4 explica a convenção da diferença", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    const legenda = String(ws.getCell("A4").value ?? "");
+    assert.match(legenda, /Auto Avaliar/);
+    assert.match(legenda, /Positivo/i);
+    assert.match(legenda, /ABAIXO|ACIMA/);
+  });
+
+  it("AutoFilter cobre todas as 24 colunas (inclui as novas; X=col 24)", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    // Na releitura o exceljs serializa o autoFilter como string "A5:X5".
+    const af = String(ws.autoFilter ?? "");
+    assert.match(af, /A5/, `autoFilter deve começar em A5: ${af}`);
+    assert.match(af, /X5/, `autoFilter deve ir até X5 (24 colunas): ${af}`);
   });
 });
