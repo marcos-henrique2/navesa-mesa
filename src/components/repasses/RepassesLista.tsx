@@ -32,6 +32,7 @@ import {
   CheckCircle2,
   Trash2,
   FileText,
+  Search,
 } from "lucide-react";
 import {
   deleteRepasse,
@@ -63,8 +64,10 @@ import { useChassisEmRepasse } from "@/lib/repasses/useChassisEmRepasse";
 import { usePersistedState } from "@/lib/hooks/usePersistedState";
 import { useInventory, nomeOuCodigo } from "@/lib/store/inventory";
 import { estaReservado } from "@/lib/inventory/reservado";
-import { cn, formatBRL, formatInt } from "@/lib/utils";
+import { cn, formatBRL, formatBRLCents, formatInt } from "@/lib/utils";
 import { parseValorBR } from "@/lib/utils/parse-br";
+import { placaCasa } from "@/lib/utils/placa";
+import { calcularValorPraSubir } from "@/lib/repasses/kpis";
 import { showErrorToast, showSuccessToast } from "@/components/ui/Toast";
 import { MarcarRepasseModal } from "./MarcarRepasseModal";
 import { EscolherVeiculoModal } from "./EscolherVeiculoModal";
@@ -101,6 +104,9 @@ export function RepassesLista() {
   const [periodoIni, setPeriodoIni] = usePersistedState<string>("repasses:periodoIni", "");
   const [periodoFim, setPeriodoFim] = usePersistedState<string>("repasses:periodoFim", "");
   const [lojaFiltro, setLojaFiltro] = usePersistedState<string>("repasses:loja", "all");
+  // Busca por placa — não persiste (filtro efêmero). Normalização tolerante a
+  // hífen/espaço/case fica no helper puro placaCasa.
+  const [buscaPlaca, setBuscaPlaca] = useState("");
   const [selecionados, setSelecionados] = useState<Set<number>>(new Set());
   const [escolherVeiculo, setEscolherVeiculo] = useState(false);
   const [veiculoSelecionado, setVeiculoSelecionado] = useState<VeiculoParsed | null>(null);
@@ -128,13 +134,14 @@ export function RepassesLista() {
     return repasses.filter((r) => {
       if (statusFiltro !== "todos" && r.status !== statusFiltro) return false;
       if (lojaFiltro !== "all" && String(r.loja_origem ?? "") !== lojaFiltro) return false;
+      if (!placaCasa(r.placa, buscaPlaca)) return false;
       // Período aplica sobre data_marcado (ou data_subido se status='subido')
       const ref = r.status === "subido" ? r.data_subido : r.data_marcado;
       if (periodoIni && ref && ref < periodoIni) return false;
       if (periodoFim && ref && ref > periodoFim) return false;
       return true;
     });
-  }, [repasses, statusFiltro, lojaFiltro, periodoIni, periodoFim]);
+  }, [repasses, statusFiltro, lojaFiltro, periodoIni, periodoFim, buscaPlaca]);
 
   const kpis = useMemo(() => {
     const marcados = repasses.filter((r) => r.status === "marcado");
@@ -143,7 +150,8 @@ export function RepassesLista() {
     for (const r of marcados) {
       if (r.preco_atual != null) capitalTravado += r.preco_atual;
     }
-    return { marcados: marcados.length, subidos, capitalTravado };
+    const valorPraSubir = calcularValorPraSubir(repasses);
+    return { marcados: marcados.length, subidos, capitalTravado, valorPraSubir };
   }, [repasses]);
 
   const lojaOpcoes = useMemo(() => {
@@ -156,7 +164,8 @@ export function RepassesLista() {
     (statusFiltro !== "todos" ? 1 : 0) +
     (lojaFiltro !== "all" ? 1 : 0) +
     (periodoIni ? 1 : 0) +
-    (periodoFim ? 1 : 0);
+    (periodoFim ? 1 : 0) +
+    (buscaPlaca.trim() !== "" ? 1 : 0);
 
   function limparFiltrosRepasses() {
     if (filtrosAtivos === 0) return;
@@ -164,6 +173,7 @@ export function RepassesLista() {
     setLojaFiltro("all");
     setPeriodoIni("");
     setPeriodoFim("");
+    setBuscaPlaca("");
     showSuccessToast("Filtros limpos");
   }
 
@@ -358,7 +368,7 @@ export function RepassesLista() {
   return (
     <div className="space-y-5">
       {/* KPIs */}
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi
           icon={<TruckIcon className="h-4 w-4" />}
           label="Marcados pra subir"
@@ -375,6 +385,13 @@ export function RepassesLista() {
           icon={<Wallet className="h-4 w-4" />}
           label="Capital travado (marcados)"
           value={formatBRL(kpis.capitalTravado)}
+          tone="info"
+        />
+        <Kpi
+          icon={<Wallet className="h-4 w-4" />}
+          label="Valor pra subir"
+          value={formatBRLCents(kpis.valorPraSubir.total)}
+          hint={`${kpis.valorPraSubir.comValor} de ${kpis.valorPraSubir.totalSubidos} com valor`}
           tone="info"
         />
       </div>
@@ -402,6 +419,18 @@ export function RepassesLista() {
             </button>
           ))}
         </div>
+
+        <label className="relative inline-flex items-center">
+          <Search className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-[var(--text-muted)]" />
+          <input
+            type="text"
+            value={buscaPlaca}
+            onChange={(e) => setBuscaPlaca(e.target.value)}
+            placeholder="Buscar placa..."
+            aria-label="Buscar por placa"
+            className="w-40 rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] py-1 pl-7 pr-2 text-xs focus:border-[var(--brand-500)] focus:outline-none"
+          />
+        </label>
 
         <label className="inline-flex items-center gap-1.5 text-xs">
           <span className="text-[var(--text-muted)]">De:</span>
@@ -1075,11 +1104,13 @@ function Kpi({
   label,
   value,
   icon,
+  hint,
   tone = "neutro",
 }: {
   label: string;
   value: string;
   icon?: React.ReactNode;
+  hint?: string;
   tone?: "neutro" | "good" | "warn" | "bad" | "info";
 }) {
   const toneClass =
@@ -1098,7 +1129,14 @@ function Kpi({
         {icon}
         {label}
       </p>
-      <p className={cn("mt-1 text-xl font-bold tabular-nums", toneClass)}>{value}</p>
+      <p className={cn("mt-1 text-xl font-bold tabular-nums", toneClass)}>
+        {value}
+        {hint && (
+          <span className="ml-1 align-middle text-[11px] font-medium text-[var(--text-muted)]">
+            · {hint}
+          </span>
+        )}
+      </p>
     </div>
   );
 }
