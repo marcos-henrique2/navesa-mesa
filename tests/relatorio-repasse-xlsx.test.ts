@@ -7,8 +7,9 @@
  *
  * As colunas de comparação "Valor Auto Avaliar" + 4 diferenças foram removidas:
  * o "Custo" do NBS JÁ É o valor de referência do Auto Avaliar, então eram
- * redundantes. Depois adicionou-se a coluna "Reservado" (logo após Placa).
- * Total agora: 20 colunas.
+ * redundantes. Depois adicionou-se a coluna "Reservado" (logo após Placa) e a
+ * coluna "Bônus" (logo após "Valor pra subir", fórmula viva Custo − Valor pra subir).
+ * Total agora: 21 colunas.
  *
  * Layout: 1 aba "Carros pra Repasse" com:
  *   - Cabeçalho de 3 linhas (título + data + totais)
@@ -130,7 +131,7 @@ describe("gerarRelatorioRepasseProfissional", () => {
     assert.doesNotMatch(linha, /R\$ 150/, "não deveria somar o subido no capital travado");
   });
 
-  it("header da tabela está na linha 4 com 20 colunas", async () => {
+  it("header da tabela está na linha 4 com 21 colunas", async () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
@@ -141,12 +142,13 @@ describe("gerarRelatorioRepasseProfissional", () => {
     assert.equal(ws.getCell("N4").value, "Preço atual");
     assert.equal(ws.getCell("O4").value, "Custo");
     assert.equal(ws.getCell("P4").value, "Valor pra subir");
-    assert.equal(ws.getCell("Q4").value, "IPVA");
-    assert.equal(ws.getCell("R4").value, "Doc");
-    assert.equal(ws.getCell("S4").value, "Cautelar");
-    assert.equal(ws.getCell("T4").value, "Observação");
-    // 20ª coluna (T) é a última — U deve estar vazia no header.
-    assert.equal(ws.getCell("U4").value ?? "", "");
+    assert.equal(ws.getCell("Q4").value, "Bônus");
+    assert.equal(ws.getCell("R4").value, "IPVA");
+    assert.equal(ws.getCell("S4").value, "Doc");
+    assert.equal(ws.getCell("T4").value, "Cautelar");
+    assert.equal(ws.getCell("U4").value, "Observação");
+    // 21ª coluna (U) é a última — V deve estar vazia no header.
+    assert.equal(ws.getCell("V4").value ?? "", "");
   });
 
   it("dados começam na linha 5 com snapshot do veículo", async () => {
@@ -167,10 +169,10 @@ describe("gerarRelatorioRepasseProfissional", () => {
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
     assert.equal(ws.getCell("P5").value ?? "", ""); // Valor pra subir
-    assert.equal(ws.getCell("Q5").value ?? "", ""); // IPVA
-    assert.equal(ws.getCell("R5").value ?? "", ""); // Doc
-    assert.equal(ws.getCell("S5").value ?? "", ""); // Cautelar
-    assert.equal(ws.getCell("T5").value ?? "", ""); // Observação
+    assert.equal(ws.getCell("R5").value ?? "", ""); // IPVA
+    assert.equal(ws.getCell("S5").value ?? "", ""); // Doc
+    assert.equal(ws.getCell("T5").value ?? "", ""); // Cautelar
+    assert.equal(ws.getCell("U5").value ?? "", ""); // Observação
   });
 
   it("repasse COM campos manuais preenchidos: cells vêm com os labels pt-BR", async () => {
@@ -186,10 +188,10 @@ describe("gerarRelatorioRepasseProfissional", () => {
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
     assert.equal(ws.getCell("P5").value, 138500); // Valor pra subir (numérico)
-    assert.equal(ws.getCell("Q5").value, "Pago");
-    assert.equal(ws.getCell("R5").value, "OK");
-    assert.equal(ws.getCell("S5").value, "Limpa");
-    assert.equal(ws.getCell("T5").value, "Pneu dianteiro pra trocar");
+    assert.equal(ws.getCell("R5").value, "Pago");
+    assert.equal(ws.getCell("S5").value, "OK");
+    assert.equal(ws.getCell("T5").value, "Limpa");
+    assert.equal(ws.getCell("U5").value, "Pneu dianteiro pra trocar");
   });
 
   it("cell preenchida NÃO tem dataValidation (já tem dado)", async () => {
@@ -198,7 +200,7 @@ describe("gerarRelatorioRepasseProfissional", () => {
     ]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    const cell = ws.getCell("Q5"); // IPVA preenchido
+    const cell = ws.getCell("R5"); // IPVA preenchido
     assert.equal(cell.dataValidation, undefined, "IPVA preenchido não deve ter dropdown");
   });
 
@@ -208,7 +210,7 @@ describe("gerarRelatorioRepasseProfissional", () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    const cell = ws.getCell("Q5"); // IPVA vazio
+    const cell = ws.getCell("R5"); // IPVA vazio
     assert.ok(cell.dataValidation, "IPVA vazio deveria ter dataValidation");
     assert.equal(cell.dataValidation!.type, "list");
     const formula = String((cell.dataValidation!.formulae ?? [])[0] ?? "");
@@ -219,12 +221,12 @@ describe("gerarRelatorioRepasseProfissional", () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    const doc = ws.getCell("R5");
+    const doc = ws.getCell("S5");
     assert.ok(doc.dataValidation);
     const fDoc = String((doc.dataValidation!.formulae ?? [])[0] ?? "");
     assert.match(fDoc, /^_Listas!\$B\$1:\$B\$4$/, `Doc: ${fDoc}`);
 
-    const caut = ws.getCell("S5");
+    const caut = ws.getCell("T5");
     assert.ok(caut.dataValidation);
     const fCaut = String((caut.dataValidation!.formulae ?? [])[0] ?? "");
     assert.match(fCaut, /^_Listas!\$C\$1:\$C\$3$/, `Cautelar: ${fCaut}`);
@@ -328,14 +330,14 @@ describe("gerarRelatorioRepasseProfissional", () => {
     assert.equal(ws.getCell("M5").value ?? "", "");
   });
 
-  it("AutoFilter cobre todas as 20 colunas (T = col 20)", async () => {
+  it("AutoFilter cobre todas as 21 colunas (U = col 21)", async () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    // Na releitura o exceljs serializa o autoFilter como string "A4:T4".
+    // Na releitura o exceljs serializa o autoFilter como string "A4:U4".
     const af = String(ws.autoFilter ?? "");
     assert.match(af, /A4/, `autoFilter deve começar em A4: ${af}`);
-    assert.match(af, /T4/, `autoFilter deve ir até T4 (20 colunas): ${af}`);
+    assert.match(af, /U4/, `autoFilter deve ir até U4 (21 colunas): ${af}`);
   });
 
   // ─── Coluna "Reservado" (aviso pra não subir no Auto Avaliar) ───────────────
@@ -379,6 +381,36 @@ describe("gerarRelatorioRepasseProfissional", () => {
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
     assert.equal(ws.getCell("C5").value ?? "", "");
+  });
+
+  // ─── Coluna "Bônus" (fórmula viva Custo − Valor pra subir) ──────────────────
+
+  it("coluna 'Bônus' existe no header (linha 4, col Q)", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    assert.equal(ws.getCell("Q4").value, "Bônus");
+  });
+
+  it("célula Bônus (Q5) tem fórmula viva referenciando Custo (O) e Valor pra subir (P)", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    const cell = ws.getCell("Q5");
+    const formula = String((cell.value as { formula?: string } | null)?.formula ?? "");
+    assert.ok(formula.length > 0, "Bônus deve ser uma fórmula, não valor fixo");
+    assert.match(formula, /O5/, `fórmula deve referenciar a coluna Custo (O5): ${formula}`);
+    assert.match(formula, /P5/, `fórmula deve referenciar Valor pra subir (P5): ${formula}`);
+    // Fica vazio quando ≤ 0 ou falta dado.
+    assert.match(formula, /<=0/, `fórmula deve zerar bônus negativo: ${formula}`);
+    assert.match(formula, /""/, `fórmula deve deixar vazio quando sem bônus: ${formula}`);
+  });
+
+  it("célula Bônus vem com formato R$ BR", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    assert.match(String(ws.getCell("Q5").numFmt ?? ""), /R\$/);
   });
 
   it("célula RESERVADO vem com destaque forte (fonte negrito + fundo vermelho)", async () => {

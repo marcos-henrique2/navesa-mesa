@@ -8,7 +8,7 @@
  *
  * Layout: 1 aba só ("Carros pra Repasse").
  *   - Linhas 1-3: cabeçalho com título, data de geração, total + capital travado
- *   - Linha 5: header da tabela (19 colunas)
+ *   - Linha 5: header da tabela (21 colunas)
  *   - Linha 6+: dados dos carros (snapshot + campos manuais já preenchidos)
  *   - Cells preenchidas: SEM dataValidation, COM cor de fundo de status
  *   - Cells vazias: COM dataValidation apontando pra `_Listas`
@@ -48,6 +48,7 @@ const COR_WARN = "FFFEF3C7"; // amber-100
 const COR_BAD = "FFFEE2E2"; // red-100
 const COR_NEUTRO = "FFE5E7EB"; // gray-200
 const COR_RESERVADO_BG = "FFDC2626"; // red-600 — aviso forte "não subir"
+const COR_BONUS_FG = "FF047857"; // emerald-700 — texto do bônus (destaque positivo)
 
 const BORDA_FINA: Partial<ExcelJS.Borders> = {
   top: { style: "thin", color: { argb: "FFD1D5DB" } },
@@ -97,6 +98,9 @@ const COLUNAS: ReadonlyArray<{ key: string; header: string; width: number }> = [
   // isso não há coluna separada de comparação. Mantém só Custo + Preço atual.
   { key: "custo", header: "Custo", width: 14 },
   { key: "valor_subir", header: "Valor pra subir", width: 15 },
+  // Bônus de fábrica = Custo − Valor pra subir. Fórmula viva do Excel (recalcula
+  // se editarem Custo/Valor pra subir; fica vazio quando ≤0 ou falta dado).
+  { key: "bonus", header: "Bônus", width: 14 },
   { key: "ipva", header: "IPVA", width: 16 },
   { key: "doc", header: "Doc", width: 16 },
   { key: "cautelar", header: "Cautelar", width: 16 },
@@ -104,6 +108,7 @@ const COLUNAS: ReadonlyArray<{ key: string; header: string; width: number }> = [
 ];
 
 const COL_VALOR_SUBIR = COLUNAS.findIndex((c) => c.key === "valor_subir") + 1; // 1-based
+const COL_BONUS = COLUNAS.findIndex((c) => c.key === "bonus") + 1;
 const COL_IPVA = COLUNAS.findIndex((c) => c.key === "ipva") + 1;
 const COL_DOC = COLUNAS.findIndex((c) => c.key === "doc") + 1;
 const COL_CAUTELAR = COLUNAS.findIndex((c) => c.key === "cautelar") + 1;
@@ -275,6 +280,7 @@ export async function gerarRelatorioRepasseProfissional(
       r.preco_atual ?? "",
       r.valor_aquisicao ?? "",
       r.valor_subir ?? "",
+      null, // Bônus — preenchido com fórmula viva após o loop de valores
       ipvaLabel,
       docLabel,
       cautelarLabel,
@@ -297,6 +303,13 @@ export async function gerarRelatorioRepasseProfissional(
     if (r.valor_subir != null) {
       row.getCell(COL_VALOR_SUBIR).numFmt = FMT_BRL;
     }
+
+    // Bônus: fórmula viva (recalcula no Excel). Negrito + verde pra destacar.
+    const bonusCell = row.getCell(COL_BONUS);
+    bonusCell.value = { formula: formulaBonus(rowNum), result: undefined };
+    bonusCell.numFmt = FMT_BRL;
+    bonusCell.font = { name: "Calibri", size: 11, bold: true, color: { argb: COR_BONUS_FG } };
+
     row.getCell(COL_OBS).alignment = { wrapText: true, vertical: "top" };
     row.height = 20;
 
@@ -421,6 +434,31 @@ function preencherColuna(ws: ExcelJS.Worksheet, col: number, valores: ReadonlyAr
 /** Monta a fórmula de range absoluto pra aba `_Listas` (ex.: `_Listas!$A$1:$A$3`). */
 function rangeListas(coluna: "A" | "B" | "C", n: number): string {
   return `_Listas!$${coluna}$1:$${coluna}$${n}`;
+}
+
+/** Converte índice de coluna 1-based em letra do Excel (1→A, 27→AA). */
+function colLetter(col: number): string {
+  let n = col;
+  let s = "";
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+/**
+ * Fórmula viva do Bônus pra uma linha de dados (1-based `rowNum`).
+ *
+ * Bônus = Custo − Valor pra subir. Fica vazio ("") quando falta algum dos dois
+ * ou quando o resultado é ≤ 0 (carro sem bônus). Recalcula sozinho se Marcos
+ * editar Custo/Valor pra subir direto no Excel.
+ */
+function formulaBonus(rowNum: number): string {
+  const custo = `${colLetter(COL_CUSTO)}${rowNum}`;
+  const subir = `${colLetter(COL_VALOR_SUBIR)}${rowNum}`;
+  return `IF(OR(${custo}="",${subir}="",${custo}-${subir}<=0),"",${custo}-${subir})`;
 }
 
 /** BRL sem usar Intl (evita locale do Excel) — pro footer/título. */

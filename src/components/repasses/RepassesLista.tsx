@@ -68,6 +68,7 @@ import { cn, formatBRL, formatBRLCents, formatInt } from "@/lib/utils";
 import { parseValorBR } from "@/lib/utils/parse-br";
 import { placaCasa } from "@/lib/utils/placa";
 import { calcularValorPraSubir } from "@/lib/repasses/kpis";
+import { calcularBonus } from "@/lib/repasses/bonus";
 import { showErrorToast, showSuccessToast } from "@/components/ui/Toast";
 import { MarcarRepasseModal } from "./MarcarRepasseModal";
 import { EscolherVeiculoModal } from "./EscolherVeiculoModal";
@@ -686,6 +687,7 @@ function TabelaRepasses({
             <Th>Doc</Th>
             <Th>Cautelar</Th>
             <Th className="text-right">Valor pra subir</Th>
+            <Th className="text-right">Bônus</Th>
             <Th>Observação</Th>
             <Th>Status</Th>
             <Th>Data marcado</Th>
@@ -777,6 +779,20 @@ function TabelaRepasses({
                     onCommit={(v) => void onPatchCampos(r.id, { valor_subir: v })}
                     ariaLabel={`Valor pra subir de ${r.placa}`}
                   />
+                </Td>
+
+                {/* Bônus (derivado: Custo − Valor pra subir; só quando > 0) */}
+                <Td className="text-right tabular-nums">
+                  {(() => {
+                    const bonus = calcularBonus(r);
+                    return bonus != null ? (
+                      <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                        {formatBRL(bonus)}
+                      </span>
+                    ) : (
+                      <span className="text-[var(--text-subtle)]">—</span>
+                    );
+                  })()}
                 </Td>
 
                 {/* Observação */}
