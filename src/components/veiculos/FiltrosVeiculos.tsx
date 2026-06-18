@@ -11,6 +11,7 @@ type FiltroFipeValor = "all" | "acima" | "abaixo" | "sem";
 type FiltroCautelarValor = "all" | StatusCautelar | "sem";
 type FiltroFlagValor = "all" | "promocao" | "brinde" | "qualquer";
 type FiltroRepasseValor = "all" | "sim" | "nao";
+type FiltroReservadoValor = "all" | "sim" | "nao";
 
 type SelectOption = [string, string];
 
@@ -62,6 +63,9 @@ type FiltrosVeiculosProps = {
   filtroRepasse: FiltroRepasseValor;
   setFiltroRepasse: (v: FiltroRepasseValor) => void;
 
+  filtroReservado: FiltroReservadoValor;
+  setFiltroReservado: (v: FiltroReservadoValor) => void;
+
   idadeMin: string;
   setIdadeMin: (v: string) => void;
   idadeMax: string;
@@ -111,6 +115,7 @@ export function FiltrosVeiculos(props: FiltrosVeiculosProps) {
     filtroCautelar, setFiltroCautelar,
     filtroFlag, setFiltroFlag,
     filtroRepasse, setFiltroRepasse,
+    filtroReservado, setFiltroReservado,
     idadeMin, setIdadeMin, idadeMax, setIdadeMax,
     margemMin, setMargemMin, margemMax, setMargemMax,
     anoMin, setAnoMin, anoMax, setAnoMax,
@@ -308,6 +313,16 @@ export function FiltrosVeiculos(props: FiltrosVeiculosProps) {
                   ["all", "Todos"],
                   ["sim", "Sim — bate critérios"],
                   ["nao", "Não — fora dos critérios"],
+                ]}
+              />
+              <Select
+                label="Reservado"
+                value={filtroReservado}
+                onChange={(v) => setFiltroReservado(v as FiltroReservadoValor)}
+                options={[
+                  ["all", "Todos"],
+                  ["sim", "Sim — tem proposta"],
+                  ["nao", "Não — sem proposta"],
                 ]}
               />
             </div>

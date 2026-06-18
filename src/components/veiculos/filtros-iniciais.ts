@@ -15,6 +15,7 @@ export type FiltroFipe = "all" | "acima" | "abaixo" | "sem";
 export type FiltroCautelar = "all" | StatusCautelar | "sem";
 export type FiltroFlag = "all" | "promocao" | "brinde" | "qualquer";
 export type FiltroRepasse = "all" | "sim" | "nao";
+export type FiltroReservado = "all" | "sim" | "nao";
 
 export type SettersFiltrosVeiculos = {
   setStatusFiltro: (v: StatusFiltro) => void;
@@ -30,6 +31,7 @@ export type SettersFiltrosVeiculos = {
   setFiltroCautelar: (v: FiltroCautelar) => void;
   setFiltroFlag: (v: FiltroFlag) => void;
   setFiltroRepasse: (v: FiltroRepasse) => void;
+  setFiltroReservado: (v: FiltroReservado) => void;
   setAnoMin: (v: string) => void;
   setAnoMax: (v: string) => void;
   setKmMin: (v: string) => void;
@@ -63,6 +65,7 @@ export function aplicarLimparFiltros(s: SettersFiltrosVeiculos): readonly string
   s.setFiltroCautelar("all");
   s.setFiltroFlag("all");
   s.setFiltroRepasse("all");
+  s.setFiltroReservado("all");
   s.setAnoMin("");
   s.setAnoMax("");
   s.setKmMin("");
@@ -98,6 +101,7 @@ export const CHAVES_FILTROS_ZERADAS = [
   "filtroCautelar",
   "filtroFlag",
   "filtroRepasse",
+  "filtroReservado",
   "anoMin",
   "anoMax",
   "kmMin",

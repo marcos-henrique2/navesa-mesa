@@ -90,6 +90,7 @@ export function veiculo(over: Partial<VeiculoParsed> = {}): VeiculoParsed {
     dias_patio: 10,
     data_entrada: null,
     vendedor_recebeu: null,
+    cod_proposta: null,
     ...over,
   } as VeiculoParsed;
 }

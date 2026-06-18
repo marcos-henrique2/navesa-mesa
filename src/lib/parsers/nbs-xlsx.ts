@@ -19,6 +19,8 @@ export type VeiculoParsed = {
   dias_patio: number | null;
   data_entrada: Date | null;
   vendedor_recebeu: string | null;
+  /** Cód. Proposta Internet (col 310). Preenchido = carro tem proposta/reserva ativa. */
+  cod_proposta: string | null;
 };
 
 export type SnapshotMeta = {
@@ -58,6 +60,7 @@ const COL = {
   descricao_situacao: 37,
   custo_total: 46,
   entrada: 50,
+  cod_proposta_internet: 310,
   empresa_nome: 401,
   km: 441,
 } as const;
@@ -191,6 +194,11 @@ export async function parseNbsXlsx(
     const marcaLinha = asStr(row[COL.linha]);
     const marca = marcaCompleta ?? marcaLinha;
 
+    // Cód. Proposta Internet (col 310): preenchido = carro com proposta/reserva
+    // ativa. asStr já trata vazio e "----"; tratamos "0" como sem proposta.
+    const codProp = asStr(row[COL.cod_proposta_internet]);
+    const cod_proposta = codProp && codProp !== "0" ? codProp : null;
+
     veiculos.push({
       cod_empresa,
       chassi,
@@ -210,6 +218,7 @@ export async function parseNbsXlsx(
       dias_patio: asInt(row[COL.dpt]),
       data_entrada: parseDataEntrada(row[COL.entrada]),
       vendedor_recebeu: asStr(row[COL.vendedor_recebeu]),
+      cod_proposta,
     });
 
     const empresa = parseEmpresaCell(row[COL.empresa_nome]);

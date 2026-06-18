@@ -36,6 +36,7 @@ function criarSpySetters(): { setters: SettersFiltrosVeiculos; chamadas: Chamada
     setFiltroCautelar: make("filtroCautelar"),
     setFiltroFlag: make("filtroFlag"),
     setFiltroRepasse: make("filtroRepasse"),
+    setFiltroReservado: make("filtroReservado"),
     setAnoMin: make("anoMin"),
     setAnoMax: make("anoMax"),
     setKmMin: make("kmMin"),
@@ -84,6 +85,7 @@ describe("aplicarLimparFiltros", () => {
       "filtroCautelar",
       "filtroFlag",
       "filtroRepasse",
+      "filtroReservado",
     ];
     for (const chave of dropdowns) {
       const c = chamadas.find((c) => c.chave === chave);

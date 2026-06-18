@@ -10,9 +10,10 @@ import {
   flexRender,
   type ColumnDef,
 } from "@tanstack/react-table";
-import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, X, ClipboardCheck, BarChart3, Repeat, ExternalLink } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, X, ClipboardCheck, BarChart3, Repeat, ExternalLink, BadgeAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { classificarPatio } from "@/lib/inventory/status";
+import { estaReservado } from "@/lib/inventory/reservado";
 import { CLASSE_COR } from "@/lib/pricing/classificacao";
 import { CAUTELAR_ICONE, CAUTELAR_LABEL } from "@/lib/inventory/cautelar";
 import { cn, formatBRL, formatInt } from "@/lib/utils";
@@ -74,6 +75,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
     flags,
     filtroFlag, setFiltroFlag,
     filtroRepasse, setFiltroRepasse,
+    filtroReservado, setFiltroReservado,
     idadeMin, setIdadeMin, idadeMax, setIdadeMax,
     margemMin, setMargemMin, margemMax, setMargemMax,
     fipeBatch,
@@ -139,9 +141,18 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
       cell: ({ row }) => {
         const placa = row.original.placa;
         const emRepasse = chassisEmRepasse.has(row.original.chassi);
+        const reservado = estaReservado(row.original);
         return (
           <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
             <span className="font-mono text-xs">{placa}</span>
+            {reservado && (
+              <span
+                className="inline-flex items-center gap-0.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-red-800 dark:bg-red-950/40 dark:text-red-300"
+                title={`Reservado — tem proposta ativa no NBS (cód. ${row.original.cod_proposta})`}
+              >
+                <BadgeAlert className="h-2.5 w-2.5" /> Reservado
+              </span>
+            )}
             {emRepasse && (
               <span
                 className="inline-flex items-center gap-0.5 rounded-full bg-blue-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-blue-800 dark:bg-blue-950/40 dark:text-blue-300"
@@ -410,6 +421,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
         filtroCautelar={filtroCautelar} setFiltroCautelar={setFiltroCautelar}
         filtroFlag={filtroFlag} setFiltroFlag={setFiltroFlag}
         filtroRepasse={filtroRepasse} setFiltroRepasse={setFiltroRepasse}
+        filtroReservado={filtroReservado} setFiltroReservado={setFiltroReservado}
         idadeMin={idadeMin} setIdadeMin={setIdadeMin} idadeMax={idadeMax} setIdadeMax={setIdadeMax}
         margemMin={margemMin} setMargemMin={setMargemMin} margemMax={margemMax} setMargemMax={setMargemMax}
         anoMin={anoMin} setAnoMin={setAnoMin} anoMax={anoMax} setAnoMax={setAnoMax}

@@ -237,6 +237,7 @@ export function useVendasAnalise() {
         dias_patio: v.dias_estoque,
         data_entrada: null,
         vendedor_recebeu: v.vendedor_recebeu,
+        cod_proposta: null,
       }));
       const r = await runFipeBatch(veiculos, (p) => setProgressoFipe(p));
       const matches = Object.keys(r.items).length;

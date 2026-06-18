@@ -14,10 +14,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, X } from "lucide-react";
+import { Loader2, X, AlertTriangle } from "lucide-react";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import { createRepasse, snapshotFromVeiculo } from "@/lib/repasses/queries";
 import { showErrorToast, showSuccessToast } from "@/components/ui/Toast";
+import { estaReservado } from "@/lib/inventory/reservado";
 import { formatBRL, formatInt } from "@/lib/utils";
 
 export type MarcarRepasseModalProps = {
@@ -42,6 +43,8 @@ export function MarcarRepasseModal({
   const [salvando, setSalvando] = useState(false);
 
   if (!open) return null;
+
+  const reservado = estaReservado(veiculo);
 
   async function handleConfirmar() {
     if (salvando) return;
@@ -85,6 +88,15 @@ export function MarcarRepasseModal({
             <X className="h-4 w-4" />
           </button>
         </div>
+
+        {reservado && (
+          <div className="mb-4 flex items-start gap-2 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              <strong>Este carro está RESERVADO</strong> (tem proposta ativa no NBS). Subir pra repasse mesmo assim?
+            </span>
+          </div>
+        )}
 
         <div className="space-y-2 rounded-md border border-[var(--border-soft)] bg-[var(--bg-muted)] p-3 text-sm">
           <Row label="Modelo" value={veiculo.modelo} />

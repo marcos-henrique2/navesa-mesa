@@ -10,6 +10,7 @@ import { calcularDesvioFipe } from "@/lib/fipe/batch";
 import { useCautelares, type StatusCautelar } from "@/lib/inventory/cautelar";
 import { useFlagsTodas } from "@/lib/data/flags-veiculo";
 import { ehPraRepasse } from "@/lib/analytics/carros-pra-repassar";
+import { estaReservado } from "@/lib/inventory/reservado";
 import { useChassisEmRepasse } from "@/lib/repasses/useChassisEmRepasse";
 import { computarDiagnosticoLista, type DiagnosticoStatus } from "@/lib/pricing/diagnostico";
 import { calcularMedianasKm } from "@/lib/pricing/medianas";
@@ -68,6 +69,7 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
   const [filtroCautelar, setFiltroCautelar] = usePersistedState<"all" | StatusCautelar | "sem">("veiculos:filtroCautelar", "all");
   const [filtroFlag, setFiltroFlag] = usePersistedState<"all" | "promocao" | "brinde" | "qualquer">("veiculos:filtroFlag", "all");
   const [filtroRepasse, setFiltroRepasse] = usePersistedState<"all" | "sim" | "nao">("veiculos:filtroRepasse", "all");
+  const [filtroReservado, setFiltroReservado] = usePersistedState<"all" | "sim" | "nao">("veiculos:filtroReservado", "all");
   const [idadeMin, setIdadeMin] = usePersistedState<string>("veiculos:idadeMin", "");
   const [idadeMax, setIdadeMax] = usePersistedState<string>("veiculos:idadeMax", "");
   const [margemMin, setMargemMin] = usePersistedState<string>("veiculos:margemMin", "");
@@ -228,6 +230,11 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
         if (filtroRepasse === "sim" && !ehRepasse) return false;
         if (filtroRepasse === "nao" && ehRepasse) return false;
       }
+      if (filtroReservado !== "all") {
+        const reservado = estaReservado(v);
+        if (filtroReservado === "sim" && !reservado) return false;
+        if (filtroReservado === "nao" && reservado) return false;
+      }
       if (idMin !== null || idMax !== null) {
         const anoVeic = v.ano_fabricacao ?? v.ano_modelo;
         if (anoVeic == null || anoVeic <= 0) {
@@ -254,7 +261,7 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
       }
       return true;
     });
-  }, [veiculos, filtroLoja, filtroMarca, filtroCor, filtroComb, filtroSituacao, filtroPatio, filtroClasse, filtroFipe, filtroCautelar, filtroFlag, filtroRepasse, classifMap, fipeBatch, cautelares, flags, anoMin, anoMax, kmMin, kmMax, precoMin, precoMax, diasMin, diasMax, idadeMin, idadeMax, margemMin, margemMax, search, modoPrioridade, diagnosticosPrioridade]);
+  }, [veiculos, filtroLoja, filtroMarca, filtroCor, filtroComb, filtroSituacao, filtroPatio, filtroClasse, filtroFipe, filtroCautelar, filtroFlag, filtroRepasse, filtroReservado, classifMap, fipeBatch, cautelares, flags, anoMin, anoMax, kmMin, kmMax, precoMin, precoMax, diasMin, diasMax, idadeMin, idadeMax, margemMin, margemMax, search, modoPrioridade, diagnosticosPrioridade]);
 
   const filtered = useMemo(() => {
     return filteredExceptStatus.filter((v) => {
@@ -294,6 +301,7 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
       setFiltroCautelar,
       setFiltroFlag,
       setFiltroRepasse,
+      setFiltroReservado,
       setAnoMin,
       setAnoMax,
       setKmMin,
@@ -430,6 +438,7 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
     filtroCautelar !== "all",
     filtroFlag !== "all",
     filtroRepasse !== "all",
+    filtroReservado !== "all",
     !!anoMin, !!anoMax, !!kmMin, !!kmMax, !!precoMin, !!precoMax, !!diasMin, !!diasMax,
     !!idadeMin, !!idadeMax, !!margemMin, !!margemMax,
   ].filter(Boolean).length;
@@ -467,6 +476,8 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
     setFiltroFlag,
     filtroRepasse,
     setFiltroRepasse,
+    filtroReservado,
+    setFiltroReservado,
     idadeMin,
     setIdadeMin,
     idadeMax,

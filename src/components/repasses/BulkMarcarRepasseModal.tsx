@@ -12,10 +12,11 @@
  */
 
 import { useState } from "react";
-import { Loader2, X } from "lucide-react";
+import { Loader2, X, AlertTriangle } from "lucide-react";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import { createRepasse, snapshotFromVeiculo } from "@/lib/repasses/queries";
 import { RepasseDuplicadoError } from "@/lib/repasses/erros";
+import { estaReservado } from "@/lib/inventory/reservado";
 import { showErrorToast, showInfoToast, showSuccessToast } from "@/components/ui/Toast";
 
 export type BulkMarcarRepasseModalProps = {
@@ -45,6 +46,7 @@ export function BulkMarcarRepasseModal({
   if (!open) return null;
 
   const total = veiculos.length;
+  const reservados = veiculos.filter(estaReservado);
 
   async function handleConfirmar() {
     if (salvando) return;
@@ -117,6 +119,16 @@ export function BulkMarcarRepasseModal({
         <p className="text-sm text-[var(--text-muted)]">
           Os carros vão entrar na lista de /repasses pra você exportar e subir pra Auto Avaliar.
         </p>
+
+        {reservados.length > 0 && (
+          <div className="mt-3 flex items-start gap-2 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              <strong>{reservados.length} de {total} carro{total === 1 ? "" : "s"} {reservados.length === 1 ? "está RESERVADO" : "estão RESERVADOS"}</strong>{" "}
+              (têm proposta ativa no NBS): {reservados.map((v) => v.placa).join(", ")}. Continuar mesmo assim?
+            </span>
+          </div>
+        )}
 
         <div className="mt-5 flex justify-end gap-2">
           <button

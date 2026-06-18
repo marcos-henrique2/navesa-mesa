@@ -29,6 +29,7 @@ function toRow(v: VeiculoParsed, snapshotId: number): Record<string, unknown> {
     dias_patio: v.dias_patio,
     data_entrada: v.data_entrada?.toISOString() ?? null,
     vendedor_recebeu: v.vendedor_recebeu,
+    cod_proposta: v.cod_proposta,
   };
 }
 
@@ -52,6 +53,7 @@ function fromRow(r: VeiculoRow): VeiculoParsed {
     dias_patio: r.dias_patio,
     data_entrada: parseDate(r.data_entrada),
     vendedor_recebeu: r.vendedor_recebeu,
+    cod_proposta: r.cod_proposta ?? null,
   };
 }
 
