@@ -7,9 +7,10 @@
  *
  * As colunas de comparação "Valor Auto Avaliar" + 4 diferenças foram removidas:
  * o "Custo" do NBS JÁ É o valor de referência do Auto Avaliar, então eram
- * redundantes. Depois adicionou-se a coluna "Reservado" (logo após Placa) e a
- * coluna "Bônus" (logo após "Valor pra subir", fórmula viva Custo − Valor pra subir).
- * Total agora: 21 colunas.
+ * redundantes. Depois adicionou-se a coluna "Bônus" (logo após "Valor pra subir",
+ * fórmula viva Custo − Valor pra subir). As colunas "Chassi" e "Reservado" foram
+ * removidas do XLSX (Reservado segue só na tela /repasses, não no Excel).
+ * Total agora: 19 colunas.
  *
  * Layout: 1 aba "Carros pra Repasse" com:
  *   - Cabeçalho de 3 linhas (título + data + totais)
@@ -131,24 +132,28 @@ describe("gerarRelatorioRepasseProfissional", () => {
     assert.doesNotMatch(linha, /R\$ 150/, "não deveria somar o subido no capital travado");
   });
 
-  it("header da tabela está na linha 4 com 21 colunas", async () => {
+  it("header da tabela está na linha 4 com 19 colunas (sem Chassi/Reservado)", async () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
     assert.equal(ws.getCell("A4").value, "#");
     assert.equal(ws.getCell("B4").value, "Placa");
-    assert.equal(ws.getCell("C4").value, "Reservado");
-    assert.equal(ws.getCell("D4").value, "Chassi");
-    assert.equal(ws.getCell("N4").value, "Preço atual");
-    assert.equal(ws.getCell("O4").value, "Custo");
-    assert.equal(ws.getCell("P4").value, "Valor pra subir");
-    assert.equal(ws.getCell("Q4").value, "Bônus");
-    assert.equal(ws.getCell("R4").value, "IPVA");
-    assert.equal(ws.getCell("S4").value, "Doc");
-    assert.equal(ws.getCell("T4").value, "Cautelar");
-    assert.equal(ws.getCell("U4").value, "Observação");
-    // 21ª coluna (U) é a última — V deve estar vazia no header.
-    assert.equal(ws.getCell("V4").value ?? "", "");
+    assert.equal(ws.getCell("C4").value, "Marca");
+    assert.equal(ws.getCell("D4").value, "Modelo");
+    assert.equal(ws.getCell("L4").value, "Preço atual");
+    assert.equal(ws.getCell("M4").value, "Custo");
+    assert.equal(ws.getCell("N4").value, "Valor pra subir");
+    assert.equal(ws.getCell("O4").value, "Bônus");
+    assert.equal(ws.getCell("P4").value, "IPVA");
+    assert.equal(ws.getCell("Q4").value, "Doc");
+    assert.equal(ws.getCell("R4").value, "Cautelar");
+    assert.equal(ws.getCell("S4").value, "Observação");
+    // Header não contém mais "Chassi" nem "Reservado".
+    const headers = ws.getRow(4).values as Array<string | undefined>;
+    assert.ok(!headers.includes("Chassi"), "header não deve ter 'Chassi'");
+    assert.ok(!headers.includes("Reservado"), "header não deve ter 'Reservado'");
+    // 19ª coluna (S) é a última — T deve estar vazia no header.
+    assert.equal(ws.getCell("T4").value ?? "", "");
   });
 
   it("dados começam na linha 5 com snapshot do veículo", async () => {
@@ -157,22 +162,21 @@ describe("gerarRelatorioRepasseProfissional", () => {
     const ws = wb.worksheets[0]!;
     assert.equal(ws.getCell("A5").value, 1);
     assert.equal(ws.getCell("B5").value, "ABC1D23");
-    assert.equal(ws.getCell("D5").value, "9BWZZZ377VT004251");
-    assert.equal(ws.getCell("E5").value, "Ford");
-    assert.equal(ws.getCell("F5").value, "RANGER XLT 3.2");
-    assert.equal(ws.getCell("N5").value, 145000); // preço atual
-    assert.equal(ws.getCell("O5").value, 120000); // custo (valor aquisição)
+    assert.equal(ws.getCell("C5").value, "Ford");
+    assert.equal(ws.getCell("D5").value, "RANGER XLT 3.2");
+    assert.equal(ws.getCell("L5").value, 145000); // preço atual
+    assert.equal(ws.getCell("M5").value, 120000); // custo (valor aquisição)
   });
 
   it("repasse SEM campos manuais: Valor pra subir/IPVA/Doc/Cautelar/Obs ficam VAZIOS", async () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    assert.equal(ws.getCell("P5").value ?? "", ""); // Valor pra subir
-    assert.equal(ws.getCell("R5").value ?? "", ""); // IPVA
-    assert.equal(ws.getCell("S5").value ?? "", ""); // Doc
-    assert.equal(ws.getCell("T5").value ?? "", ""); // Cautelar
-    assert.equal(ws.getCell("U5").value ?? "", ""); // Observação
+    assert.equal(ws.getCell("N5").value ?? "", ""); // Valor pra subir
+    assert.equal(ws.getCell("P5").value ?? "", ""); // IPVA
+    assert.equal(ws.getCell("Q5").value ?? "", ""); // Doc
+    assert.equal(ws.getCell("R5").value ?? "", ""); // Cautelar
+    assert.equal(ws.getCell("S5").value ?? "", ""); // Observação
   });
 
   it("repasse COM campos manuais preenchidos: cells vêm com os labels pt-BR", async () => {
@@ -187,11 +191,11 @@ describe("gerarRelatorioRepasseProfissional", () => {
     ]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    assert.equal(ws.getCell("P5").value, 138500); // Valor pra subir (numérico)
-    assert.equal(ws.getCell("R5").value, "Pago");
-    assert.equal(ws.getCell("S5").value, "OK");
-    assert.equal(ws.getCell("T5").value, "Limpa");
-    assert.equal(ws.getCell("U5").value, "Pneu dianteiro pra trocar");
+    assert.equal(ws.getCell("N5").value, 138500); // Valor pra subir (numérico)
+    assert.equal(ws.getCell("P5").value, "Pago");
+    assert.equal(ws.getCell("Q5").value, "OK");
+    assert.equal(ws.getCell("R5").value, "Limpa");
+    assert.equal(ws.getCell("S5").value, "Pneu dianteiro pra trocar");
   });
 
   it("cell preenchida NÃO tem dataValidation (já tem dado)", async () => {
@@ -200,7 +204,7 @@ describe("gerarRelatorioRepasseProfissional", () => {
     ]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    const cell = ws.getCell("R5"); // IPVA preenchido
+    const cell = ws.getCell("P5"); // IPVA preenchido
     assert.equal(cell.dataValidation, undefined, "IPVA preenchido não deve ter dropdown");
   });
 
@@ -210,7 +214,7 @@ describe("gerarRelatorioRepasseProfissional", () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    const cell = ws.getCell("R5"); // IPVA vazio
+    const cell = ws.getCell("P5"); // IPVA vazio
     assert.ok(cell.dataValidation, "IPVA vazio deveria ter dataValidation");
     assert.equal(cell.dataValidation!.type, "list");
     const formula = String((cell.dataValidation!.formulae ?? [])[0] ?? "");
@@ -221,12 +225,12 @@ describe("gerarRelatorioRepasseProfissional", () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    const doc = ws.getCell("S5");
+    const doc = ws.getCell("Q5");
     assert.ok(doc.dataValidation);
     const fDoc = String((doc.dataValidation!.formulae ?? [])[0] ?? "");
     assert.match(fDoc, /^_Listas!\$B\$1:\$B\$4$/, `Doc: ${fDoc}`);
 
-    const caut = ws.getCell("T5");
+    const caut = ws.getCell("R5");
     assert.ok(caut.dataValidation);
     const fCaut = String((caut.dataValidation!.formulae ?? [])[0] ?? "");
     assert.match(fCaut, /^_Listas!\$C\$1:\$C\$3$/, `Cautelar: ${fCaut}`);
@@ -285,9 +289,9 @@ describe("gerarRelatorioRepasseProfissional", () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    const preco = ws.getCell("N5");
+    const preco = ws.getCell("L5");
     assert.match(String(preco.numFmt ?? ""), /R\$/);
-    const custo = ws.getCell("O5");
+    const custo = ws.getCell("M5");
     assert.match(String(custo.numFmt ?? ""), /R\$/);
   });
 
@@ -297,13 +301,13 @@ describe("gerarRelatorioRepasseProfissional", () => {
     ]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    const vs = ws.getCell("P5");
+    const vs = ws.getCell("N5");
     assert.equal(vs.value, 138500);
     assert.match(String(vs.numFmt ?? ""), /R\$/, "Valor pra subir preenchido precisa ter numFmt R$");
   });
 
   it("Dias parado usa dias_patio REAL do estoque (via map por chassi)", async () => {
-    // Coluna M = "Dias parado". Agora reflete o dias_patio atual do estoque
+    // Coluna K = "Dias parado". Agora reflete o dias_patio atual do estoque
     // (quanto tempo o carro está parado no pátio), igual à tela /repasses —
     // NÃO dias desde data_marcado.
     const r = buildRepasse({ chassi: "9BWZZZ377VT004251" });
@@ -311,7 +315,7 @@ describe("gerarRelatorioRepasseProfissional", () => {
     const buf = await gerarRelatorioRepasseProfissional([r], map);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    assert.equal(ws.getCell("M5").value, 217);
+    assert.equal(ws.getCell("K5").value, 217);
   });
 
   it("Dias parado: chassi sem entrada no map → célula vazia (não quebra)", async () => {
@@ -320,113 +324,70 @@ describe("gerarRelatorioRepasseProfissional", () => {
     const buf = await gerarRelatorioRepasseProfissional([r], map);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    assert.equal(ws.getCell("M5").value ?? "", "");
+    assert.equal(ws.getCell("K5").value ?? "", "");
   });
 
   it("Dias parado: sem map (param undefined) → célula vazia (não quebra)", async () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    assert.equal(ws.getCell("M5").value ?? "", "");
+    assert.equal(ws.getCell("K5").value ?? "", "");
   });
 
-  it("AutoFilter cobre todas as 21 colunas (U = col 21)", async () => {
+  it("AutoFilter cobre todas as 19 colunas (S = col 19)", async () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    // Na releitura o exceljs serializa o autoFilter como string "A4:U4".
+    // Na releitura o exceljs serializa o autoFilter como string "A4:S4".
     const af = String(ws.autoFilter ?? "");
     assert.match(af, /A4/, `autoFilter deve começar em A4: ${af}`);
-    assert.match(af, /U4/, `autoFilter deve ir até U4 (21 colunas): ${af}`);
+    assert.match(af, /S4/, `autoFilter deve ir até S4 (19 colunas): ${af}`);
   });
 
-  // ─── Coluna "Reservado" (aviso pra não subir no Auto Avaliar) ───────────────
+  // ─── Colunas "Chassi" e "Reservado" removidas do XLSX ───────────────────────
 
-  it("coluna 'Reservado' existe no header (linha 4, col C)", async () => {
+  it("XLSX não tem mais coluna 'Chassi' nem 'Reservado'", async () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    assert.equal(ws.getCell("C4").value, "Reservado");
-  });
-
-  it("célula Reservado = 'RESERVADO' quando o chassi está no map como true", async () => {
-    const r = buildRepasse({ chassi: "9BWZZZ377VT004251" });
-    const reservadoMap = new Map<string, boolean>([["9BWZZZ377VT004251", true]]);
-    const buf = await gerarRelatorioRepasseProfissional([r], undefined, reservadoMap);
-    const wb = await abrir(buf);
-    const ws = wb.worksheets[0]!;
-    assert.equal(ws.getCell("C5").value, "RESERVADO");
-  });
-
-  it("célula Reservado VAZIA quando chassi no map como false", async () => {
-    const r = buildRepasse({ chassi: "9BWZZZ377VT004251" });
-    const reservadoMap = new Map<string, boolean>([["9BWZZZ377VT004251", false]]);
-    const buf = await gerarRelatorioRepasseProfissional([r], undefined, reservadoMap);
-    const wb = await abrir(buf);
-    const ws = wb.worksheets[0]!;
-    assert.equal(ws.getCell("C5").value ?? "", "");
-  });
-
-  it("célula Reservado VAZIA quando chassi ausente do map", async () => {
-    const r = buildRepasse({ chassi: "9BWZZZ377VT004251" });
-    const reservadoMap = new Map<string, boolean>([["OUTRO_CHASSI", true]]);
-    const buf = await gerarRelatorioRepasseProfissional([r], undefined, reservadoMap);
-    const wb = await abrir(buf);
-    const ws = wb.worksheets[0]!;
-    assert.equal(ws.getCell("C5").value ?? "", "");
-  });
-
-  it("param reservadoPorChassi undefined → coluna Reservado vazia (não quebra)", async () => {
-    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
-    const wb = await abrir(buf);
-    const ws = wb.worksheets[0]!;
-    assert.equal(ws.getCell("C5").value ?? "", "");
+    const headers = (ws.getRow(4).values as Array<string | undefined>).map((h) => String(h ?? ""));
+    assert.ok(!headers.includes("Chassi"), "não deve existir coluna 'Chassi' no XLSX");
+    assert.ok(!headers.includes("Reservado"), "não deve existir coluna 'Reservado' no XLSX");
   });
 
   // ─── Coluna "Bônus" (fórmula viva Custo − Valor pra subir) ──────────────────
 
-  it("coluna 'Bônus' existe no header (linha 4, col Q)", async () => {
+  it("coluna 'Bônus' existe no header (linha 4, col O)", async () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    assert.equal(ws.getCell("Q4").value, "Bônus");
+    assert.equal(ws.getCell("O4").value, "Bônus");
   });
 
-  it("célula Bônus (Q5) tem fórmula viva referenciando Custo (O) e Valor pra subir (P)", async () => {
+  it("célula Bônus (O5) tem fórmula viva robusta (ISNUMBER/AND) referenciando Custo (M) e Valor pra subir (N)", async () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    const cell = ws.getCell("Q5");
+    const cell = ws.getCell("O5");
     const formula = String((cell.value as { formula?: string } | null)?.formula ?? "");
     assert.ok(formula.length > 0, "Bônus deve ser uma fórmula, não valor fixo");
-    assert.match(formula, /O5/, `fórmula deve referenciar a coluna Custo (O5): ${formula}`);
-    assert.match(formula, /P5/, `fórmula deve referenciar Valor pra subir (P5): ${formula}`);
-    // Fica vazio quando ≤ 0 ou falta dado.
-    assert.match(formula, /<=0/, `fórmula deve zerar bônus negativo: ${formula}`);
+    assert.match(formula, /M5/, `fórmula deve referenciar a coluna Custo (M5): ${formula}`);
+    assert.match(formula, /N5/, `fórmula deve referenciar Valor pra subir (N5): ${formula}`);
+    // Robustez: usa ISNUMBER + AND pra não dar #VALUE! com célula vazia/texto.
+    assert.match(formula, /ISNUMBER\(M5\)/, `fórmula deve checar ISNUMBER do Custo: ${formula}`);
+    assert.match(formula, /ISNUMBER\(N5\)/, `fórmula deve checar ISNUMBER do Valor: ${formula}`);
+    assert.match(formula, /^IF\(AND\(/, `fórmula deve começar com IF(AND(: ${formula}`);
+    assert.match(formula, /M5>N5/, `fórmula só mostra bônus quando Custo > Valor: ${formula}`);
+    // Fica vazio quando sem bônus.
     assert.match(formula, /""/, `fórmula deve deixar vazio quando sem bônus: ${formula}`);
+    // Texto exato esperado.
+    assert.equal(formula, 'IF(AND(ISNUMBER(M5),ISNUMBER(N5),M5>N5),M5-N5,"")');
   });
 
   it("célula Bônus vem com formato R$ BR", async () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    assert.match(String(ws.getCell("Q5").numFmt ?? ""), /R\$/);
-  });
-
-  it("célula RESERVADO vem com destaque forte (fonte negrito + fundo vermelho)", async () => {
-    const r = buildRepasse({ chassi: "9BWZZZ377VT004251" });
-    const reservadoMap = new Map<string, boolean>([["9BWZZZ377VT004251", true]]);
-    const buf = await gerarRelatorioRepasseProfissional([r], undefined, reservadoMap);
-    const wb = await abrir(buf);
-    const ws = wb.worksheets[0]!;
-    const cell = ws.getCell("C5");
-    assert.equal(cell.font?.bold, true, "RESERVADO deve estar em negrito");
-    const fill = cell.fill as ExcelJS.FillPattern | undefined;
-    assert.equal(fill?.pattern, "solid", "RESERVADO deve ter fundo sólido");
-    assert.match(
-      String(fill?.fgColor?.argb ?? ""),
-      /DC2626/i,
-      "fundo da célula RESERVADO deve ser vermelho (red-600)",
-    );
+    assert.match(String(ws.getCell("O5").numFmt ?? ""), /R\$/);
   });
 });

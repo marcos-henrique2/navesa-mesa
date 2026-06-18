@@ -8,11 +8,11 @@
  *
  * Layout: 1 aba só ("Carros pra Repasse").
  *   - Linhas 1-3: cabeçalho com título, data de geração, total + capital travado
- *   - Linha 5: header da tabela (21 colunas)
- *   - Linha 6+: dados dos carros (snapshot + campos manuais já preenchidos)
+ *   - Linha 4: header da tabela (19 colunas)
+ *   - Linha 5+: dados dos carros (snapshot + campos manuais já preenchidos)
  *   - Cells preenchidas: SEM dataValidation, COM cor de fundo de status
  *   - Cells vazias: COM dataValidation apontando pra `_Listas`
- *   - AutoFilter no header + frozen header (5 linhas)
+ *   - AutoFilter no header + frozen header (4 linhas)
  *
  * Por que `exceljs` e não `xlsx` (SheetJS)?
  *   - Precisa de data validation (dropdowns) por célula
@@ -47,7 +47,6 @@ const COR_OK = "FFD1FAE5"; // emerald-100
 const COR_WARN = "FFFEF3C7"; // amber-100
 const COR_BAD = "FFFEE2E2"; // red-100
 const COR_NEUTRO = "FFE5E7EB"; // gray-200
-const COR_RESERVADO_BG = "FFDC2626"; // red-600 — aviso forte "não subir"
 const COR_BONUS_FG = "FF047857"; // emerald-700 — texto do bônus (destaque positivo)
 
 const BORDA_FINA: Partial<ExcelJS.Borders> = {
@@ -79,11 +78,6 @@ function somarPrecoAtualMarcados(repasses: ReadonlyArray<Repasse>): number {
 const COLUNAS: ReadonlyArray<{ key: string; header: string; width: number }> = [
   { key: "n", header: "#", width: 5 },
   { key: "placa", header: "Placa", width: 11 },
-  // "Reservado" logo após a placa: aviso forte pra Marcos NÃO subir esse carro
-  // no Auto Avaliar (tem proposta ativa no estoque). Vem do estoque ATUAL via
-  // map por chassi (não do snapshot do repasse — reserva muda com o tempo).
-  { key: "reservado", header: "Reservado", width: 13 },
-  { key: "chassi", header: "Chassi", width: 22 },
   { key: "marca", header: "Marca", width: 14 },
   { key: "modelo", header: "Modelo", width: 32 },
   { key: "ano_fab", header: "Ano Fab", width: 9 },
@@ -116,7 +110,6 @@ const COL_OBS = COLUNAS.findIndex((c) => c.key === "observacao") + 1;
 const COL_PRECO = COLUNAS.findIndex((c) => c.key === "preco_atual") + 1;
 const COL_CUSTO = COLUNAS.findIndex((c) => c.key === "custo") + 1;
 const COL_KM = COLUNAS.findIndex((c) => c.key === "km") + 1;
-const COL_RESERVADO = COLUNAS.findIndex((c) => c.key === "reservado") + 1;
 
 const HEADER_ROW = 4;
 const DATA_START_ROW = 5;
@@ -171,7 +164,6 @@ function corCautelar(s: CautelarStatus): string {
 export async function gerarRelatorioRepasseProfissional(
   repasses: ReadonlyArray<Repasse>,
   diasPatioPorChassi?: Map<string, number | null>,
-  reservadoPorChassi?: Map<string, boolean>,
 ): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = "Navesa Mesa";
@@ -261,13 +253,9 @@ export async function gerarRelatorioRepasseProfissional(
       ? CAUTELAR_LABEL[r.cautelar_status_manual]
       : "";
 
-    const reservado = reservadoPorChassi?.get(r.chassi) === true;
-
     const valores: Array<string | number | Date | null> = [
       idx + 1,
       r.placa,
-      reservado ? "RESERVADO" : "",
-      r.chassi,
       r.marca ?? "",
       r.modelo,
       r.ano_fabricacao ?? "",
@@ -312,16 +300,6 @@ export async function gerarRelatorioRepasseProfissional(
 
     row.getCell(COL_OBS).alignment = { wrapText: true, vertical: "top" };
     row.height = 20;
-
-    // Aviso "RESERVADO" — destaque forte (fonte branca/negrito sobre fundo
-    // vermelho) pra Marcos não subir esse carro no Auto Avaliar.
-    if (reservado) {
-      const cell = row.getCell(COL_RESERVADO);
-      cell.value = "RESERVADO";
-      cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: COR_TITULO_FG } };
-      cell.alignment = { horizontal: "center", vertical: "middle" };
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COR_RESERVADO_BG } };
-    }
 
     // Cor de fundo + tracking de cells vazias pros dropdowns.
     if (r.ipva_status) {
@@ -454,11 +432,16 @@ function colLetter(col: number): string {
  * Bônus = Custo − Valor pra subir. Fica vazio ("") quando falta algum dos dois
  * ou quando o resultado é ≤ 0 (carro sem bônus). Recalcula sozinho se Marcos
  * editar Custo/Valor pra subir direto no Excel.
+ *
+ * Usa ISNUMBER + AND pra ser robusta: só subtrai depois de garantir que ambos
+ * são números. Com a versão antiga (OR + subtração inline) o Excel avaliava a
+ * subtração mesmo com célula vazia/texto e devolvia #VALUE!, que propagava.
+ * Aqui, célula vazia/texto → ISNUMBER false → AND false → "" (sem erro).
  */
 function formulaBonus(rowNum: number): string {
   const custo = `${colLetter(COL_CUSTO)}${rowNum}`;
   const subir = `${colLetter(COL_VALOR_SUBIR)}${rowNum}`;
-  return `IF(OR(${custo}="",${subir}="",${custo}-${subir}<=0),"",${custo}-${subir})`;
+  return `IF(AND(ISNUMBER(${custo}),ISNUMBER(${subir}),${custo}>${subir}),${custo}-${subir},"")`;
 }
 
 /** BRL sem usar Intl (evita locale do Excel) — pro footer/título. */
