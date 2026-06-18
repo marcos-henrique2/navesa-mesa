@@ -1,3 +1,8 @@
+-- NOTA: coluna mantida como legacy/zumbi — campo removido da UI/XLSX em 2026-06-18, ver decisao no ROADMAP.
+-- Descoberta: o "Custo" do NBS JA E o valor de referencia do Auto Avaliar, entao
+-- a coluna virou redundante. A coluna permanece no banco (nao dropada) por
+-- seguranca; o codigo de aplicacao nao a le nem escreve mais.
+--
 -- Navesa Mesa — Repasses: persistir "Valor Auto Avaliar"
 --
 -- Antes esse valor (avaliação da plataforma Auto Avaliar) vinha VAZIO no XLSX

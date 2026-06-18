@@ -133,44 +133,6 @@ describe("updateRepasseCampos — validação (defesa em profundidade)", () => {
     );
   });
 
-  it("rejeita valor_auto_avaliar negativo", async () => {
-    await assert.rejects(
-      updateRepasseCampos(1, { valor_auto_avaliar: -1 }),
-      /valor_auto_avaliar inválido/,
-    );
-  });
-
-  it("rejeita valor_auto_avaliar NaN (lixo)", async () => {
-    await assert.rejects(
-      updateRepasseCampos(1, { valor_auto_avaliar: Number.NaN }),
-      /valor_auto_avaliar inválido/,
-    );
-  });
-
-  it("rejeita valor_auto_avaliar Infinity (lixo)", async () => {
-    await assert.rejects(
-      updateRepasseCampos(1, { valor_auto_avaliar: Number.POSITIVE_INFINITY }),
-      /valor_auto_avaliar inválido/,
-    );
-  });
-
-  it("aceita valor_auto_avaliar null pra limpar (passa da validação)", async () => {
-    // null é válido — limpa o campo. Não pode ser barrado pela validação;
-    // o erro que sobra é o do getSupabase() (browser-only em ambiente Node).
-    await assert.rejects(
-      updateRepasseCampos(1, { valor_auto_avaliar: null }),
-      (err: Error) => !/valor_auto_avaliar inválido/.test(err.message),
-    );
-  });
-
-  it("aceita valor_auto_avaliar >= 0 (passa da validação)", async () => {
-    // 0 e positivos são válidos. Erro restante é do getSupabase(), não da validação.
-    await assert.rejects(
-      updateRepasseCampos(1, { valor_auto_avaliar: 0 }),
-      (err: Error) => !/valor_auto_avaliar inválido/.test(err.message),
-    );
-  });
-
   it("rejeita observacoes não-string (defensivo)", async () => {
     await assert.rejects(
       updateRepasseCampos(1, {

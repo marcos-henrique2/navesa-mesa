@@ -8,7 +8,7 @@
  *
  * Layout: 1 aba só ("Carros pra Repasse").
  *   - Linhas 1-3: cabeçalho com título, data de geração, total + capital travado
- *   - Linha 5: header da tabela (18 colunas)
+ *   - Linha 5: header da tabela (19 colunas)
  *   - Linha 6+: dados dos carros (snapshot + campos manuais já preenchidos)
  *   - Cells preenchidas: SEM dataValidation, COM cor de fundo de status
  *   - Cells vazias: COM dataValidation apontando pra `_Listas`
@@ -35,9 +35,6 @@ import {
 
 const FMT_BRL = '"R$" #,##0.00;[Red]-"R$" #,##0.00';
 const FMT_INT = "#,##0";
-// Percentual com sinal — número puro ×100 (a fórmula já multiplica), 1 casa.
-// Negativo em vermelho pra leitura rápida (avaliação abaixo da referência).
-const FMT_PCT = '#,##0.0"%";[Red]-#,##0.0"%"';
 
 const COR_TITULO_BG = "FF1E3A8A"; // azul escuro
 const COR_TITULO_FG = "FFFFFFFF";
@@ -91,17 +88,9 @@ const COLUNAS: ReadonlyArray<{ key: string; header: string; width: number }> = [
   { key: "patio", header: "Pátio", width: 14 },
   { key: "dias_parado", header: "Dias parado", width: 11 },
   { key: "preco_atual", header: "Preço atual", width: 14 },
+  // "Custo" no NBS já é o valor que o Auto Avaliar usa como referência — por
+  // isso não há coluna separada de comparação. Mantém só Custo + Preço atual.
   { key: "custo", header: "Custo", width: 14 },
-  // Avaliação da plataforma Auto Avaliar — agora PERSISTIDA no sistema
-  // (preenchida inline no /repasses) e exportada pré-preenchida; se vier vazia
-  // o gerente ainda pode digitar no Excel. Diferente de "Valor pra subir" (o
-  // lance que ele vai dar). Agrupada junto às referências (Custo/Preço) pra
-  // leitura. As 4 colunas seguintes são FÓRMULAS VIVAS que recalculam ao editar.
-  { key: "valor_auto_avaliar", header: "Valor Auto Avaliar", width: 16 },
-  { key: "dif_custo_rs", header: "Dif. vs Custo (R$)", width: 16 },
-  { key: "dif_custo_pct", header: "Dif. vs Custo (%)", width: 14 },
-  { key: "dif_preco_rs", header: "Dif. vs Preço (R$)", width: 16 },
-  { key: "dif_preco_pct", header: "Dif. vs Preço (%)", width: 14 },
   { key: "valor_subir", header: "Valor pra subir", width: 15 },
   { key: "ipva", header: "IPVA", width: 16 },
   { key: "doc", header: "Doc", width: 16 },
@@ -117,30 +106,9 @@ const COL_OBS = COLUNAS.findIndex((c) => c.key === "observacao") + 1;
 const COL_PRECO = COLUNAS.findIndex((c) => c.key === "preco_atual") + 1;
 const COL_CUSTO = COLUNAS.findIndex((c) => c.key === "custo") + 1;
 const COL_KM = COLUNAS.findIndex((c) => c.key === "km") + 1;
-const COL_VALOR_AA = COLUNAS.findIndex((c) => c.key === "valor_auto_avaliar") + 1;
-const COL_DIF_CUSTO_RS = COLUNAS.findIndex((c) => c.key === "dif_custo_rs") + 1;
-const COL_DIF_CUSTO_PCT = COLUNAS.findIndex((c) => c.key === "dif_custo_pct") + 1;
-const COL_DIF_PRECO_RS = COLUNAS.findIndex((c) => c.key === "dif_preco_rs") + 1;
-const COL_DIF_PRECO_PCT = COLUNAS.findIndex((c) => c.key === "dif_preco_pct") + 1;
 
-/** Converte índice 1-based de coluna em letra(s) Excel (1→A, 27→AA). */
-function colLetra(col: number): string {
-  let n = col;
-  let s = "";
-  while (n > 0) {
-    const rem = (n - 1) % 26;
-    s = String.fromCharCode(65 + rem) + s;
-    n = Math.floor((n - 1) / 26);
-  }
-  return s;
-}
-
-const L_VALOR_AA = colLetra(COL_VALOR_AA);
-const L_CUSTO = colLetra(COL_CUSTO);
-const L_PRECO = colLetra(COL_PRECO);
-
-const HEADER_ROW = 5;
-const DATA_START_ROW = 6;
+const HEADER_ROW = 4;
+const DATA_START_ROW = 5;
 
 /**
  * Opções de dropdown pra IPVA / Doc / Cautelar. Mantidas em ranges nomeados
@@ -249,20 +217,7 @@ export async function gerarRelatorioRepasseProfissional(
   totais.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF2563EB" } };
   ws.getRow(3).height = 18;
 
-  // ─── Legenda (linha 4) — convenção das colunas de diferença ────────────────
-  // Documenta a regra do "Valor Auto Avaliar" e das 4 diferenças vivas.
-  ws.mergeCells(4, 1, 4, lastCol);
-  const legenda = ws.getCell(4, 1);
-  legenda.value =
-    "Preencha 'Valor Auto Avaliar' (avaliação da plataforma) — as diferenças recalculam sozinhas. " +
-    "Convenção: Auto Avaliar − referência. Positivo = avaliação ACIMA do custo/preço; negativo = ABAIXO. " +
-    "Vs Custo positivo = repasse com lucro sobre o investido.";
-  legenda.font = { name: "Calibri", size: 9, italic: true, color: { argb: "FF374151" } };
-  legenda.alignment = { horizontal: "left", vertical: "middle", wrapText: true };
-  legenda.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEFF6FF" } };
-  ws.getRow(4).height = 26;
-
-  // ─── Header da tabela (linha 5) ────────────────────────────────────────────
+  // ─── Header da tabela (linha 4) ────────────────────────────────────────────
   const headerRow = ws.getRow(HEADER_ROW);
   for (let i = 0; i < COLUNAS.length; i++) {
     const cell = headerRow.getCell(i + 1);
@@ -309,11 +264,6 @@ export async function gerarRelatorioRepasseProfissional(
       diasPatioPorChassi?.get(r.chassi) ?? "",
       r.preco_atual ?? "",
       r.valor_aquisicao ?? "",
-      r.valor_auto_avaliar ?? "", // Valor Auto Avaliar — preenchido do sistema; vazio fica editável no Excel
-      "", // Dif. vs Custo (R$) — fórmula viva, escrita abaixo
-      "", // Dif. vs Custo (%) — fórmula viva
-      "", // Dif. vs Preço (R$) — fórmula viva
-      "", // Dif. vs Preço (%) — fórmula viva
       r.valor_subir ?? "",
       ipvaLabel,
       docLabel,
@@ -334,37 +284,6 @@ export async function gerarRelatorioRepasseProfissional(
     row.getCell(COL_CUSTO).numFmt = FMT_BRL;
     row.getCell(COL_KM).numFmt = FMT_INT;
 
-    // ─── Coluna manual "Valor Auto Avaliar" + 4 diferenças (fórmulas vivas) ──
-    // Referências apontam pra MESMA linha (rowNum). Proteções:
-    //   - Valor AA vazio → todas as 4 diferenças ficam vazias (IF(AA="",""))
-    //   - % com Custo/Preço vazio ou 0 → vazio (evita #DIV/0!) via OR(...=0)
-    // Convenção: (Auto Avaliar − referência). Positivo = avaliação ACIMA;
-    // negativo = ABAIXO. Pra "vs Custo", positivo = repasse com lucro.
-    const aa = `$${L_VALOR_AA}${rowNum}`;
-    const custo = `$${L_CUSTO}${rowNum}`;
-    const preco = `$${L_PRECO}${rowNum}`;
-
-    row.getCell(COL_VALOR_AA).numFmt = FMT_BRL;
-
-    row.getCell(COL_DIF_CUSTO_RS).value = {
-      formula: `IF(${aa}="","",${aa}-${custo})`,
-    };
-    row.getCell(COL_DIF_CUSTO_RS).numFmt = FMT_BRL;
-
-    row.getCell(COL_DIF_CUSTO_PCT).value = {
-      formula: `IF(OR(${aa}="",${custo}="",${custo}=0),"",(${aa}-${custo})/${custo}*100)`,
-    };
-    row.getCell(COL_DIF_CUSTO_PCT).numFmt = FMT_PCT;
-
-    row.getCell(COL_DIF_PRECO_RS).value = {
-      formula: `IF(${aa}="","",${aa}-${preco})`,
-    };
-    row.getCell(COL_DIF_PRECO_RS).numFmt = FMT_BRL;
-
-    row.getCell(COL_DIF_PRECO_PCT).value = {
-      formula: `IF(OR(${aa}="",${preco}="",${preco}=0),"",(${aa}-${preco})/${preco}*100)`,
-    };
-    row.getCell(COL_DIF_PRECO_PCT).numFmt = FMT_PCT;
     if (r.valor_subir != null) {
       row.getCell(COL_VALOR_SUBIR).numFmt = FMT_BRL;
     }

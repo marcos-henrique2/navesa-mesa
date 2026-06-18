@@ -50,7 +50,6 @@ export type Repasse = {
   documentacao_status: DocStatus | null;
   cautelar_status_manual: CautelarStatus | null;
   valor_subir: number | null;
-  valor_auto_avaliar: number | null;
   observacoes: string | null;
 
   criado_em: string; // ISO
