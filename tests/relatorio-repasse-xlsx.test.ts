@@ -46,6 +46,7 @@ function buildRepasse(over: Partial<Repasse> = {}): Repasse {
     documentacao_status: null,
     cautelar_status_manual: null,
     valor_subir: null,
+    valor_auto_avaliar: null,
     observacoes: null,
     criado_em: "2026-05-01T12:00:00Z",
     atualizado_em: "2026-05-01T12:00:00Z",
@@ -339,16 +340,51 @@ describe("gerarRelatorioRepasseProfissional", () => {
     assert.equal(ws.getCell("S5").value, "Dif. vs Preço (%)");
   });
 
-  it("'Valor Auto Avaliar' vem VAZIA (manual) com formato R$", async () => {
+  it("'Valor Auto Avaliar' vem VAZIA quando null, com formato R$ (editável no Excel)", async () => {
     const buf = await gerarRelatorioRepasseProfissional([
-      buildRepasse({ valor_aquisicao: 120_000, preco_atual: 145_000 }),
+      buildRepasse({ valor_auto_avaliar: null, valor_aquisicao: 120_000, preco_atual: 145_000 }),
     ]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
     const aa = ws.getCell("O6");
-    assert.equal(aa.value ?? "", "", "Valor Auto Avaliar não pode vir pré-preenchido");
+    assert.equal(aa.value ?? "", "", "Valor Auto Avaliar null deve vir vazio");
     assert.match(String(aa.numFmt ?? ""), /R\$/, "Valor Auto Avaliar precisa ter numFmt R$");
     assert.equal(aa.dataValidation, undefined, "não deve ter dropdown");
+  });
+
+  it("'Valor Auto Avaliar' vem PREENCHIDA do sistema quando valor_auto_avaliar != null", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([
+      buildRepasse({ valor_auto_avaliar: 132_000, valor_aquisicao: 120_000, preco_atual: 145_000 }),
+    ]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    const aa = ws.getCell("O6");
+    assert.equal(aa.value, 132000, "Valor Auto Avaliar deve vir preenchido do sistema");
+    assert.match(String(aa.numFmt ?? ""), /R\$/, "Valor Auto Avaliar precisa ter numFmt R$");
+    assert.equal(aa.dataValidation, undefined, "valor preenchido não tem dropdown");
+  });
+
+  it("'Valor Auto Avaliar' preenchido mantém fórmulas vivas P/Q/R/S referenciando O", async () => {
+    // Persistir o valor não pode trocar as fórmulas por números fixos — elas
+    // seguem referenciando a célula O, recalculando se o gerente editar no Excel.
+    const buf = await gerarRelatorioRepasseProfissional([
+      buildRepasse({ valor_auto_avaliar: 132_000 }),
+    ]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    for (const ref of ["P6", "Q6", "R6", "S6"]) {
+      const val = ws.getCell(ref).value as { formula?: string } | null;
+      assert.ok(
+        val && typeof val === "object" && typeof val.formula === "string",
+        `${ref} deve continuar sendo fórmula viva, recebido: ${JSON.stringify(ws.getCell(ref).value)}`,
+      );
+      assert.match(
+        val!.formula!,
+        /\$O6/,
+        `${ref} deve continuar referenciando a célula O6: ${val!.formula}`,
+      );
+    }
+    assert.equal((ws.getCell("P6").value as { formula: string }).formula, 'IF($O6="","",$O6-$N6)');
   });
 
   it("as 4 células de diferença contêm FÓRMULA (objeto .formula), não valor fixo", async () => {

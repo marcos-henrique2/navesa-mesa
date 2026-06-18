@@ -288,6 +288,9 @@ export function RepassesLista() {
                   ? { cautelar_status_manual: patch.cautelar_status_manual ?? null }
                   : {}),
                 ...("valor_subir" in patch ? { valor_subir: patch.valor_subir ?? null } : {}),
+                ...("valor_auto_avaliar" in patch
+                  ? { valor_auto_avaliar: patch.valor_auto_avaliar ?? null }
+                  : {}),
                 ...("observacoes" in patch ? { observacoes: patch.observacoes ?? null } : {}),
               }
             : r,
@@ -640,6 +643,7 @@ function TabelaRepasses({
             <Th>IPVA</Th>
             <Th>Doc</Th>
             <Th>Cautelar</Th>
+            <Th className="text-right">Valor Auto Avaliar</Th>
             <Th className="text-right">Valor pra subir</Th>
             <Th>Observação</Th>
             <Th>Status</Th>
@@ -714,12 +718,21 @@ function TabelaRepasses({
                   />
                 </Td>
 
-                {/* Valor pra subir */}
+                {/* Valor Auto Avaliar (avaliação da plataforma) */}
                 <Td className="text-right">
-                  <ValorSubirInput
+                  <ValorInput
+                    value={r.valor_auto_avaliar}
+                    onCommit={(v) => void onPatchCampos(r.id, { valor_auto_avaliar: v })}
+                    ariaLabel={`Valor Auto Avaliar de ${r.placa}`}
+                  />
+                </Td>
+
+                {/* Valor pra subir (o lance que vai dar) */}
+                <Td className="text-right">
+                  <ValorInput
                     value={r.valor_subir}
                     onCommit={(v) => void onPatchCampos(r.id, { valor_subir: v })}
-                    placa={r.placa}
+                    ariaLabel={`Valor pra subir de ${r.placa}`}
                   />
                 </Td>
 
@@ -892,18 +905,21 @@ function CautelarSelect({
 }
 
 /**
- * Input pra valor R$. Mantém estado local (string) durante edição;
+ * Input genérico pra valor R$. Mantém estado local (string) durante edição;
  * commita no banco apenas no blur ou Enter — evita request a cada tecla.
  * Sem debounce porque o blur já cobre o caso natural de "perdi o foco".
+ *
+ * Reutilizado por "Valor pra subir" e "Valor Auto Avaliar" — mesmo
+ * comportamento (parser BR, commit no blur/Enter, Escape reverte).
  */
-function ValorSubirInput({
+function ValorInput({
   value,
   onCommit,
-  placa,
+  ariaLabel,
 }: {
   value: number | null;
   onCommit: (v: number | null) => void;
-  placa: string;
+  ariaLabel: string;
 }) {
   const [draft, setDraft] = useState<string>(value != null ? String(value) : "");
 
@@ -922,7 +938,7 @@ function ValorSubirInput({
     <input
       type="text"
       inputMode="decimal"
-      aria-label={`Valor pra subir de ${placa}`}
+      aria-label={ariaLabel}
       placeholder="R$"
       className={cn(
         "w-full min-w-[140px] rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-1.5 py-0.5 text-right text-[11px] tabular-nums text-[var(--text-body)] focus:border-[var(--brand-500)] focus:outline-none",

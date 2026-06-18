@@ -92,10 +92,11 @@ const COLUNAS: ReadonlyArray<{ key: string; header: string; width: number }> = [
   { key: "dias_parado", header: "Dias parado", width: 11 },
   { key: "preco_atual", header: "Preço atual", width: 14 },
   { key: "custo", header: "Custo", width: 14 },
-  // Avaliação da plataforma Auto Avaliar (MANUAL — vem vazia, Marcos digita).
-  // Diferente de "Valor pra subir" (o lance que ele vai dar). Agrupada junto
-  // às referências (Custo/Preço) pra leitura. As 4 colunas seguintes são
-  // FÓRMULAS VIVAS que recalculam quando ele digita o valor.
+  // Avaliação da plataforma Auto Avaliar — agora PERSISTIDA no sistema
+  // (preenchida inline no /repasses) e exportada pré-preenchida; se vier vazia
+  // o gerente ainda pode digitar no Excel. Diferente de "Valor pra subir" (o
+  // lance que ele vai dar). Agrupada junto às referências (Custo/Preço) pra
+  // leitura. As 4 colunas seguintes são FÓRMULAS VIVAS que recalculam ao editar.
   { key: "valor_auto_avaliar", header: "Valor Auto Avaliar", width: 16 },
   { key: "dif_custo_rs", header: "Dif. vs Custo (R$)", width: 16 },
   { key: "dif_custo_pct", header: "Dif. vs Custo (%)", width: 14 },
@@ -308,7 +309,7 @@ export async function gerarRelatorioRepasseProfissional(
       diasPatioPorChassi?.get(r.chassi) ?? "",
       r.preco_atual ?? "",
       r.valor_aquisicao ?? "",
-      "", // Valor Auto Avaliar — MANUAL, vem vazio
+      r.valor_auto_avaliar ?? "", // Valor Auto Avaliar — preenchido do sistema; vazio fica editável no Excel
       "", // Dif. vs Custo (R$) — fórmula viva, escrita abaixo
       "", // Dif. vs Custo (%) — fórmula viva
       "", // Dif. vs Preço (R$) — fórmula viva

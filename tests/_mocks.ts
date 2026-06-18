@@ -118,6 +118,7 @@ export function repasse(over: Partial<Repasse> = {}): Repasse {
     documentacao_status: null,
     cautelar_status_manual: null,
     valor_subir: null,
+    valor_auto_avaliar: null,
     observacoes: null,
     criado_em: "2026-06-01T00:00:00.000Z",
     atualizado_em: "2026-06-01T00:00:00.000Z",

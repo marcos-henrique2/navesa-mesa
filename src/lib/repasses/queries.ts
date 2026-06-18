@@ -76,6 +76,7 @@ type RepasseRow = {
   documentacao_status: string | null;
   cautelar_status_manual: string | null;
   valor_subir: number | string | null;
+  valor_auto_avaliar: number | string | null;
   observacoes: string | null;
   criado_em: string;
   atualizado_em: string;
@@ -105,6 +106,13 @@ function rowToRepasse(row: RepasseRow): Repasse {
         ? Number(row.valor_subir)
         : row.valor_subir;
 
+  const valorAutoAvaliar =
+    row.valor_auto_avaliar == null
+      ? null
+      : typeof row.valor_auto_avaliar === "string"
+        ? Number(row.valor_auto_avaliar)
+        : row.valor_auto_avaliar;
+
   return {
     id: row.id,
     chassi: row.chassi,
@@ -127,6 +135,8 @@ function rowToRepasse(row: RepasseRow): Repasse {
     documentacao_status: doc,
     cautelar_status_manual: cautelar,
     valor_subir: valorSubir != null && Number.isFinite(valorSubir) ? valorSubir : null,
+    valor_auto_avaliar:
+      valorAutoAvaliar != null && Number.isFinite(valorAutoAvaliar) ? valorAutoAvaliar : null,
     observacoes: row.observacoes,
     criado_em: row.criado_em,
     atualizado_em: row.atualizado_em,
@@ -228,12 +238,13 @@ export async function marcarVariosComoSubido(ids: ReadonlyArray<number>): Promis
 
 // ─── Inline edit dos campos manuais (Caminho B) ──────────────────────────────
 
-/** Patch parcial pros 5 campos manuais. Campos omitidos não são tocados. */
+/** Patch parcial pros campos manuais. Campos omitidos não são tocados. */
 export type RepasseCamposManuaisPatch = {
   ipva_status?: IpvaStatus | null;
   documentacao_status?: DocStatus | null;
   cautelar_status_manual?: CautelarStatus | null;
   valor_subir?: number | null;
+  valor_auto_avaliar?: number | null;
   observacoes?: string | null;
 };
 
@@ -288,6 +299,16 @@ export async function updateRepasseCampos(
       }
     }
     update.valor_subir = v;
+  }
+
+  if ("valor_auto_avaliar" in patch) {
+    const v = patch.valor_auto_avaliar;
+    if (v !== null) {
+      if (typeof v !== "number" || !Number.isFinite(v) || v < 0) {
+        throw new Error(`valor_auto_avaliar inválido: ${String(v)}`);
+      }
+    }
+    update.valor_auto_avaliar = v;
   }
 
   if ("observacoes" in patch) {
