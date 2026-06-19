@@ -49,10 +49,10 @@ describe("gerarAnuncioRepasse", () => {
     assert.ok(!txtNv.includes("- Documentação:"));
   });
 
-  it("cautelar com restrição → NÃO aparece no anúncio (ignorado)", () => {
-    const txt = gerarAnuncioRepasse(repasse({ cautelar_status_manual: "com_restricao" }));
+  it("cautelar não conforme → NÃO aparece no anúncio (ignorado)", () => {
+    const txt = gerarAnuncioRepasse(repasse({ cautelar_status_manual: "nao_conforme" }));
     assert.ok(!/cautelar/i.test(txt));
-    assert.ok(!/restri/i.test(txt));
+    assert.ok(!/conforme/i.test(txt));
   });
 
   it("observacoes preenchido → inclui seção OBSERVAÇÕES com o conteúdo", () => {

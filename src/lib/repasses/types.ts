@@ -70,11 +70,11 @@ export type Repasse = {
 
 export type IpvaStatus = "pago" | "em_aberto" | "nao_verificado";
 export type DocStatus = "ok" | "pendente" | "irregular" | "nao_verificado";
-export type CautelarStatus = "limpa" | "com_restricao" | "nao_verificada";
+export type CautelarStatus = "conforme" | "nao_conforme" | "nao_verificado";
 
 export const IPVA_VALUES: ReadonlyArray<IpvaStatus> = ["pago", "em_aberto", "nao_verificado"];
 export const DOC_VALUES: ReadonlyArray<DocStatus> = ["ok", "pendente", "irregular", "nao_verificado"];
-export const CAUTELAR_VALUES: ReadonlyArray<CautelarStatus> = ["limpa", "com_restricao", "nao_verificada"];
+export const CAUTELAR_VALUES: ReadonlyArray<CautelarStatus> = ["conforme", "nao_conforme", "nao_verificado"];
 
 export const IPVA_LABEL: Record<IpvaStatus, string> = {
   pago: "Pago",
@@ -90,9 +90,9 @@ export const DOC_LABEL: Record<DocStatus, string> = {
 };
 
 export const CAUTELAR_LABEL: Record<CautelarStatus, string> = {
-  limpa: "Limpa",
-  com_restricao: "Com restrição",
-  nao_verificada: "Não verificada",
+  conforme: "Conforme",
+  nao_conforme: "Não conforme",
+  nao_verificado: "Não verificado",
 };
 
 export function isIpvaStatus(v: unknown): v is IpvaStatus {

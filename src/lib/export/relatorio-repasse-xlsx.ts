@@ -132,7 +132,7 @@ const DATA_START_ROW = 5;
  */
 const OPCOES_IPVA: ReadonlyArray<string> = ["Pago", "Em aberto", "Não verificado"];
 const OPCOES_DOC: ReadonlyArray<string> = ["OK", "Pendente", "Irregular", "Não verificado"];
-const OPCOES_CAUTELAR: ReadonlyArray<string> = ["Limpa", "Com restrição", "Não verificada"];
+const OPCOES_CAUTELAR: ReadonlyArray<string> = ["Conforme", "Não conforme", "Não verificado"];
 
 /** Cor de fundo por status preenchido. */
 function corIpva(s: IpvaStatus): string {
@@ -159,11 +159,11 @@ function corDoc(s: DocStatus): string {
 }
 function corCautelar(s: CautelarStatus): string {
   switch (s) {
-    case "limpa":
+    case "conforme":
       return COR_OK;
-    case "com_restricao":
+    case "nao_conforme":
       return COR_BAD;
-    case "nao_verificada":
+    case "nao_verificado":
       return COR_NEUTRO;
   }
 }

@@ -1074,9 +1074,9 @@ function corDoc(s: DocStatus | null): string {
   return "";
 }
 function corCautelar(s: CautelarStatus | null): string {
-  if (s === "limpa") return "bg-emerald-50 dark:bg-emerald-950/30";
-  if (s === "com_restricao") return "bg-red-50 dark:bg-red-950/30";
-  if (s === "nao_verificada") return "bg-[var(--bg-muted)]";
+  if (s === "conforme") return "bg-emerald-50 dark:bg-emerald-950/30";
+  if (s === "nao_conforme") return "bg-red-50 dark:bg-red-950/30";
+  if (s === "nao_verificado") return "bg-[var(--bg-muted)]";
   return "";
 }
 

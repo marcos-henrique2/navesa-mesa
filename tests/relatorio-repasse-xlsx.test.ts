@@ -192,7 +192,7 @@ describe("gerarRelatorioRepasseProfissional", () => {
       buildRepasse({
         ipva_status: "pago",
         documentacao_status: "ok",
-        cautelar_status_manual: "limpa",
+        cautelar_status_manual: "conforme",
         valor_subir: 138_500,
         observacoes: "Pneu dianteiro pra trocar",
       }),
@@ -202,7 +202,7 @@ describe("gerarRelatorioRepasseProfissional", () => {
     assert.equal(ws.getCell("N5").value, 138500); // Valor pra subir (numérico)
     assert.equal(ws.getCell("P5").value, "Pago");
     assert.equal(ws.getCell("Q5").value, "OK");
-    assert.equal(ws.getCell("R5").value, "Limpa");
+    assert.equal(ws.getCell("R5").value, "Conforme");
     assert.equal(ws.getCell("V5").value, "Pneu dianteiro pra trocar");
   });
 
@@ -260,9 +260,9 @@ describe("gerarRelatorioRepasseProfissional", () => {
     assert.equal(aux!.getCell("B3").value, "Irregular");
     assert.equal(aux!.getCell("B4").value, "Não verificado");
     // Coluna C = Cautelar (3 valores)
-    assert.equal(aux!.getCell("C1").value, "Limpa");
-    assert.equal(aux!.getCell("C2").value, "Com restrição");
-    assert.equal(aux!.getCell("C3").value, "Não verificada");
+    assert.equal(aux!.getCell("C1").value, "Conforme");
+    assert.equal(aux!.getCell("C2").value, "Não conforme");
+    assert.equal(aux!.getCell("C3").value, "Não verificado");
   });
 
   it("aplica AutoFilter no header da tabela", async () => {

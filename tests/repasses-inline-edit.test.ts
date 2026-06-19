@@ -49,10 +49,10 @@ describe("Type guards de status manuais", () => {
     assert.equal(isDocStatus(null), false);
   });
 
-  it("isCautelarStatus aceita só limpa/com_restricao/nao_verificada", () => {
-    assert.equal(isCautelarStatus("limpa"), true);
-    assert.equal(isCautelarStatus("com_restricao"), true);
-    assert.equal(isCautelarStatus("nao_verificada"), true);
+  it("isCautelarStatus aceita só conforme/nao_conforme/nao_verificado", () => {
+    assert.equal(isCautelarStatus("conforme"), true);
+    assert.equal(isCautelarStatus("nao_conforme"), true);
+    assert.equal(isCautelarStatus("nao_verificado"), true);
     assert.equal(isCautelarStatus("aprovado"), false); // valor do sistema cautelar, não manual
     assert.equal(isCautelarStatus("reprovado"), false);
     assert.equal(isCautelarStatus(null), false);
@@ -74,9 +74,9 @@ describe("Labels pt-BR", () => {
   });
 
   it("CAUTELAR_LABEL tem labels pros 3 valores", () => {
-    assert.equal(CAUTELAR_LABEL.limpa, "Limpa");
-    assert.equal(CAUTELAR_LABEL.com_restricao, "Com restrição");
-    assert.equal(CAUTELAR_LABEL.nao_verificada, "Não verificada");
+    assert.equal(CAUTELAR_LABEL.conforme, "Conforme");
+    assert.equal(CAUTELAR_LABEL.nao_conforme, "Não conforme");
+    assert.equal(CAUTELAR_LABEL.nao_verificado, "Não verificado");
   });
 
   it("VALUES arrays batem com chaves dos LABEL records", () => {
@@ -109,7 +109,7 @@ describe("updateRepasseCampos — validação (defesa em profundidade)", () => {
     // 'aprovado' é valor do StatusCautelar do sistema, não do manual.
     await assert.rejects(
       updateRepasseCampos(1, {
-        cautelar_status_manual: "aprovado" as unknown as "limpa",
+        cautelar_status_manual: "aprovado" as unknown as "conforme",
       }),
       /cautelar_status_manual inválido/,
     );
