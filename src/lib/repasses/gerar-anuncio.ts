@@ -5,9 +5,8 @@
  * pronto pra colar no campo de observação do Auto Avaliar. Sem side effects,
  * sem `Date.now`, sem I/O — 100% testável.
  *
- * O template foi aprovado pelo Marcos. NÃO inclui itens avaliados nem laudo
- * (cautelar) — esses sobem separados no Auto Avaliar. Por isso
- * `cautelar_status_manual` é ignorado de propósito aqui.
+ * O template foi aprovado pelo Marcos. O laudo cautelar (quando informado como
+ * conforme/não conforme) aparece em destaque na seção SITUAÇÃO DOCUMENTAL.
  */
 
 import { formatInt } from "@/lib/utils";
@@ -31,6 +30,19 @@ function linhaIpva(repasse: Repasse): string | null {
       return "- IPVA 2026: PAGO";
     case "em_aberto":
       return "- IPVA 2026: A PAGAR PELO COMPRADOR";
+    default:
+      // nao_verificado ou null → omite
+      return null;
+  }
+}
+
+/** Linha condicional do laudo cautelar, em destaque. `null` se não deve aparecer. */
+function linhaCautelar(repasse: Repasse): string | null {
+  switch (repasse.cautelar_status_manual) {
+    case "conforme":
+      return ">> LAUDO CAUTELAR: CONFORME";
+    case "nao_conforme":
+      return ">> LAUDO CAUTELAR: NÃO CONFORME";
     default:
       // nao_verificado ou null → omite
       return null;
@@ -61,6 +73,8 @@ export function gerarAnuncioRepasse(repasse: Repasse, config: AnuncioConfig = AN
 
   // ─── Situação documental: fixas + condicionais ──────────────────────────
   const documentais: string[] = [];
+  const cautelar = linhaCautelar(repasse);
+  if (cautelar) documentais.push(cautelar);
   const ipva = linhaIpva(repasse);
   if (ipva) documentais.push(ipva);
   const doc = linhaDoc(repasse);

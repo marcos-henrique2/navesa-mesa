@@ -49,10 +49,34 @@ describe("gerarAnuncioRepasse", () => {
     assert.ok(!txtNv.includes("- Documentação:"));
   });
 
-  it("cautelar não conforme → NÃO aparece no anúncio (ignorado)", () => {
+  it("cautelar conforme → 'LAUDO CAUTELAR: CONFORME' em destaque", () => {
+    const txt = gerarAnuncioRepasse(repasse({ cautelar_status_manual: "conforme" }));
+    assert.ok(txt.includes("LAUDO CAUTELAR: CONFORME"));
+  });
+
+  it("cautelar nao_conforme → 'LAUDO CAUTELAR: NÃO CONFORME'", () => {
     const txt = gerarAnuncioRepasse(repasse({ cautelar_status_manual: "nao_conforme" }));
-    assert.ok(!/cautelar/i.test(txt));
-    assert.ok(!/conforme/i.test(txt));
+    assert.ok(txt.includes("LAUDO CAUTELAR: NÃO CONFORME"));
+  });
+
+  it("cautelar nao_verificado → NÃO inclui linha de LAUDO CAUTELAR", () => {
+    const txt = gerarAnuncioRepasse(repasse({ cautelar_status_manual: "nao_verificado" }));
+    assert.ok(!txt.includes("LAUDO CAUTELAR"));
+  });
+
+  it("cautelar null → NÃO inclui linha de LAUDO CAUTELAR", () => {
+    const txt = gerarAnuncioRepasse(repasse({ cautelar_status_manual: null }));
+    assert.ok(!txt.includes("LAUDO CAUTELAR"));
+  });
+
+  it("cautelar conforme → laudo é a primeira linha da SITUAÇÃO DOCUMENTAL", () => {
+    const txt = gerarAnuncioRepasse(
+      repasse({ cautelar_status_manual: "conforme", ipva_status: "pago", documentacao_status: "ok" }),
+    );
+    const linhas = txt.split("\n");
+    const idxSecao = linhas.indexOf("SITUAÇÃO DOCUMENTAL");
+    // pula o separador logo após o título da seção
+    assert.equal(linhas[idxSecao + 2], ">> LAUDO CAUTELAR: CONFORME");
   });
 
   it("observacoes preenchido → inclui seção OBSERVAÇÕES com o conteúdo", () => {
