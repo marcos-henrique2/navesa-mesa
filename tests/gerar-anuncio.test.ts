@@ -76,10 +76,27 @@ describe("gerarAnuncioRepasse", () => {
     assert.ok(txt.includes(">> VENDA EXCLUSIVA PARA REVENDEDORES (B2B) - Grupo Navesa / Repasse"));
   });
 
-  it("estrutura da venda e tempo de entrega sempre aparecem (config fixa)", () => {
+  it("tempo de entrega da documentação sempre aparece (config fixa)", () => {
     const txt = gerarAnuncioRepasse(repasse());
-    assert.ok(txt.includes("- Estrutura da venda:"));
-    assert.ok(txt.includes("- Tempo de entrega da documentação:"));
+    assert.ok(txt.includes("- Tempo de entrega da documentação: de 10 a 15 dias"));
+  });
+
+  it("NÃO inclui linha de estrutura jurídica da venda", () => {
+    const txt = gerarAnuncioRepasse(repasse());
+    assert.ok(!txt.includes("Estrutura da venda"));
+    assert.ok(!/procura[çc][ãa]o/i.test(txt));
+  });
+
+  it("RETIRADA E CONTATO tem WhatsApp e E-mail reais, sem Telefone", () => {
+    const txt = gerarAnuncioRepasse(repasse());
+    assert.ok(!txt.includes("Telefone"));
+    assert.ok(txt.includes("WhatsApp: (62) 98226-2543"));
+    assert.ok(txt.includes("E-mail: marcos.jesus@navesa.com.br"));
+  });
+
+  it("inclui o prazo de retirada de 10 dias", () => {
+    const txt = gerarAnuncioRepasse(repasse());
+    assert.ok(txt.includes("Retirada em até 10 dias"));
   });
 
   it("formata KM com ponto de milhar (BR)", () => {

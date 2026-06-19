@@ -65,7 +65,6 @@ export function gerarAnuncioRepasse(repasse: Repasse, config: AnuncioConfig = AN
   if (ipva) documentais.push(ipva);
   const doc = linhaDoc(repasse);
   if (doc) documentais.push(doc);
-  documentais.push(`- Estrutura da venda: ${config.estruturaVenda}`);
   documentais.push(`- Tempo de entrega da documentação: ${config.tempoEntregaDoc}`);
 
   const blocos: string[] = [];
@@ -115,7 +114,6 @@ export function gerarAnuncioRepasse(repasse: Repasse, config: AnuncioConfig = AN
   blocos.push(SEP);
   blocos.push(`Local de retirada: ${config.localRetirada}`);
   blocos.push("Mesa de Repasse Navesa:");
-  blocos.push(`Telefone: ${config.telefone}`);
   blocos.push(`WhatsApp: ${config.whatsapp}`);
   blocos.push(`E-mail: ${config.email}`);
 
