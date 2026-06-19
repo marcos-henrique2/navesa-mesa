@@ -10,7 +10,7 @@
  */
 
 import { formatInt } from "@/lib/utils";
-import { ANUNCIO_CONFIG, type AnuncioConfig } from "@/lib/repasses/anuncio-config";
+import { ANUNCIO_CONFIG, MSG_CONFIRME_MESA, type AnuncioConfig } from "@/lib/repasses/anuncio-config";
 import type { Repasse } from "@/lib/repasses/types";
 
 const SEP = "------------------------------------------------";
@@ -23,16 +23,16 @@ function formatAno(fab: number | null, modelo: number | null): string {
   return "";
 }
 
-/** Linha condicional de IPVA. `null` se não deve aparecer. */
-function linhaIpva(repasse: Repasse): string | null {
+/** Linha de IPVA. Sempre retorna texto — nao_verificado/null vira aviso de confirmação. */
+function linhaIpva(repasse: Repasse): string {
   switch (repasse.ipva_status) {
     case "pago":
       return "- IPVA 2026: PAGO";
     case "em_aberto":
       return "- IPVA 2026: A PAGAR PELO COMPRADOR";
     default:
-      // nao_verificado ou null → omite
-      return null;
+      // nao_verificado ou null → direciona o comprador a confirmar
+      return `- IPVA: ${MSG_CONFIRME_MESA}`;
   }
 }
 
@@ -49,8 +49,8 @@ function linhaCautelar(repasse: Repasse): string | null {
   }
 }
 
-/** Linha condicional de documentação. `null` se não deve aparecer. */
-function linhaDoc(repasse: Repasse): string | null {
+/** Linha de documentação. Sempre retorna texto — nao_verificado/null vira aviso de confirmação. */
+function linhaDoc(repasse: Repasse): string {
   switch (repasse.documentacao_status) {
     case "ok":
       return "- Documentação: APROVADA, em ordem";
@@ -59,8 +59,8 @@ function linhaDoc(repasse: Repasse): string | null {
     case "irregular":
       return "- Documentação: IRREGULAR — verifique antes do lance";
     default:
-      // nao_verificado ou null → omite
-      return null;
+      // nao_verificado ou null → direciona o comprador a confirmar
+      return `- Documentação: ${MSG_CONFIRME_MESA}`;
   }
 }
 
@@ -75,10 +75,8 @@ export function gerarAnuncioRepasse(repasse: Repasse, config: AnuncioConfig = AN
   const documentais: string[] = [];
   const cautelar = linhaCautelar(repasse);
   if (cautelar) documentais.push(cautelar);
-  const ipva = linhaIpva(repasse);
-  if (ipva) documentais.push(ipva);
-  const doc = linhaDoc(repasse);
-  if (doc) documentais.push(doc);
+  documentais.push(linhaIpva(repasse));
+  documentais.push(linhaDoc(repasse));
   documentais.push(`- Tempo de entrega da documentação: ${config.tempoEntregaDoc}`);
 
   const blocos: string[] = [];

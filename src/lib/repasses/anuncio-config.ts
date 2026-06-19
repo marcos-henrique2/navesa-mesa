@@ -32,3 +32,10 @@ export const ANUNCIO_CONFIG = {
 } as const;
 
 export type AnuncioConfig = typeof ANUNCIO_CONFIG;
+
+/**
+ * Mensagem exibida quando IPVA ou documentação estão como `nao_verificado`/null.
+ * Em vez de omitir a linha, direciona o comprador a confirmar com a Mesa —
+ * pra nunca ficar campo faltando no anúncio.
+ */
+export const MSG_CONFIRME_MESA = "confirme com a Mesa de Repasse antes do lance";

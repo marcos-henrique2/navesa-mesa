@@ -1,8 +1,9 @@
 /**
  * Testes da função pura `gerarAnuncioRepasse`.
  *
- * Cobre a lógica condicional (IPVA, doc, observações), a omissão de cautelar,
- * a presença das seções fixas e a formatação de KM/ano.
+ * Cobre IPVA e doc (sempre presentes, com fallback de confirmação), a lógica
+ * condicional de observações, a omissão de cautelar, a presença das seções
+ * fixas e a formatação de KM/ano.
  */
 
 import { describe, it } from "node:test";
@@ -22,14 +23,14 @@ describe("gerarAnuncioRepasse", () => {
     assert.ok(txt.includes("- IPVA 2026: A PAGAR PELO COMPRADOR"));
   });
 
-  it("IPVA nao_verificado → NÃO inclui linha de IPVA", () => {
+  it("IPVA nao_verificado → mostra mensagem de confirmação com a Mesa", () => {
     const txt = gerarAnuncioRepasse(repasse({ ipva_status: "nao_verificado" }));
-    assert.ok(!txt.includes("IPVA 2026"));
+    assert.ok(txt.includes("- IPVA: confirme com a Mesa de Repasse antes do lance"));
   });
 
-  it("IPVA null → NÃO inclui linha de IPVA", () => {
+  it("IPVA null → mostra mensagem de confirmação com a Mesa", () => {
     const txt = gerarAnuncioRepasse(repasse({ ipva_status: null }));
-    assert.ok(!txt.includes("IPVA 2026"));
+    assert.ok(txt.includes("- IPVA: confirme com a Mesa de Repasse antes do lance"));
   });
 
   it("doc pendente → 'Documentação: PENDENTE'", () => {
@@ -42,11 +43,12 @@ describe("gerarAnuncioRepasse", () => {
     assert.ok(txt.includes("- Documentação: IRREGULAR — verifique antes do lance"));
   });
 
-  it("doc null/nao_verificado → NÃO inclui linha de documentação", () => {
+  it("doc null/nao_verificado → mostra mensagem de confirmação com a Mesa", () => {
+    const esperado = "- Documentação: confirme com a Mesa de Repasse antes do lance";
     const txtNull = gerarAnuncioRepasse(repasse({ documentacao_status: null }));
-    assert.ok(!txtNull.includes("- Documentação:"));
+    assert.ok(txtNull.includes(esperado));
     const txtNv = gerarAnuncioRepasse(repasse({ documentacao_status: "nao_verificado" }));
-    assert.ok(!txtNv.includes("- Documentação:"));
+    assert.ok(txtNv.includes(esperado));
   });
 
   it("cautelar conforme → 'LAUDO CAUTELAR: CONFORME' em destaque", () => {
