@@ -4,20 +4,25 @@
  * Datas vêm do Supabase como string (ISO ou YYYY-MM-DD pra `date`). Mantemos
  * elas como string aqui — quem precisa de objeto Date converte no ponto de uso.
  *
- * Modelo novo (Sprint 1 refactor):
+ * Modelo novo (ciclo completo do repasse):
  *   - Marcos marca carros pra subir → status="marcado"
  *   - Exporta XLSX, preenche IPVA/Doc/Cautelar/Observação no Excel
  *   - Sobe no Auto Avaliar (fora do sistema) e volta marcando como "subido"
+ *   - Registra o desfecho: "vendido" (valor + data + comprador) ou "nao_vendido"
  *
- * Status "vendido" e "nao_vendido" são legacy do schema original — não são
- * mais usados pela UI (venda fica no Auto Avaliar). Ainda existem no banco
- * por compatibilidade com o CHECK constraint histórico.
+ * Ciclo de status: marcado → subido → vendido | nao_vendido. "cancelado" é o
+ * soft-delete (via remover). Todos esses fazem parte do CHECK constraint do banco.
  */
 
-export type RepasseStatus = "marcado" | "subido" | "cancelado";
+export type RepasseStatus =
+  | "marcado"
+  | "subido"
+  | "vendido"
+  | "nao_vendido"
+  | "cancelado";
 
-/** Inclui status legacy ainda permitidos no banco (não usados pela UI nova). */
-export type RepasseStatusBanco = RepasseStatus | "vendido" | "nao_vendido";
+/** Alias histórico — hoje idêntico a RepasseStatus (todos os status são usados). */
+export type RepasseStatusBanco = RepasseStatus;
 
 /** Canal de repasse. String aberta — `auto_avaliar` é o default. */
 export type RepasseCanal = "auto_avaliar" | (string & {});
@@ -44,6 +49,11 @@ export type Repasse = {
   canal: RepasseCanal;
 
   status: RepasseStatus;
+
+  // ─── Desfecho da venda (status="vendido") ─────────────────────────────
+  valor_vendido: number | null;
+  data_vendido: string | null; // YYYY-MM-DD | null
+  comprador: string | null;
 
   // ─── Campos manuais (Caminho B — inline edit no /repasses) ────────────
   ipva_status: IpvaStatus | null;
@@ -100,6 +110,8 @@ export function isCautelarStatus(v: unknown): v is CautelarStatus {
 export const STATUS_LABEL: Record<RepasseStatus, string> = {
   marcado: "Marcado",
   subido: "Subido",
+  vendido: "Vendido",
+  nao_vendido: "Não vendido",
   cancelado: "Cancelado",
 };
 

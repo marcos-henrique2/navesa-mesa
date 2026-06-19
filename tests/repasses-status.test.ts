@@ -1,13 +1,14 @@
 /**
- * Testes da semântica de status do módulo Repasses após refactor Sprint 1.
+ * Testes da semântica de status do módulo Repasses (ciclo completo do repasse).
  *
- * Novo modelo:
- *   - "marcado"  → carro foi adicionado à lista pra subir (default)
- *   - "subido"   → carro já foi enviado pro Auto Avaliar
- *   - "cancelado"→ soft-delete opcional (sem UI)
+ * Modelo:
+ *   - "marcado"     → carro adicionado à lista pra subir (default)
+ *   - "subido"      → carro já enviado pro Auto Avaliar
+ *   - "vendido"     → desfecho: vendido (valor + data + comprador)
+ *   - "nao_vendido" → desfecho: não vendido
+ *   - "cancelado"   → soft-delete (via remover)
  *
- * Status legacy "vendido"/"nao_vendido" ainda existem no CHECK do banco mas
- * a UI/types nova não os expõe.
+ * Ciclo: marcado → subido → vendido | nao_vendido. Todos no CHECK do banco.
  */
 
 import { describe, it } from "node:test";
@@ -15,10 +16,10 @@ import assert from "node:assert/strict";
 import { STATUS_LABEL } from "@/lib/repasses/types";
 import type { RepasseStatus } from "@/lib/repasses/types";
 
-describe("RepasseStatus (refactor Sprint 1)", () => {
-  it("tem exatamente 3 status: marcado, subido, cancelado", () => {
+describe("RepasseStatus (ciclo completo)", () => {
+  it("tem exatamente 5 status: marcado, subido, vendido, nao_vendido, cancelado", () => {
     const chaves = Object.keys(STATUS_LABEL).sort();
-    assert.deepEqual(chaves, ["cancelado", "marcado", "subido"]);
+    assert.deepEqual(chaves, ["cancelado", "marcado", "nao_vendido", "subido", "vendido"]);
   });
 
   it("label de 'marcado' é 'Marcado'", () => {
@@ -33,20 +34,27 @@ describe("RepasseStatus (refactor Sprint 1)", () => {
     assert.equal(STATUS_LABEL.cancelado, "Cancelado");
   });
 
-  it("tipos não permitem 'vendido' nem 'nao_vendido' na UI nova", () => {
-    // Verificação em tempo de tipo via cast — se isso compilar, OK.
-    // Como o teste roda em runtime, validamos que esses valores NÃO estão em STATUS_LABEL.
-    const labelLegacy = (STATUS_LABEL as Record<string, string | undefined>)["vendido"];
-    assert.equal(labelLegacy, undefined);
-    const labelLegacy2 = (STATUS_LABEL as Record<string, string | undefined>)["nao_vendido"];
-    assert.equal(labelLegacy2, undefined);
+  it("label de 'vendido' é 'Vendido'", () => {
+    assert.equal(STATUS_LABEL.vendido, "Vendido");
   });
 
-  it("status 'marcado' aceita transição pra 'subido' (semântica do workflow)", () => {
-    // Documenta o fluxo principal: marcado → subido. Não há transição inversa
-    // suportada pela UI (volta = remover + criar de novo).
-    const inicial: RepasseStatus = "marcado";
-    const proximo: RepasseStatus = "subido";
-    assert.notEqual(inicial, proximo);
+  it("label de 'nao_vendido' é 'Não vendido'", () => {
+    assert.equal(STATUS_LABEL.nao_vendido, "Não vendido");
+  });
+
+  it("'vendido' e 'nao_vendido' agora são status válidos do tipo", () => {
+    // Se isso compilar, os valores fazem parte de RepasseStatus.
+    const v: RepasseStatus = "vendido";
+    const nv: RepasseStatus = "nao_vendido";
+    assert.equal(STATUS_LABEL[v], "Vendido");
+    assert.equal(STATUS_LABEL[nv], "Não vendido");
+  });
+
+  it("status 'subido' aceita transição pra 'vendido' ou 'nao_vendido'", () => {
+    const inicial: RepasseStatus = "subido";
+    const vendido: RepasseStatus = "vendido";
+    const naoVendido: RepasseStatus = "nao_vendido";
+    assert.notEqual(inicial, vendido);
+    assert.notEqual(inicial, naoVendido);
   });
 });

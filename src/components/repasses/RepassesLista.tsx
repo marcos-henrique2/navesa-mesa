@@ -30,6 +30,10 @@ import {
   Filter,
   FilterX,
   CheckCircle2,
+  XCircle,
+  TrendingUp,
+  Percent,
+  RotateCcw,
   Trash2,
   FileText,
   Search,
@@ -39,10 +43,15 @@ import {
   deleteRepasses,
   listRepasses,
   marcarComoSubido,
+  marcarComoVendido,
+  marcarComoNaoVendido,
+  reverterParaSubido,
   marcarVariosComoSubido,
   updateRepasseCampos,
+  type MarcarVendidoInput,
   type RepasseCamposManuaisPatch,
 } from "@/lib/repasses/queries";
+import { calcularMargemReal } from "@/lib/repasses/margem";
 import type {
   CautelarStatus,
   DocStatus,
@@ -71,11 +80,21 @@ import { calcularValorPraSubir } from "@/lib/repasses/kpis";
 import { calcularBonus } from "@/lib/repasses/bonus";
 import { showErrorToast, showSuccessToast } from "@/components/ui/Toast";
 import { MarcarRepasseModal } from "./MarcarRepasseModal";
+import { MarcarVendidoModal } from "./MarcarVendidoModal";
+import { MarcarNaoVendidoModal } from "./MarcarNaoVendidoModal";
 import { EscolherVeiculoModal } from "./EscolherVeiculoModal";
 import { AnuncioModal } from "./AnuncioModal";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 
-type StatusFiltro = "marcado" | "subido" | "todos";
+type StatusFiltro = "marcado" | "subido" | "vendido" | "nao_vendido" | "todos";
+
+const STATUS_FILTROS: ReadonlyArray<{ value: StatusFiltro; label: string }> = [
+  { value: "marcado", label: "Marcados" },
+  { value: "subido", label: "Subidos" },
+  { value: "vendido", label: "Vendidos" },
+  { value: "nao_vendido", label: "Não vendidos" },
+  { value: "todos", label: "Todos" },
+];
 
 export function RepassesLista() {
   const { lojas, veiculos } = useInventory();
@@ -112,6 +131,8 @@ export function RepassesLista() {
   const [escolherVeiculo, setEscolherVeiculo] = useState(false);
   const [veiculoSelecionado, setVeiculoSelecionado] = useState<VeiculoParsed | null>(null);
   const [anuncioRepasse, setAnuncioRepasse] = useState<Repasse | null>(null);
+  const [vendidoRepasse, setVendidoRepasse] = useState<Repasse | null>(null);
+  const [naoVendidoRepasse, setNaoVendidoRepasse] = useState<Repasse | null>(null);
   const [exportando, setExportando] = useState(false);
   const [processando, setProcessando] = useState(false);
 
@@ -152,7 +173,33 @@ export function RepassesLista() {
       if (r.preco_atual != null) capitalTravado += r.preco_atual;
     }
     const valorPraSubir = calcularValorPraSubir(repasses);
-    return { marcados: marcados.length, subidos, capitalTravado, valorPraSubir };
+
+    // Desfecho da venda.
+    const vendidos = repasses.filter((r) => r.status === "vendido");
+    const naoVendidos = repasses.filter((r) => r.status === "nao_vendido").length;
+    let somaVendido = 0;
+    let margemReal = 0;
+    for (const r of vendidos) {
+      if (r.valor_vendido != null) somaVendido += r.valor_vendido;
+      const m = calcularMargemReal(r);
+      if (m != null) margemReal += m;
+    }
+    // Conversão = vendidos ÷ (vendidos + não vendidos) — só dos que tiveram
+    // desfecho. Sem desfecho → null (UI mostra "—").
+    const comDesfecho = vendidos.length + naoVendidos;
+    const conversao = comDesfecho > 0 ? (vendidos.length / comDesfecho) * 100 : null;
+
+    return {
+      marcados: marcados.length,
+      subidos,
+      capitalTravado,
+      valorPraSubir,
+      vendidos: vendidos.length,
+      naoVendidos,
+      somaVendido,
+      margemReal,
+      conversao,
+    };
   }, [repasses]);
 
   const lojaOpcoes = useMemo(() => {
@@ -212,6 +259,74 @@ export function RepassesLista() {
       showErrorToast(msg);
     } finally {
       setProcessando(false);
+    }
+  }
+
+  async function handleMarcarVendido(id: number, input: MarcarVendidoInput) {
+    const anterior = repasses.find((r) => r.id === id);
+    if (!anterior) return;
+    // Patch otimista: aplica desfecho previsto.
+    setRepasses((prev) =>
+      prev.map((r) =>
+        r.id === id
+          ? {
+              ...r,
+              status: "vendido",
+              valor_vendido: input.valor_vendido,
+              data_vendido: input.data_vendido ?? r.data_vendido,
+              comprador: input.comprador ?? null,
+            }
+          : r,
+      ),
+    );
+    try {
+      const atualizado = await marcarComoVendido(id, input);
+      setRepasses((prev) => prev.map((r) => (r.id === id ? atualizado : r)));
+      setVendidoRepasse(null);
+      showSuccessToast("Venda registrada.");
+    } catch (err) {
+      setRepasses((prev) => prev.map((r) => (r.id === id ? anterior : r)));
+      const msg = err instanceof Error ? err.message : String(err);
+      showErrorToast(msg);
+    }
+  }
+
+  async function handleMarcarNaoVendido(id: number, motivo: string | null) {
+    const anterior = repasses.find((r) => r.id === id);
+    if (!anterior) return;
+    setRepasses((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, status: "nao_vendido" } : r)),
+    );
+    try {
+      const atualizado = await marcarComoNaoVendido(id, { motivo });
+      setRepasses((prev) => prev.map((r) => (r.id === id ? atualizado : r)));
+      setNaoVendidoRepasse(null);
+      showSuccessToast("Marcado como não vendido.");
+    } catch (err) {
+      setRepasses((prev) => prev.map((r) => (r.id === id ? anterior : r)));
+      const msg = err instanceof Error ? err.message : String(err);
+      showErrorToast(msg);
+    }
+  }
+
+  async function handleReverterSubido(id: number) {
+    const anterior = repasses.find((r) => r.id === id);
+    if (!anterior) return;
+    setRepasses((prev) =>
+      prev.map((r) =>
+        r.id === id
+          ? { ...r, status: "subido", valor_vendido: null, data_vendido: null, comprador: null }
+          : r,
+      ),
+    );
+    try {
+      const atualizado = await reverterParaSubido(id);
+      setRepasses((prev) => prev.map((r) => (r.id === id ? atualizado : r)));
+      showSuccessToast("Repasse reaberto.");
+    } catch (err) {
+      setRepasses((prev) => prev.map((r) => (r.id === id ? anterior : r)));
+      const msg = err instanceof Error ? err.message : String(err);
+      showErrorToast(msg);
     }
   }
 
@@ -374,7 +489,7 @@ export function RepassesLista() {
         />
         <Kpi
           icon={<CheckCircle2 className="h-4 w-4" />}
-          label="Já subidos"
+          label="Subidos (aguardando desfecho)"
           value={String(kpis.subidos)}
           tone="good"
         />
@@ -391,6 +506,36 @@ export function RepassesLista() {
           hint={`${kpis.valorPraSubir.comValor} de ${kpis.valorPraSubir.totalSubidos} com valor`}
           tone="info"
         />
+        <Kpi
+          icon={<CheckCircle2 className="h-4 w-4" />}
+          label="Vendidos"
+          value={String(kpis.vendidos)}
+          hint={formatBRL(kpis.somaVendido)}
+          tone="good"
+        />
+        <Kpi
+          icon={<TrendingUp className="h-4 w-4" />}
+          label="Margem real"
+          value={formatBRL(kpis.margemReal)}
+          tone={kpis.margemReal >= 0 ? "good" : "bad"}
+        />
+        <Kpi
+          icon={<Percent className="h-4 w-4" />}
+          label="Conversão"
+          value={kpis.conversao == null ? "—" : `${kpis.conversao.toFixed(0)}%`}
+          hint={
+            kpis.conversao == null
+              ? "sem desfecho ainda"
+              : `${kpis.vendidos} de ${kpis.vendidos + kpis.naoVendidos}`
+          }
+          tone="info"
+        />
+        <Kpi
+          icon={<XCircle className="h-4 w-4" />}
+          label="Não vendidos"
+          value={String(kpis.naoVendidos)}
+          tone="bad"
+        />
       </div>
 
       {/* Filtros + ações topo */}
@@ -400,19 +545,19 @@ export function RepassesLista() {
         </div>
 
         <div className="flex flex-wrap gap-1.5">
-          {(["marcado", "subido", "todos"] as const).map((s) => (
+          {STATUS_FILTROS.map((opt) => (
             <button
-              key={s}
+              key={opt.value}
               type="button"
-              onClick={() => setStatusFiltro(s)}
+              onClick={() => setStatusFiltro(opt.value)}
               className={cn(
                 "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition",
-                statusFiltro === s
+                statusFiltro === opt.value
                   ? "border-[var(--brand-600)] bg-[var(--brand-50)] text-[var(--brand-900)] dark:bg-[var(--brand-900)]/30 dark:text-[var(--brand-100)]"
                   : "border-[var(--border-base)] bg-[var(--bg-surface)] text-[var(--text-muted)] hover:bg-[var(--bg-muted)]",
               )}
             >
-              {s === "marcado" ? "Marcados" : s === "subido" ? "Subidos" : "Todos"}
+              {opt.label}
             </button>
           ))}
         </div>
@@ -576,6 +721,9 @@ export function RepassesLista() {
           onToggleUm={toggleUm}
           onToggleTodos={toggleTodos}
           onMarcarSubido={handleMarcarSubido}
+          onAbrirVendido={setVendidoRepasse}
+          onAbrirNaoVendido={setNaoVendidoRepasse}
+          onReverter={handleReverterSubido}
           onRemover={handleRemover}
           onPatchCampos={handlePatchCampos}
           onGerarAnuncio={setAnuncioRepasse}
@@ -612,6 +760,26 @@ export function RepassesLista() {
           onClose={() => setAnuncioRepasse(null)}
         />
       )}
+
+      {vendidoRepasse && (
+        <MarcarVendidoModal
+          key={`vendido-${vendidoRepasse.id}`}
+          repasse={vendidoRepasse}
+          open={true}
+          onClose={() => setVendidoRepasse(null)}
+          onConfirm={(input) => handleMarcarVendido(vendidoRepasse.id, input)}
+        />
+      )}
+
+      {naoVendidoRepasse && (
+        <MarcarNaoVendidoModal
+          key={`naovendido-${naoVendidoRepasse.id}`}
+          repasse={naoVendidoRepasse}
+          open={true}
+          onClose={() => setNaoVendidoRepasse(null)}
+          onConfirm={({ motivo }) => handleMarcarNaoVendido(naoVendidoRepasse.id, motivo)}
+        />
+      )}
     </div>
   );
 }
@@ -623,6 +791,9 @@ function TabelaRepasses({
   onToggleUm,
   onToggleTodos,
   onMarcarSubido,
+  onAbrirVendido,
+  onAbrirNaoVendido,
+  onReverter,
   onRemover,
   onPatchCampos,
   onGerarAnuncio,
@@ -638,6 +809,9 @@ function TabelaRepasses({
   onToggleUm: (id: number) => void;
   onToggleTodos: () => void;
   onMarcarSubido: (id: number) => void;
+  onAbrirVendido: (repasse: Repasse) => void;
+  onAbrirNaoVendido: (repasse: Repasse) => void;
+  onReverter: (id: number) => void;
   onRemover: (id: number) => void;
   onPatchCampos: (id: number, patch: RepasseCamposManuaisPatch) => void | Promise<void>;
   onGerarAnuncio: (repasse: Repasse) => void;
@@ -686,6 +860,7 @@ function TabelaRepasses({
             <Th className="text-right">Bônus</Th>
             <Th>Observação</Th>
             <Th>Status</Th>
+            <Th className="text-right">Resultado</Th>
             <Th>Data marcado</Th>
             <Th className="sticky right-0 z-20 bg-[var(--bg-muted)]" />
           </tr>
@@ -803,6 +978,9 @@ function TabelaRepasses({
                 <Td>
                   <StatusBadge status={r.status} />
                 </Td>
+                <Td className="text-right">
+                  <ResultadoCell repasse={r} />
+                </Td>
                 <Td className="text-xs text-[var(--text-muted)]">{formatDataBR(r.data_marcado)}</Td>
                 <Td className={cn("sticky right-0 z-10", stickyBg)}>
                   <div className="flex items-center gap-2">
@@ -824,6 +1002,36 @@ function TabelaRepasses({
                         title="Marcar como subido pro Auto Avaliar"
                       >
                         <CheckCircle2 className="h-3 w-3" /> Já subi
+                      </button>
+                    )}
+                    {r.status === "subido" && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => onAbrirVendido(r)}
+                          className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-0.5 text-[11px] font-medium text-white hover:bg-emerald-700"
+                          title="Registrar venda"
+                        >
+                          <CheckCircle2 className="h-3 w-3" /> Vendido
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onAbrirNaoVendido(r)}
+                          className="inline-flex items-center gap-1 rounded-md border border-red-300 bg-red-50 px-2 py-0.5 text-[11px] font-medium text-red-800 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
+                          title="Marcar como não vendido"
+                        >
+                          <XCircle className="h-3 w-3" /> Não vendeu
+                        </button>
+                      </>
+                    )}
+                    {(r.status === "vendido" || r.status === "nao_vendido") && (
+                      <button
+                        type="button"
+                        onClick={() => onReverter(r.id)}
+                        className="inline-flex items-center gap-1 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-strong)] hover:underline"
+                        title="Reabrir como subido"
+                      >
+                        <RotateCcw className="h-3 w-3" /> Reabrir
                       </button>
                     )}
                     <button
@@ -1088,20 +1296,64 @@ function ObservacaoInput({
   );
 }
 
+const STATUS_BADGE_COR: Record<RepasseStatus, string> = {
+  marcado: "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300",
+  subido: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300",
+  vendido: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300",
+  nao_vendido: "bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300",
+  cancelado: "bg-[var(--bg-muted)] text-[var(--text-muted)]",
+};
+
+const STATUS_BADGE_ICONE: Record<RepasseStatus, string> = {
+  marcado: "🟡",
+  subido: "🔵",
+  vendido: "🟢",
+  nao_vendido: "🔴",
+  cancelado: "⚪",
+};
+
 function StatusBadge({ status }: { status: RepasseStatus }) {
-  const cor =
-    status === "subido"
-      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
-      : status === "cancelado"
-        ? "bg-[var(--bg-muted)] text-[var(--text-muted)]"
-        : "bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300";
-  const icone = status === "subido" ? "🟢" : status === "cancelado" ? "⚪" : "🟡";
   return (
-    <span className={cn("inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold", cor)}>
-      <span>{icone}</span>
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+        STATUS_BADGE_COR[status],
+      )}
+    >
+      <span>{STATUS_BADGE_ICONE[status]}</span>
       {STATUS_LABEL[status]}
     </span>
   );
+}
+
+/** Coluna "Resultado": vendido → valor + margem; nao_vendido → texto; senão "—". */
+function ResultadoCell({ repasse }: { repasse: Repasse }) {
+  if (repasse.status === "nao_vendido") {
+    return <span className="text-xs text-red-700 dark:text-red-400">Não vendido</span>;
+  }
+  if (repasse.status === "vendido") {
+    const margem = calcularMargemReal(repasse);
+    return (
+      <div className="flex flex-col items-end">
+        <span className="text-xs font-medium tabular-nums text-[var(--text-strong)]">
+          {formatBRL(repasse.valor_vendido)}
+        </span>
+        {margem != null && (
+          <span
+            className={cn(
+              "text-[10px] font-semibold tabular-nums",
+              margem >= 0
+                ? "text-emerald-700 dark:text-emerald-400"
+                : "text-red-700 dark:text-red-400",
+            )}
+          >
+            {formatBRL(margem)}
+          </span>
+        )}
+      </div>
+    );
+  }
+  return <span className="text-[var(--text-subtle)]">—</span>;
 }
 
 function Th({ children, className }: { children?: React.ReactNode; className?: string }) {

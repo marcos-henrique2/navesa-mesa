@@ -10,7 +10,9 @@
  * redundantes. Depois adicionou-se a coluna "Bônus" (logo após "Valor pra subir",
  * fórmula viva Custo − Valor pra subir). As colunas "Chassi" e "Reservado" foram
  * removidas do XLSX (Reservado segue só na tela /repasses, não no Excel).
- * Total agora: 19 colunas.
+ * Depois adicionou-se o desfecho da venda: "Resultado", "Valor vendido" e
+ * "Margem real" (fórmula viva = Valor vendido − Custo), antes de "Observação".
+ * Total agora: 22 colunas.
  *
  * Layout: 1 aba "Carros pra Repasse" com:
  *   - Cabeçalho de 3 linhas (título + data + totais)
@@ -48,6 +50,9 @@ function buildRepasse(over: Partial<Repasse> = {}): Repasse {
     data_subido: null,
     canal: "auto_avaliar",
     status: "marcado",
+    valor_vendido: null,
+    data_vendido: null,
+    comprador: null,
     ipva_status: null,
     documentacao_status: null,
     cautelar_status_manual: null,
@@ -132,7 +137,7 @@ describe("gerarRelatorioRepasseProfissional", () => {
     assert.doesNotMatch(linha, /R\$ 150/, "não deveria somar o subido no capital travado");
   });
 
-  it("header da tabela está na linha 4 com 19 colunas (sem Chassi/Reservado)", async () => {
+  it("header da tabela está na linha 4 com 22 colunas (sem Chassi/Reservado)", async () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
@@ -147,13 +152,16 @@ describe("gerarRelatorioRepasseProfissional", () => {
     assert.equal(ws.getCell("P4").value, "IPVA");
     assert.equal(ws.getCell("Q4").value, "Doc");
     assert.equal(ws.getCell("R4").value, "Cautelar");
-    assert.equal(ws.getCell("S4").value, "Observação");
+    assert.equal(ws.getCell("S4").value, "Resultado");
+    assert.equal(ws.getCell("T4").value, "Valor vendido");
+    assert.equal(ws.getCell("U4").value, "Margem real");
+    assert.equal(ws.getCell("V4").value, "Observação");
     // Header não contém mais "Chassi" nem "Reservado".
     const headers = ws.getRow(4).values as Array<string | undefined>;
     assert.ok(!headers.includes("Chassi"), "header não deve ter 'Chassi'");
     assert.ok(!headers.includes("Reservado"), "header não deve ter 'Reservado'");
-    // 19ª coluna (S) é a última — T deve estar vazia no header.
-    assert.equal(ws.getCell("T4").value ?? "", "");
+    // 22ª coluna (V) é a última — W deve estar vazia no header.
+    assert.equal(ws.getCell("W4").value ?? "", "");
   });
 
   it("dados começam na linha 5 com snapshot do veículo", async () => {
@@ -176,7 +184,7 @@ describe("gerarRelatorioRepasseProfissional", () => {
     assert.equal(ws.getCell("P5").value ?? "", ""); // IPVA
     assert.equal(ws.getCell("Q5").value ?? "", ""); // Doc
     assert.equal(ws.getCell("R5").value ?? "", ""); // Cautelar
-    assert.equal(ws.getCell("S5").value ?? "", ""); // Observação
+    assert.equal(ws.getCell("V5").value ?? "", ""); // Observação
   });
 
   it("repasse COM campos manuais preenchidos: cells vêm com os labels pt-BR", async () => {
@@ -195,7 +203,7 @@ describe("gerarRelatorioRepasseProfissional", () => {
     assert.equal(ws.getCell("P5").value, "Pago");
     assert.equal(ws.getCell("Q5").value, "OK");
     assert.equal(ws.getCell("R5").value, "Limpa");
-    assert.equal(ws.getCell("S5").value, "Pneu dianteiro pra trocar");
+    assert.equal(ws.getCell("V5").value, "Pneu dianteiro pra trocar");
   });
 
   it("cell preenchida NÃO tem dataValidation (já tem dado)", async () => {
@@ -334,14 +342,14 @@ describe("gerarRelatorioRepasseProfissional", () => {
     assert.equal(ws.getCell("K5").value ?? "", "");
   });
 
-  it("AutoFilter cobre todas as 19 colunas (S = col 19)", async () => {
+  it("AutoFilter cobre todas as 22 colunas (V = col 22)", async () => {
     const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
-    // Na releitura o exceljs serializa o autoFilter como string "A4:S4".
+    // Na releitura o exceljs serializa o autoFilter como string "A4:V4".
     const af = String(ws.autoFilter ?? "");
     assert.match(af, /A4/, `autoFilter deve começar em A4: ${af}`);
-    assert.match(af, /S4/, `autoFilter deve ir até S4 (19 colunas): ${af}`);
+    assert.match(af, /V4/, `autoFilter deve ir até V4 (22 colunas): ${af}`);
   });
 
   // ─── Colunas "Chassi" e "Reservado" removidas do XLSX ───────────────────────
@@ -389,5 +397,51 @@ describe("gerarRelatorioRepasseProfissional", () => {
     const wb = await abrir(buf);
     const ws = wb.worksheets[0]!;
     assert.match(String(ws.getCell("O5").numFmt ?? ""), /R\$/);
+  });
+
+  // ─── Desfecho da venda (Resultado / Valor vendido / Margem real) ────────────
+
+  it("colunas Resultado/Valor vendido/Margem real existem no header (S/T/U)", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse()]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    assert.equal(ws.getCell("S4").value, "Resultado");
+    assert.equal(ws.getCell("T4").value, "Valor vendido");
+    assert.equal(ws.getCell("U4").value, "Margem real");
+  });
+
+  it("repasse vendido: Resultado='Vendido', Valor vendido numérico, Margem fórmula viva robusta", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([
+      buildRepasse({ status: "vendido", valor_vendido: 150_000, valor_aquisicao: 120_000 }),
+    ]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    assert.equal(ws.getCell("S5").value, "Vendido");
+    assert.equal(ws.getCell("T5").value, 150000);
+    assert.match(String(ws.getCell("T5").numFmt ?? ""), /R\$/);
+    // Margem real = fórmula viva = Valor vendido (T) − Custo (M), robusta ISNUMBER.
+    const formula = String((ws.getCell("U5").value as { formula?: string } | null)?.formula ?? "");
+    assert.equal(formula, 'IF(AND(ISNUMBER(T5),ISNUMBER(M5)),T5-M5,"")');
+    assert.match(String(ws.getCell("U5").numFmt ?? ""), /R\$/);
+  });
+
+  it("repasse não vendido: Resultado='Não vendido', Valor vendido e Margem vazios", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([
+      buildRepasse({ status: "nao_vendido" }),
+    ]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    assert.equal(ws.getCell("S5").value, "Não vendido");
+    assert.equal(ws.getCell("T5").value ?? "", "");
+    assert.equal(ws.getCell("U5").value ?? "", "");
+  });
+
+  it("repasse sem desfecho (marcado): Resultado='—', sem valor/margem", async () => {
+    const buf = await gerarRelatorioRepasseProfissional([buildRepasse({ status: "marcado" })]);
+    const wb = await abrir(buf);
+    const ws = wb.worksheets[0]!;
+    assert.equal(ws.getCell("S5").value, "—");
+    assert.equal(ws.getCell("T5").value ?? "", "");
+    assert.equal(ws.getCell("U5").value ?? "", "");
   });
 });

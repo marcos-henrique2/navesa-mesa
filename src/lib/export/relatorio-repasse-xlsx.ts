@@ -8,7 +8,7 @@
  *
  * Layout: 1 aba só ("Carros pra Repasse").
  *   - Linhas 1-3: cabeçalho com título, data de geração, total + capital travado
- *   - Linha 4: header da tabela (19 colunas)
+ *   - Linha 4: header da tabela (22 colunas)
  *   - Linha 5+: dados dos carros (snapshot + campos manuais já preenchidos)
  *   - Cells preenchidas: SEM dataValidation, COM cor de fundo de status
  *   - Cells vazias: COM dataValidation apontando pra `_Listas`
@@ -98,6 +98,11 @@ const COLUNAS: ReadonlyArray<{ key: string; header: string; width: number }> = [
   { key: "ipva", header: "IPVA", width: 16 },
   { key: "doc", header: "Doc", width: 16 },
   { key: "cautelar", header: "Cautelar", width: 16 },
+  // Desfecho da venda. "Margem real" é fórmula viva (= Valor vendido − Custo)
+  // só quando vendido; robusta com ISNUMBER igual o Bônus.
+  { key: "resultado", header: "Resultado", width: 14 },
+  { key: "valor_vendido", header: "Valor vendido", width: 15 },
+  { key: "margem_real", header: "Margem real", width: 15 },
   { key: "observacao", header: "Observação", width: 40 },
 ];
 
@@ -110,6 +115,8 @@ const COL_OBS = COLUNAS.findIndex((c) => c.key === "observacao") + 1;
 const COL_PRECO = COLUNAS.findIndex((c) => c.key === "preco_atual") + 1;
 const COL_CUSTO = COLUNAS.findIndex((c) => c.key === "custo") + 1;
 const COL_KM = COLUNAS.findIndex((c) => c.key === "km") + 1;
+const COL_VALOR_VENDIDO = COLUNAS.findIndex((c) => c.key === "valor_vendido") + 1;
+const COL_MARGEM_REAL = COLUNAS.findIndex((c) => c.key === "margem_real") + 1;
 
 const HEADER_ROW = 4;
 const DATA_START_ROW = 5;
@@ -272,6 +279,9 @@ export async function gerarRelatorioRepasseProfissional(
       ipvaLabel,
       docLabel,
       cautelarLabel,
+      resultadoLabel(r),
+      r.status === "vendido" ? (r.valor_vendido ?? "") : "",
+      null, // Margem real — fórmula viva preenchida após o loop de valores
       r.observacoes ?? "",
     ];
 
@@ -297,6 +307,21 @@ export async function gerarRelatorioRepasseProfissional(
     bonusCell.value = { formula: formulaBonus(rowNum), result: undefined };
     bonusCell.numFmt = FMT_BRL;
     bonusCell.font = { name: "Calibri", size: 11, bold: true, color: { argb: COR_BONUS_FG } };
+
+    // Valor vendido: formato BRL só quando vendido (senão fica vazio).
+    if (r.status === "vendido" && r.valor_vendido != null) {
+      row.getCell(COL_VALOR_VENDIDO).numFmt = FMT_BRL;
+    }
+
+    // Margem real: fórmula viva = Valor vendido − Custo. Só preenche quando
+    // vendido; senão célula vazia. Robusta com ISNUMBER (mesmo padrão do Bônus).
+    const margemCell = row.getCell(COL_MARGEM_REAL);
+    if (r.status === "vendido") {
+      margemCell.value = { formula: formulaMargemReal(rowNum), result: undefined };
+      margemCell.numFmt = FMT_BRL;
+    } else {
+      margemCell.value = "";
+    }
 
     row.getCell(COL_OBS).alignment = { wrapText: true, vertical: "top" };
     row.height = 20;
@@ -442,6 +467,26 @@ function formulaBonus(rowNum: number): string {
   const custo = `${colLetter(COL_CUSTO)}${rowNum}`;
   const subir = `${colLetter(COL_VALOR_SUBIR)}${rowNum}`;
   return `IF(AND(ISNUMBER(${custo}),ISNUMBER(${subir}),${custo}>${subir}),${custo}-${subir},"")`;
+}
+
+/**
+ * Fórmula viva da Margem real pra uma linha (1-based `rowNum`).
+ *
+ * Margem real = Valor vendido − Custo. Fica vazia ("") se algum dos dois não
+ * for número (ex.: carro não vendido, célula em branco). Robusta com ISNUMBER
+ * + AND igual o Bônus — evita #VALUE! propagando de célula vazia/texto.
+ */
+function formulaMargemReal(rowNum: number): string {
+  const vendido = `${colLetter(COL_VALOR_VENDIDO)}${rowNum}`;
+  const custo = `${colLetter(COL_CUSTO)}${rowNum}`;
+  return `IF(AND(ISNUMBER(${vendido}),ISNUMBER(${custo})),${vendido}-${custo},"")`;
+}
+
+/** Label da coluna "Resultado" no XLSX. */
+function resultadoLabel(r: Repasse): string {
+  if (r.status === "vendido") return "Vendido";
+  if (r.status === "nao_vendido") return "Não vendido";
+  return "—";
 }
 
 /** BRL sem usar Intl (evita locale do Excel) — pro footer/título. */

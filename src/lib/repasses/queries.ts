@@ -7,8 +7,8 @@
  * Error — UI captura via try/catch e exibe toast.
  *
  * Schema: tabela `repasses` ainda tem colunas legacy (valor_subiu, valor_minimo,
- * valor_vendido, doc_status, gastos, etc.) — mantemos como zumbis. A UI nova
- * só usa snapshot do veículo + status + datas.
+ * doc_status, gastos, etc.) — mantemos como zumbis. A UI usa snapshot do veículo
+ * + status + datas + desfecho da venda (valor_vendido/data_vendido/comprador).
  *
  * Mapeamento legacy → novo:
  *   - `data_subiu` (legacy NOT NULL) → preenchido com hoje no INSERT, exposto
@@ -54,7 +54,7 @@ export type RepasseInput = {
  * `data_subiu` é o campo legacy (NOT NULL com default `current_date`) —
  * reaproveitado como "data marcado pra subir" no novo fluxo.
  */
-type RepasseRow = {
+export type RepasseRow = {
   id: number;
   chassi: string;
   placa: string;
@@ -72,6 +72,9 @@ type RepasseRow = {
   data_subido: string | null;
   canal: RepasseCanal;
   status: string;
+  valor_vendido: number | string | null;
+  data_vendido: string | null;
+  comprador: string | null;
   ipva_status: string | null;
   documentacao_status: string | null;
   cautelar_status_manual: string | null;
@@ -81,13 +84,30 @@ type RepasseRow = {
   atualizado_em: string;
 };
 
-function rowToRepasse(row: RepasseRow): Repasse {
-  // Status legacy ("vendido", "nao_vendido") aparecerão como "marcado" pra UI
-  // nova — defensivo, não deve ocorrer na prática (UI nunca cria esses).
-  const status =
-    row.status === "marcado" || row.status === "subido" || row.status === "cancelado"
-      ? row.status
-      : "marcado";
+/** Status válidos do domínio (espelha o CHECK constraint do banco). */
+const STATUS_VALIDOS: ReadonlyArray<Repasse["status"]> = [
+  "marcado",
+  "subido",
+  "vendido",
+  "nao_vendido",
+  "cancelado",
+];
+
+function isRepasseStatus(v: unknown): v is Repasse["status"] {
+  return typeof v === "string" && (STATUS_VALIDOS as ReadonlyArray<string>).includes(v);
+}
+
+/** Normaliza NUMERIC do Supabase (pode vir como string) pra number finito | null. */
+function normalizarNumeric(v: number | string | null): number | null {
+  if (v == null) return null;
+  const n = typeof v === "string" ? Number(v) : v;
+  return Number.isFinite(n) ? n : null;
+}
+
+export function rowToRepasse(row: RepasseRow): Repasse {
+  // Os 5 status do ciclo são válidos. Fallback mínimo pra "marcado" só se vier
+  // algo realmente inesperado (não deve ocorrer — banco tem CHECK constraint).
+  const status: Repasse["status"] = isRepasseStatus(row.status) ? row.status : "marcado";
 
   // Status manuais: type guards rejeitam valor inesperado (vira null).
   // Defesa em profundidade — banco já tem CHECK constraint.
@@ -98,12 +118,7 @@ function rowToRepasse(row: RepasseRow): Repasse {
     : null;
 
   // Supabase pode retornar NUMERIC como string em alguns casos — normaliza.
-  const valorSubir =
-    row.valor_subir == null
-      ? null
-      : typeof row.valor_subir === "string"
-        ? Number(row.valor_subir)
-        : row.valor_subir;
+  const valorSubir = normalizarNumeric(row.valor_subir);
 
   return {
     id: row.id,
@@ -123,6 +138,9 @@ function rowToRepasse(row: RepasseRow): Repasse {
     data_subido: row.data_subido,
     canal: row.canal,
     status,
+    valor_vendido: normalizarNumeric(row.valor_vendido),
+    data_vendido: row.data_vendido,
+    comprador: row.comprador,
     ipva_status: ipva,
     documentacao_status: doc,
     cautelar_status_manual: cautelar,
@@ -224,6 +242,139 @@ export async function marcarVariosComoSubido(ids: ReadonlyArray<number>): Promis
     .select("id");
   if (error) throw new Error(`Falha ao marcar como subidos: ${error.message}`);
   return (data ?? []).length;
+}
+
+// ─── Desfecho da venda (vendido / não vendido) ───────────────────────────────
+
+export type MarcarVendidoInput = {
+  valor_vendido: number;
+  data_vendido?: string;
+  comprador?: string | null;
+};
+
+/**
+ * Valida o valor de venda. Lança Error com mensagem clara se inválido.
+ * Pura — testável sem tocar no Supabase.
+ */
+export function validarValorVendido(v: unknown): number {
+  if (typeof v !== "number" || !Number.isFinite(v) || v < 0) {
+    throw new Error(`valor_vendido inválido: ${String(v)}`);
+  }
+  return v;
+}
+
+/**
+ * Monta a observação final ao marcar como não vendido.
+ * Pura — anexa o motivo (trimado) à observação atual (se houver), preservando-a.
+ * Retorna `undefined` quando não há motivo → caller não toca em observacoes.
+ */
+export function montarObservacaoNaoVendido(
+  obsAtual: string | null | undefined,
+  motivo: string | null | undefined,
+): string | undefined {
+  const m = motivo?.trim();
+  if (!m) return undefined;
+  const atual = obsAtual?.trim();
+  return atual ? `${atual} | ${m}` : m;
+}
+
+/** Payload de UPDATE pra reverter um repasse pra "subido" (zera campos de venda). */
+export const PAYLOAD_REVERTER_SUBIDO = {
+  status: "subido",
+  valor_vendido: null,
+  data_vendido: null,
+  comprador: null,
+} as const;
+
+/**
+ * Marca como "vendido" registrando valor, data e comprador.
+ *
+ * `valor_vendido` precisa ser number finito ≥ 0. `data_vendido` default = hoje.
+ * `comprador` é trimado; vazio vira null.
+ */
+export async function marcarComoVendido(
+  id: number,
+  input: MarcarVendidoInput,
+): Promise<Repasse> {
+  const valor = validarValorVendido(input.valor_vendido);
+  const data = input.data_vendido ?? new Date().toISOString().slice(0, 10);
+  const compradorTrim = input.comprador?.trim();
+  const comprador = compradorTrim ? compradorTrim : null;
+
+  const sb = getSupabase();
+  const { data: row, error } = await sb
+    .from("repasses")
+    .update({
+      status: "vendido",
+      valor_vendido: valor,
+      data_vendido: data,
+      comprador,
+    })
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error || !row) {
+    throw new Error(`Falha ao marcar como vendido: ${error?.message ?? "sem dados"}`);
+  }
+  return rowToRepasse(row as RepasseRow);
+}
+
+/**
+ * Marca como "nao_vendido". Se `motivo` não vazio, anexa às observações
+ * existentes (preserva o que já estava lá). Se vazio/ausente, não toca observacoes.
+ */
+export async function marcarComoNaoVendido(
+  id: number,
+  input?: { motivo?: string | null },
+): Promise<Repasse> {
+  const sb = getSupabase();
+  const motivo = input?.motivo?.trim();
+
+  const update: Record<string, string | null> = { status: "nao_vendido" };
+
+  if (motivo) {
+    // Busca observação atual pra concatenar sem perder o que já existe.
+    const { data: atual, error: errSel } = await sb
+      .from("repasses")
+      .select("observacoes")
+      .eq("id", id)
+      .single();
+    if (errSel) {
+      throw new Error(`Falha ao ler observações: ${errSel.message}`);
+    }
+    const obsAtual = (atual as { observacoes: string | null } | null)?.observacoes;
+    const obsFinal = montarObservacaoNaoVendido(obsAtual, motivo);
+    if (obsFinal !== undefined) update.observacoes = obsFinal;
+  }
+
+  const { data: row, error } = await sb
+    .from("repasses")
+    .update(update)
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error || !row) {
+    throw new Error(`Falha ao marcar como não vendido: ${error?.message ?? "sem dados"}`);
+  }
+  return rowToRepasse(row as RepasseRow);
+}
+
+/**
+ * Reabre um repasse com desfecho de volta pra "subido", zerando os campos de
+ * venda. Não mexe em observacoes (histórico preservado).
+ */
+export async function reverterParaSubido(id: number): Promise<Repasse> {
+  const sb = getSupabase();
+  const { data: row, error } = await sb
+    .from("repasses")
+    .update(PAYLOAD_REVERTER_SUBIDO)
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error || !row) {
+    throw new Error(`Falha ao reabrir repasse: ${error?.message ?? "sem dados"}`);
+  }
+  return rowToRepasse(row as RepasseRow);
 }
 
 // ─── Inline edit dos campos manuais (Caminho B) ──────────────────────────────
