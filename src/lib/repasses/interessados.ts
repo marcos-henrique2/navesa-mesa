@@ -162,8 +162,9 @@ export type CriarInteressadosResultado = {
  *
  * Usa upsert com `ignoreDuplicates: true` (ON CONFLICT DO NOTHING) no índice
  * único (repasse_id, email) — re-importar o mesmo lote não duplica leads.
- * Linhas sem email não colidem (índice é parcial: WHERE email IS NOT NULL),
- * então podem entrar mais de uma vez — é aceitável (o Marcos remove manual).
+ * Linhas sem email não colidem (Postgres trata NULLs como distintos —
+ * NULLS DISTINCT), então podem entrar mais de uma vez — é aceitável (o Marcos
+ * remove manual). Ver migration 017.
  *
  * Retorna contagem de inseridos x ignorados pra UI dar feedback.
  */
