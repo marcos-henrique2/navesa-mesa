@@ -159,6 +159,14 @@ export async function listRepasses(): Promise<Repasse[]> {
   return ((data ?? []) as RepasseRow[]).map(rowToRepasse);
 }
 
+/** Busca um repasse por id. Retorna null se não existir. */
+export async function getRepasse(id: number): Promise<Repasse | null> {
+  const sb = getSupabase();
+  const { data, error } = await sb.from("repasses").select("*").eq("id", id).maybeSingle();
+  if (error) throw new Error(`Falha ao buscar repasse: ${error.message}`);
+  return data ? rowToRepasse(data as RepasseRow) : null;
+}
+
 /**
  * Lista os chassis com repasse em andamento (status='marcado' OU 'subido').
  * Retorna Map<chassi, repasse_id> pra UI saber quais carros já estão em fluxo

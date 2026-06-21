@@ -21,6 +21,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import {
   Download,
   Loader2,
@@ -37,6 +38,7 @@ import {
   Trash2,
   FileText,
   Search,
+  Users,
 } from "lucide-react";
 import {
   deleteRepasse,
@@ -51,6 +53,7 @@ import {
   type MarcarVendidoInput,
   type RepasseCamposManuaisPatch,
 } from "@/lib/repasses/queries";
+import { contarInteressadosPorRepasse } from "@/lib/repasses/interessados";
 import { calcularMargemReal } from "@/lib/repasses/margem";
 import type {
   CautelarStatus,
@@ -115,6 +118,11 @@ export function RepassesLista() {
   }, [veiculos]);
   const { removerLocalmente: removerChassiEmRepasse } = useChassisEmRepasse();
   const [repasses, setRepasses] = useState<Repasse[]>([]);
+  // Map repasse_id → qtd de interessados (badge "Interessados (N)"). Carregado
+  // em paralelo; falha aqui não derruba a lista de repasses.
+  const [interessadosPorRepasse, setInteressadosPorRepasse] = useState<Map<number, number>>(
+    new Map(),
+  );
   const [carregando, setCarregando] = useState(true);
   const [statusFiltro, setStatusFiltro] = usePersistedState<StatusFiltro>(
     "repasses:status:v2",
@@ -145,6 +153,12 @@ export function RepassesLista() {
       showErrorToast(`Erro ao carregar repasses: ${msg}`);
     } finally {
       setCarregando(false);
+    }
+    // Contagem de interessados — independente: falha não bloqueia a lista.
+    try {
+      setInteressadosPorRepasse(await contarInteressadosPorRepasse());
+    } catch {
+      // silencioso — badge fica zerado
     }
   }
 
@@ -727,6 +741,7 @@ export function RepassesLista() {
           onRemover={handleRemover}
           onPatchCampos={handlePatchCampos}
           onGerarAnuncio={setAnuncioRepasse}
+          interessadosPorRepasse={interessadosPorRepasse}
           processando={processando}
         />
       )}
@@ -797,6 +812,7 @@ function TabelaRepasses({
   onRemover,
   onPatchCampos,
   onGerarAnuncio,
+  interessadosPorRepasse,
   processando,
   diasPatioPorChassi,
   reservadoPorChassi,
@@ -815,6 +831,7 @@ function TabelaRepasses({
   onRemover: (id: number) => void;
   onPatchCampos: (id: number, patch: RepasseCamposManuaisPatch) => void | Promise<void>;
   onGerarAnuncio: (repasse: Repasse) => void;
+  interessadosPorRepasse: Map<number, number>;
   processando: boolean;
 }) {
   const todosSelecionados =
@@ -993,6 +1010,21 @@ function TabelaRepasses({
                     >
                       <FileText className="h-3 w-3" /> Anúncio
                     </button>
+                    <Link
+                      href={`/repasses/${r.id}/interessados`}
+                      className="inline-flex items-center gap-1 rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-2 py-0.5 text-[11px] font-medium text-[var(--text-body)] hover:bg-[var(--bg-muted)]"
+                      title="Interessados que visualizaram o anúncio no Auto Avaliar"
+                    >
+                      <Users className="h-3 w-3" /> Interessados
+                      {(() => {
+                        const n = interessadosPorRepasse.get(r.id) ?? 0;
+                        return n > 0 ? (
+                          <span className="rounded-full bg-[var(--brand-100)] px-1.5 text-[10px] font-semibold text-[var(--brand-800)] dark:bg-[var(--brand-900)] dark:text-[var(--brand-100)]">
+                            {n}
+                          </span>
+                        ) : null;
+                      })()}
+                    </Link>
                     {r.status === "marcado" && (
                       <button
                         type="button"
