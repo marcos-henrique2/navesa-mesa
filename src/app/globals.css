@@ -8,6 +8,10 @@
    Paleta corporativa azul-marinho + cinzas claros. Light por default. */
 
 :root {
+  /* Esquema de cor nativo: faz o navegador renderizar controles nativos
+     (<select>/<option>, date inputs, scrollbars) no esquema CLARO por default. */
+  color-scheme: light;
+
   /* Brand */
   --brand-50:  #EFF4FB;
   --brand-100: #DBE5F2;
@@ -54,6 +58,12 @@
 /* Paleta dark — override de variáveis quando .dark no <html>.
    Brand permanece intacto: azul-marinho funciona em ambos modos. */
 .dark {
+  /* Esquema de cor nativo ESCURO: faz o navegador renderizar o popup dos
+     <select>, as <option>, date inputs e scrollbars no esquema dark — sem isso
+     o menu suspenso nativo herda o esquema claro (texto escuro / fundo claro)
+     e fica ilegível sobre o app escuro. Esse é o fix de fato. */
+  color-scheme: dark;
+
   /* Surfaces */
   --bg-app:     #0A0E16;
   --bg-surface: #111827;
@@ -116,6 +126,15 @@ body {
 
 /* Tabular nums por default em qualquer .tabular-nums (já tem no Tailwind, reforço aqui) */
 .tabular-nums { font-variant-numeric: tabular-nums; }
+
+/* Reforço (defesa em profundidade) pro popup nativo dos <select>.
+   O fix real é o `color-scheme: dark` acima; isto garante contraste mesmo nos
+   navegadores que permitem estilizar <option> (Chromium no Windows respeita). */
+.dark select option,
+.dark select optgroup {
+  background-color: var(--bg-surface);
+  color: var(--text-body);
+}
 
 /* Scrollbar suave */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
