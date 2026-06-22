@@ -9,18 +9,48 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { gerarAnuncioRepasse } from "@/lib/repasses/gerar-anuncio";
+import { isIpvaResponsavel } from "@/lib/repasses/types";
 import { repasse } from "./_mocks";
 
 describe("gerarAnuncioRepasse", () => {
   it("IPVA pago + doc ok → linhas corretas", () => {
     const txt = gerarAnuncioRepasse(repasse({ ipva_status: "pago", documentacao_status: "ok" }));
-    assert.ok(txt.includes("- IPVA 2026: PAGO"));
+    assert.ok(txt.includes("- IPVA: PAGO"));
     assert.ok(txt.includes("- Documentação: APROVADA, em ordem"));
   });
 
-  it("IPVA em_aberto → 'A PAGAR PELO COMPRADOR'", () => {
-    const txt = gerarAnuncioRepasse(repasse({ ipva_status: "em_aberto" }));
-    assert.ok(txt.includes("- IPVA 2026: A PAGAR PELO COMPRADOR"));
+  it("IPVA em_aberto + responsavel comprador → 'EM ABERTO (por conta do comprador)'", () => {
+    const txt = gerarAnuncioRepasse(
+      repasse({ ipva_status: "em_aberto", ipva_responsavel: "comprador" }),
+    );
+    assert.ok(txt.includes("- IPVA: EM ABERTO (por conta do comprador)"));
+  });
+
+  it("IPVA em_aberto + responsavel null → assume comprador (default de negócio)", () => {
+    const txt = gerarAnuncioRepasse(repasse({ ipva_status: "em_aberto", ipva_responsavel: null }));
+    assert.ok(txt.includes("- IPVA: EM ABERTO (por conta do comprador)"));
+  });
+
+  it("IPVA em_aberto + responsavel navesa → 'será quitado pela Mesa antes da entrega'", () => {
+    const txt = gerarAnuncioRepasse(
+      repasse({ ipva_status: "em_aberto", ipva_responsavel: "navesa" }),
+    );
+    assert.ok(txt.includes("- IPVA: EM ABERTO (será quitado pela Mesa antes da entrega)"));
+  });
+
+  it("IPVA em_aberto → NUNCA cita valor do IPVA", () => {
+    const comprador = gerarAnuncioRepasse(
+      repasse({ ipva_status: "em_aberto", ipva_responsavel: "comprador" }),
+    );
+    const navesa = gerarAnuncioRepasse(
+      repasse({ ipva_status: "em_aberto", ipva_responsavel: "navesa" }),
+    );
+    // A linha de IPVA não contém "R$" nem dígitos de valor.
+    for (const txt of [comprador, navesa]) {
+      const linha = txt.split("\n").find((l) => l.startsWith("- IPVA")) ?? "";
+      assert.ok(!linha.includes("R$"));
+      assert.ok(!/\d/.test(linha));
+    }
   });
 
   it("IPVA nao_verificado → mostra mensagem de confirmação com a Mesa", () => {
@@ -152,5 +182,20 @@ describe("gerarAnuncioRepasse", () => {
   it("título começa com o modelo", () => {
     const txt = gerarAnuncioRepasse(repasse({ modelo: "ONIX LT 1.0" }));
     assert.ok(txt.startsWith("ONIX LT 1.0 - "));
+  });
+});
+
+describe("isIpvaResponsavel", () => {
+  it("aceita os valores válidos", () => {
+    assert.equal(isIpvaResponsavel("comprador"), true);
+    assert.equal(isIpvaResponsavel("navesa"), true);
+  });
+
+  it("rejeita valores inválidos", () => {
+    assert.equal(isIpvaResponsavel("outro"), false);
+    assert.equal(isIpvaResponsavel(""), false);
+    assert.equal(isIpvaResponsavel(null), false);
+    assert.equal(isIpvaResponsavel(undefined), false);
+    assert.equal(isIpvaResponsavel(123), false);
   });
 });

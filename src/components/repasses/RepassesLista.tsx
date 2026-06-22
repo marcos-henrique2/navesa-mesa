@@ -58,6 +58,7 @@ import { calcularMargemReal } from "@/lib/repasses/margem";
 import type {
   CautelarStatus,
   DocStatus,
+  IpvaResponsavel,
   IpvaStatus,
   Repasse,
   RepasseStatus,
@@ -68,6 +69,8 @@ import {
   DOC_LABEL,
   DOC_VALUES,
   IPVA_LABEL,
+  IPVA_RESPONSAVEL_LABEL,
+  IPVA_RESPONSAVEL_VALUES,
   IPVA_VALUES,
   STATUS_LABEL,
 } from "@/lib/repasses/types";
@@ -430,6 +433,9 @@ export function RepassesLista() {
             ? {
                 ...r,
                 ...("ipva_status" in patch ? { ipva_status: patch.ipva_status ?? null } : {}),
+                ...("ipva_responsavel" in patch
+                  ? { ipva_responsavel: patch.ipva_responsavel ?? null }
+                  : {}),
                 ...("documentacao_status" in patch
                   ? { documentacao_status: patch.documentacao_status ?? null }
                   : {}),
@@ -933,13 +939,29 @@ function TabelaRepasses({
                 <Td className="text-right tabular-nums">{formatBRL(r.preco_atual)}</Td>
                 <Td className="text-right tabular-nums">{formatBRL(r.valor_aquisicao)}</Td>
 
-                {/* IPVA */}
+                {/* IPVA (+ responsável condicional quando em aberto) */}
                 <Td>
-                  <IpvaSelect
-                    value={r.ipva_status}
-                    onChange={(v) => void onPatchCampos(r.id, { ipva_status: v })}
-                    placa={r.placa}
-                  />
+                  <div className="flex flex-col gap-1">
+                    <IpvaSelect
+                      value={r.ipva_status}
+                      onChange={(v) => {
+                        // Ao sair de "em aberto", limpa o responsável (não faz sentido).
+                        const patch: RepasseCamposManuaisPatch =
+                          v === "em_aberto"
+                            ? { ipva_status: v }
+                            : { ipva_status: v, ipva_responsavel: null };
+                        void onPatchCampos(r.id, patch);
+                      }}
+                      placa={r.placa}
+                    />
+                    {r.ipva_status === "em_aberto" && (
+                      <IpvaResponsavelSelect
+                        value={r.ipva_responsavel}
+                        onChange={(v) => void onPatchCampos(r.id, { ipva_responsavel: v })}
+                        placa={r.placa}
+                      />
+                    )}
+                  </div>
                 </Td>
 
                 {/* Doc */}
@@ -1135,6 +1157,38 @@ function IpvaSelect({
       {IPVA_VALUES.map((v) => (
         <option key={v} value={v}>
           {IPVA_LABEL[v]}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/**
+ * Sub-select de quem paga o IPVA quando está "em aberto". Só aparece nesse caso.
+ *
+ * Default visual: quando `ipva_responsavel` é null, mostra "Por conta do
+ * comprador" como selecionado (é o default de negócio que o anúncio usa). O
+ * valor só é persistido quando o Marcos escolhe explicitamente.
+ */
+function IpvaResponsavelSelect({
+  value,
+  onChange,
+  placa,
+}: {
+  value: IpvaResponsavel | null;
+  onChange: (v: IpvaResponsavel) => void;
+  placa: string;
+}) {
+  return (
+    <select
+      aria-label={`Responsável pelo IPVA de ${placa}`}
+      className={cn(SELECT_BASE, "min-w-[130px] text-[10px]")}
+      value={value ?? "comprador"}
+      onChange={(e) => onChange(e.target.value as IpvaResponsavel)}
+    >
+      {IPVA_RESPONSAVEL_VALUES.map((v) => (
+        <option key={v} value={v}>
+          {IPVA_RESPONSAVEL_LABEL[v]}
         </option>
       ))}
     </select>

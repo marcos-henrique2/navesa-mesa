@@ -57,6 +57,7 @@ export type Repasse = {
 
   // ─── Campos manuais (Caminho B — inline edit no /repasses) ────────────
   ipva_status: IpvaStatus | null;
+  ipva_responsavel: IpvaResponsavel | null;
   documentacao_status: DocStatus | null;
   cautelar_status_manual: CautelarStatus | null;
   valor_subir: number | null;
@@ -69,10 +70,18 @@ export type Repasse = {
 // ─── Status manuais (Caminho B) ──────────────────────────────────────────────
 
 export type IpvaStatus = "pago" | "em_aberto" | "nao_verificado";
+
+/**
+ * Quem paga o IPVA quando está "em aberto" no anúncio de repasse.
+ * Default de negócio = "comprador" (quando `ipva_responsavel` é null, o anúncio
+ * assume por conta do comprador). "navesa" é a exceção marcada caso a caso.
+ */
+export type IpvaResponsavel = "comprador" | "navesa";
 export type DocStatus = "ok" | "pendente" | "irregular" | "nao_verificado";
 export type CautelarStatus = "conforme" | "nao_conforme" | "nao_verificado";
 
 export const IPVA_VALUES: ReadonlyArray<IpvaStatus> = ["pago", "em_aberto", "nao_verificado"];
+export const IPVA_RESPONSAVEL_VALUES: ReadonlyArray<IpvaResponsavel> = ["comprador", "navesa"];
 export const DOC_VALUES: ReadonlyArray<DocStatus> = ["ok", "pendente", "irregular", "nao_verificado"];
 export const CAUTELAR_VALUES: ReadonlyArray<CautelarStatus> = ["conforme", "nao_conforme", "nao_verificado"];
 
@@ -80,6 +89,11 @@ export const IPVA_LABEL: Record<IpvaStatus, string> = {
   pago: "Pago",
   em_aberto: "Em aberto",
   nao_verificado: "Não verificado",
+};
+
+export const IPVA_RESPONSAVEL_LABEL: Record<IpvaResponsavel, string> = {
+  comprador: "Por conta do comprador",
+  navesa: "Navesa quita antes da entrega",
 };
 
 export const DOC_LABEL: Record<DocStatus, string> = {
@@ -97,6 +111,9 @@ export const CAUTELAR_LABEL: Record<CautelarStatus, string> = {
 
 export function isIpvaStatus(v: unknown): v is IpvaStatus {
   return typeof v === "string" && (IPVA_VALUES as ReadonlyArray<string>).includes(v);
+}
+export function isIpvaResponsavel(v: unknown): v is IpvaResponsavel {
+  return typeof v === "string" && (IPVA_RESPONSAVEL_VALUES as ReadonlyArray<string>).includes(v);
 }
 export function isDocStatus(v: unknown): v is DocStatus {
   return typeof v === "string" && (DOC_VALUES as ReadonlyArray<string>).includes(v);

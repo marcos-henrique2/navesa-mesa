@@ -134,6 +134,22 @@ const OPCOES_IPVA: ReadonlyArray<string> = ["Pago", "Em aberto", "Não verificad
 const OPCOES_DOC: ReadonlyArray<string> = ["OK", "Pendente", "Irregular", "Não verificado"];
 const OPCOES_CAUTELAR: ReadonlyArray<string> = ["Conforme", "Não conforme", "Não verificado"];
 
+/**
+ * Label da célula IPVA refletindo quem paga quando está "em aberto".
+ * NÃO cita valor — só status + responsável. Pago/Não verificado ficam como o
+ * label padrão. Célula preenchida não recebe dropdown (só vazias recebem), então
+ * o texto estendido não quebra a data validation.
+ */
+function labelIpvaComResponsavel(r: Repasse): string {
+  if (!r.ipva_status) return "";
+  if (r.ipva_status === "em_aberto") {
+    return r.ipva_responsavel === "navesa"
+      ? "Em aberto (Navesa quita)"
+      : "Em aberto (comprador)";
+  }
+  return IPVA_LABEL[r.ipva_status];
+}
+
 /** Cor de fundo por status preenchido. */
 function corIpva(s: IpvaStatus): string {
   switch (s) {
@@ -254,7 +270,7 @@ export async function gerarRelatorioRepasseProfissional(
     const row = ws.getRow(rowNum);
     const zebra = idx % 2 === 1;
 
-    const ipvaLabel = r.ipva_status ? IPVA_LABEL[r.ipva_status] : "";
+    const ipvaLabel = labelIpvaComResponsavel(r);
     const docLabel = r.documentacao_status ? DOC_LABEL[r.documentacao_status] : "";
     const cautelarLabel = r.cautelar_status_manual
       ? CAUTELAR_LABEL[r.cautelar_status_manual]

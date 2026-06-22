@@ -23,13 +23,22 @@ function formatAno(fab: number | null, modelo: number | null): string {
   return "";
 }
 
-/** Linha de IPVA. Sempre retorna texto — nao_verificado/null vira aviso de confirmação. */
+/**
+ * Linha de IPVA. Sempre retorna texto — nao_verificado/null vira aviso de
+ * confirmação. NÃO cita valor; só status + quem paga.
+ *
+ * Quando "em aberto", o default de negócio é por conta do comprador
+ * (`ipva_responsavel` null assume "comprador"). "navesa" é a exceção marcada
+ * caso a caso → a Mesa quita antes da entrega.
+ */
 function linhaIpva(repasse: Repasse): string {
   switch (repasse.ipva_status) {
     case "pago":
-      return "- IPVA 2026: PAGO";
+      return "- IPVA: PAGO";
     case "em_aberto":
-      return "- IPVA 2026: A PAGAR PELO COMPRADOR";
+      return repasse.ipva_responsavel === "navesa"
+        ? "- IPVA: EM ABERTO (será quitado pela Mesa antes da entrega)"
+        : "- IPVA: EM ABERTO (por conta do comprador)";
     default:
       // nao_verificado ou null → direciona o comprador a confirmar
       return `- IPVA: ${MSG_CONFIRME_MESA}`;

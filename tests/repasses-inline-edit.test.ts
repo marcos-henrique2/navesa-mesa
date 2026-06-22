@@ -115,6 +115,15 @@ describe("updateRepasseCampos — validação (defesa em profundidade)", () => {
     );
   });
 
+  it("rejeita ipva_responsavel fora do enum", async () => {
+    await assert.rejects(
+      updateRepasseCampos(1, {
+        ipva_responsavel: "xpto" as never,
+      }),
+      /ipva_responsavel inválido/,
+    );
+  });
+
   it("rejeita valor_subir negativo", async () => {
     await assert.rejects(updateRepasseCampos(1, { valor_subir: -100 }), /valor_subir inválido/);
   });

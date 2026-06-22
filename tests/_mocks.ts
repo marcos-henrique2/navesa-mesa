@@ -119,6 +119,7 @@ export function repasse(over: Partial<Repasse> = {}): Repasse {
     data_vendido: null,
     comprador: null,
     ipva_status: null,
+    ipva_responsavel: null,
     documentacao_status: null,
     cautelar_status_manual: null,
     valor_subir: null,

@@ -23,9 +23,11 @@ import { criarErroRepasse } from "./erros";
 import {
   isCautelarStatus,
   isDocStatus,
+  isIpvaResponsavel,
   isIpvaStatus,
   type CautelarStatus,
   type DocStatus,
+  type IpvaResponsavel,
   type IpvaStatus,
   type Repasse,
   type RepasseCanal,
@@ -76,6 +78,7 @@ export type RepasseRow = {
   data_vendido: string | null;
   comprador: string | null;
   ipva_status: string | null;
+  ipva_responsavel: string | null;
   documentacao_status: string | null;
   cautelar_status_manual: string | null;
   valor_subir: number | string | null;
@@ -112,6 +115,7 @@ export function rowToRepasse(row: RepasseRow): Repasse {
   // Status manuais: type guards rejeitam valor inesperado (vira null).
   // Defesa em profundidade — banco já tem CHECK constraint.
   const ipva = isIpvaStatus(row.ipva_status) ? row.ipva_status : null;
+  const ipvaResponsavel = isIpvaResponsavel(row.ipva_responsavel) ? row.ipva_responsavel : null;
   const doc = isDocStatus(row.documentacao_status) ? row.documentacao_status : null;
   const cautelar = isCautelarStatus(row.cautelar_status_manual)
     ? row.cautelar_status_manual
@@ -142,6 +146,7 @@ export function rowToRepasse(row: RepasseRow): Repasse {
     data_vendido: row.data_vendido,
     comprador: row.comprador,
     ipva_status: ipva,
+    ipva_responsavel: ipvaResponsavel,
     documentacao_status: doc,
     cautelar_status_manual: cautelar,
     valor_subir: valorSubir != null && Number.isFinite(valorSubir) ? valorSubir : null,
@@ -390,6 +395,7 @@ export async function reverterParaSubido(id: number): Promise<Repasse> {
 /** Patch parcial pros campos manuais. Campos omitidos não são tocados. */
 export type RepasseCamposManuaisPatch = {
   ipva_status?: IpvaStatus | null;
+  ipva_responsavel?: IpvaResponsavel | null;
   documentacao_status?: DocStatus | null;
   cautelar_status_manual?: CautelarStatus | null;
   valor_subir?: number | null;
@@ -413,7 +419,10 @@ export async function updateRepasseCampos(
   patch: RepasseCamposManuaisPatch,
 ): Promise<Repasse> {
   // Monta o update só com os campos presentes no patch.
-  const update: Record<string, IpvaStatus | DocStatus | CautelarStatus | number | string | null> = {};
+  const update: Record<
+    string,
+    IpvaStatus | IpvaResponsavel | DocStatus | CautelarStatus | number | string | null
+  > = {};
 
   if ("ipva_status" in patch) {
     const v = patch.ipva_status;
@@ -421,6 +430,14 @@ export async function updateRepasseCampos(
       throw new Error(`ipva_status inválido: ${String(v)}`);
     }
     update.ipva_status = v;
+  }
+
+  if ("ipva_responsavel" in patch) {
+    const v = patch.ipva_responsavel;
+    if (v !== null && !isIpvaResponsavel(v)) {
+      throw new Error(`ipva_responsavel inválido: ${String(v)}`);
+    }
+    update.ipva_responsavel = v;
   }
 
   if ("documentacao_status" in patch) {

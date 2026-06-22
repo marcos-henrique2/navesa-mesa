@@ -40,6 +40,7 @@ function buildRow(over: Partial<RepasseRow> = {}): RepasseRow {
     data_vendido: null,
     comprador: null,
     ipva_status: null,
+    ipva_responsavel: null,
     documentacao_status: null,
     cautelar_status_manual: null,
     valor_subir: null,
