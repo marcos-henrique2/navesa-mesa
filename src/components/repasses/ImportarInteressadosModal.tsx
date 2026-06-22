@@ -79,7 +79,7 @@ export function ImportarInteressadosModal({
             </h2>
             <p className="mt-0.5 text-xs text-[var(--text-muted)]">
               Selecione a tabela de quem visualizou o anúncio, copie e cole aqui. Reimportar o
-              mesmo lote não duplica (deduplicado por e-mail).
+              mesmo lote não duplica — leads e interesses são deduplicados no servidor.
             </p>
           </div>
           <button

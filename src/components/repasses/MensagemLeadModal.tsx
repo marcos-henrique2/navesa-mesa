@@ -3,30 +3,46 @@
 /**
  * Modal pra ver/copiar a mensagem de WhatsApp do lead.
  *
- * Gera o texto com gerarMensagemLead(repasse, interessado) e mostra num textarea
- * editável — o Marcos pode ajustar antes de copiar. Botão "Abrir no WhatsApp"
- * usa o texto EDITADO e abre wa.me em nova aba (sem disparo automático).
+ * Gera o texto com gerarMensagemLead(carro, lead, contexto) e mostra num
+ * textarea editável — o Marcos pode ajustar antes de copiar. Botão "Abrir no
+ * WhatsApp" usa o texto EDITADO e abre wa.me em nova aba (sem disparo automático).
+ *
+ * Genérico: recebe o carro (CarroOfertavel), o nome do lead, o whatsapp e o
+ * contexto da copy. Serve tanto pra interessados (visualizou) quanto pra ofertas.
  *
  * Acessibilidade: fecha com ESC e clique fora; botão de fechar com aria-label.
  */
 
 import { useEffect, useState } from "react";
 import { Copy, MessageCircle, X } from "lucide-react";
-import type { Repasse } from "@/lib/repasses/types";
-import type { RepasseInteressado } from "@/lib/repasses/interessados";
-import { gerarMensagemLead } from "@/lib/repasses/gerar-mensagem-lead";
+import {
+  gerarMensagemLead,
+  type CarroOfertavel,
+  type ContextoMensagem,
+} from "@/lib/repasses/gerar-mensagem-lead";
 import { showErrorToast, showInfoToast, showSuccessToast } from "@/components/ui/Toast";
 
 export type MensagemLeadModalProps = {
-  repasse: Repasse;
-  interessado: RepasseInteressado;
+  carro: CarroOfertavel;
+  nome: string;
+  telefoneWhatsapp: string | null;
+  contexto: ContextoMensagem;
+  titulo?: string;
   open: boolean;
   onClose: () => void;
 };
 
-export function MensagemLeadModal({ repasse, interessado, open, onClose }: MensagemLeadModalProps) {
-  // Texto inicial derivado uma vez por montagem (pai remonta com key={id}).
-  const [texto, setTexto] = useState(() => gerarMensagemLead(repasse, interessado));
+export function MensagemLeadModal({
+  carro,
+  nome,
+  telefoneWhatsapp,
+  contexto,
+  titulo,
+  open,
+  onClose,
+}: MensagemLeadModalProps) {
+  // Texto inicial derivado uma vez por montagem (pai remonta com key).
+  const [texto, setTexto] = useState(() => gerarMensagemLead(carro, { nome }, contexto));
 
   useEffect(() => {
     if (!open) return;
@@ -39,7 +55,7 @@ export function MensagemLeadModal({ repasse, interessado, open, onClose }: Mensa
 
   if (!open) return null;
 
-  const titulo = `Mensagem — ${interessado.nome}`;
+  const tituloFinal = titulo ?? `Mensagem — ${nome}`;
 
   async function copiar() {
     try {
@@ -52,11 +68,11 @@ export function MensagemLeadModal({ repasse, interessado, open, onClose }: Mensa
   }
 
   function abrirWhatsapp() {
-    if (!interessado.telefone_whatsapp) {
-      showInfoToast("Esse interessado não tem celular pra WhatsApp.");
+    if (!telefoneWhatsapp) {
+      showInfoToast("Esse lead não tem celular pra WhatsApp.");
       return;
     }
-    const url = `https://wa.me/${interessado.telefone_whatsapp}?text=${encodeURIComponent(texto)}`;
+    const url = `https://wa.me/${telefoneWhatsapp}?text=${encodeURIComponent(texto)}`;
     window.open(url, "_blank", "noopener");
   }
 
@@ -66,7 +82,7 @@ export function MensagemLeadModal({ repasse, interessado, open, onClose }: Mensa
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label={titulo}
+      aria-label={tituloFinal}
     >
       <div
         className="flex w-full max-w-xl flex-col rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-6 shadow-xl"
@@ -74,7 +90,7 @@ export function MensagemLeadModal({ repasse, interessado, open, onClose }: Mensa
       >
         <div className="mb-4 flex items-start justify-between gap-4">
           <div>
-            <h2 className="text-lg font-bold text-[var(--text-strong)]">{titulo}</h2>
+            <h2 className="text-lg font-bold text-[var(--text-strong)]">{tituloFinal}</h2>
             <p className="mt-0.5 text-xs text-[var(--text-muted)]">
               Edite se precisar, depois copie ou abra direto no WhatsApp.
             </p>
@@ -115,7 +131,7 @@ export function MensagemLeadModal({ repasse, interessado, open, onClose }: Mensa
           <button
             type="button"
             onClick={abrirWhatsapp}
-            disabled={!interessado.telefone_whatsapp}
+            disabled={!telefoneWhatsapp}
             className="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <MessageCircle className="h-4 w-4" /> Abrir no WhatsApp

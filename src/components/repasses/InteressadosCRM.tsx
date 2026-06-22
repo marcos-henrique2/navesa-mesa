@@ -5,10 +5,11 @@
  */
 
 /**
- * Mini-CRM de Interessados — quem visualizou o anúncio no Auto Avaliar.
+ * Mini-CRM de Interessados por carro — quem visualizou o anúncio no Auto Avaliar.
  *
- * Página dedicada (não modal) porque é um fluxo de acompanhamento de funil:
- * importar leads, ver KPIs, mexer em status/observação e disparar WhatsApp.
+ * Fonte de dados: `lead_interesses` (filtrado pelo repasse), com join no lead
+ * pra trazer nome/whatsapp/email/cidade. Cada linha tem link "Ver lead" pro CRM
+ * central de leads.
  *
  * Padrão de inline edit + patch otimista replicado do RepassesLista (status e
  * observação editáveis na linha; salva em background; rollback se o banco recusa).
@@ -26,22 +27,23 @@ import {
   Trash2,
   Users,
   UserPlus,
+  ExternalLink,
 } from "lucide-react";
 import { getRepasse } from "@/lib/repasses/queries";
 import type { Repasse } from "@/lib/repasses/types";
 import {
-  contarComStatus,
-  criarInteressados,
-  deleteInteressado,
-  listInteressados,
+  deleteInteresse,
+  importarInteressesDeRepasse,
+  listInteressesPorRepasse,
+  updateInteresse,
   STATUS_FOLLOWUP_LABEL,
   STATUS_FOLLOWUP_VALUES,
-  updateInteressado,
-  type InteressadoPatch,
-  type RepasseInteressado,
+  type LeadInteresseComLead,
+  type LeadInteressePatch,
   type StatusFollowup,
-} from "@/lib/repasses/interessados";
-import { parseInteressados } from "@/lib/repasses/parse-interessados";
+} from "@/lib/leads/interesses";
+import { contarComStatusRelacionamento } from "@/lib/leads/leads";
+import { repasseParaCarro } from "@/lib/repasses/gerar-mensagem-lead";
 import { gerarMensagemLead } from "@/lib/repasses/gerar-mensagem-lead";
 import { cn, formatInt } from "@/lib/utils";
 import { showErrorToast, showInfoToast, showSuccessToast } from "@/components/ui/Toast";
@@ -50,15 +52,15 @@ import { MensagemLeadModal } from "./MensagemLeadModal";
 
 export function InteressadosCRM({ repasseId }: { repasseId: number }) {
   const [repasse, setRepasse] = useState<Repasse | null>(null);
-  const [interessados, setInteressados] = useState<RepasseInteressado[]>([]);
+  const [interesses, setInteresses] = useState<LeadInteresseComLead[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
 
   const [importOpen, setImportOpen] = useState(false);
   const [importando, setImportando] = useState(false);
-  const [verMensagem, setVerMensagem] = useState<RepasseInteressado | null>(null);
+  const [verMensagem, setVerMensagem] = useState<LeadInteresseComLead | null>(null);
 
-  // Carga inicial: carro + lista de interessados.
+  // Carga inicial: carro + lista de interesses (com lead embutido).
   useEffect(() => {
     if (!Number.isFinite(repasseId)) {
       setErro("Repasse inválido.");
@@ -68,10 +70,13 @@ export function InteressadosCRM({ repasseId }: { repasseId: number }) {
     let vivo = true;
     (async () => {
       try {
-        const [r, lista] = await Promise.all([getRepasse(repasseId), listInteressados(repasseId)]);
+        const [r, lista] = await Promise.all([
+          getRepasse(repasseId),
+          listInteressesPorRepasse(repasseId),
+        ]);
         if (!vivo) return;
         setRepasse(r);
-        setInteressados(lista);
+        setInteresses(lista);
       } catch (e) {
         if (!vivo) return;
         setErro(e instanceof Error ? e.message : String(e));
@@ -85,26 +90,30 @@ export function InteressadosCRM({ repasseId }: { repasseId: number }) {
   }, [repasseId]);
 
   // ─── KPIs do funil ─────────────────────────────────────────────────────────
-  const kpis = useMemo(() => contarComStatus(interessados), [interessados]);
+  const kpis = useMemo(
+    () =>
+      contarComStatusRelacionamento(
+        interesses.map((i) => ({ status_relacionamento: i.status_followup })),
+      ),
+    [interesses],
+  );
 
-  // ─── Importar ──────────────────────────────────────────────────────────────
+  // ─── Importar (RPC dedup server-side) ────────────────────────────────────────
   const handleImportar = useCallback(
     async (textoColado: string) => {
-      const parsed = parseInteressados(textoColado);
-      if (parsed.length === 0) {
-        showErrorToast("Nenhum interessado reconhecido no texto colado.");
-        return;
-      }
       setImportando(true);
       try {
-        const { inseridos, ignorados, criados } = await criarInteressados(repasseId, parsed);
-        // Mescla os novos no estado e re-ordena por views desc.
-        setInteressados((prev) =>
-          [...prev, ...criados].sort((a, b) => b.qtd_visualizacoes - a.qtd_visualizacoes),
-        );
+        const res = await importarInteressesDeRepasse(repasseId, textoColado);
+        // Recarrega a lista (o RPC criou/atualizou no servidor).
+        const lista = await listInteressesPorRepasse(repasseId);
+        setInteresses(lista);
         setImportOpen(false);
         showSuccessToast(
-          `${inseridos} importado(s)${ignorados > 0 ? ` · ${ignorados} duplicado(s) ignorado(s)` : ""}.`,
+          `${res.leads_novos} lead(s) novo(s) · ${res.leads_existentes} já existia(m) · ` +
+            `${res.interesses_novos} interesse(s) novo(s)` +
+            (res.interesses_ignorados > 0
+              ? ` · ${res.interesses_ignorados} ignorado(s)`
+              : ""),
         );
       } catch (e) {
         showErrorToast(`Erro ao importar: ${e instanceof Error ? e.message : String(e)}`);
@@ -117,11 +126,11 @@ export function InteressadosCRM({ repasseId }: { repasseId: number }) {
 
   // ─── Patch otimista (status / observação / data_contato) ─────────────────────
   const handlePatch = useCallback(
-    async (id: number, patch: InteressadoPatch) => {
-      const anterior = interessados.find((i) => i.id === id);
+    async (id: number, patch: LeadInteressePatch) => {
+      const anterior = interesses.find((i) => i.id === id);
       if (!anterior) return;
 
-      setInteressados((prev) =>
+      setInteresses((prev) =>
         prev.map((i) =>
           i.id === id
             ? {
@@ -137,48 +146,58 @@ export function InteressadosCRM({ repasseId }: { repasseId: number }) {
       );
 
       try {
-        const atualizado = await updateInteressado(id, patch);
-        setInteressados((prev) => prev.map((i) => (i.id === id ? atualizado : i)));
+        const atualizado = await updateInteresse(id, patch);
+        // Mantém os campos do lead embutido (o update não os retorna).
+        setInteresses((prev) =>
+          prev.map((i) => (i.id === id ? { ...i, ...atualizado } : i)),
+        );
       } catch (e) {
-        setInteressados((prev) => prev.map((i) => (i.id === id ? anterior : i)));
+        setInteresses((prev) => prev.map((i) => (i.id === id ? anterior : i)));
         showErrorToast(`Erro ao salvar: ${e instanceof Error ? e.message : String(e)}`);
       }
     },
-    [interessados],
+    [interesses],
   );
 
   // ─── WhatsApp ────────────────────────────────────────────────────────────────
   const handleWhatsapp = useCallback(
-    (interessado: RepasseInteressado) => {
+    (interesse: LeadInteresseComLead) => {
       if (!repasse) return;
-      if (!interessado.telefone_whatsapp) {
-        showInfoToast("Esse interessado não tem celular pra WhatsApp.");
+      if (!interesse.lead_telefone_whatsapp) {
+        showInfoToast("Esse lead não tem celular pra WhatsApp.");
         return;
       }
-      const msg = gerarMensagemLead(repasse, interessado);
-      const url = `https://wa.me/${interessado.telefone_whatsapp}?text=${encodeURIComponent(msg)}`;
+      const msg = gerarMensagemLead(
+        repasseParaCarro(repasse),
+        { nome: interesse.lead_nome },
+        "visualizou",
+      );
+      const url = `https://wa.me/${interesse.lead_telefone_whatsapp}?text=${encodeURIComponent(msg)}`;
       window.open(url, "_blank", "noopener");
 
       // Ao primeiro contato: se ainda "novo", avança pra "contatado" + data de hoje.
-      if (interessado.status_followup === "novo") {
+      if (interesse.status_followup === "novo") {
         const hoje = new Date().toISOString().slice(0, 10);
-        void handlePatch(interessado.id, { status_followup: "contatado", data_contato: hoje });
+        void handlePatch(interesse.id, { status_followup: "contatado", data_contato: hoje });
       }
     },
     [repasse, handlePatch],
   );
 
   // ─── Remover ─────────────────────────────────────────────────────────────────
-  const handleRemover = useCallback(async (id: number) => {
-    const anterior = interessados;
-    setInteressados((prev) => prev.filter((i) => i.id !== id));
-    try {
-      await deleteInteressado(id);
-    } catch (e) {
-      setInteressados(anterior);
-      showErrorToast(`Erro ao remover: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }, [interessados]);
+  const handleRemover = useCallback(
+    async (id: number) => {
+      const anterior = interesses;
+      setInteresses((prev) => prev.filter((i) => i.id !== id));
+      try {
+        await deleteInteresse(id);
+      } catch (e) {
+        setInteresses(anterior);
+        showErrorToast(`Erro ao remover: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    },
+    [interesses],
+  );
 
   if (carregando) {
     return (
@@ -238,7 +257,7 @@ export function InteressadosCRM({ repasseId }: { repasseId: number }) {
       </div>
 
       {/* Tabela */}
-      {interessados.length === 0 ? (
+      {interesses.length === 0 ? (
         <div className="rounded-lg border border-dashed border-[var(--border-base)] p-10 text-center">
           <Users className="mx-auto h-8 w-8 text-[var(--text-subtle)]" />
           <p className="mt-2 text-sm text-[var(--text-muted)]">
@@ -262,34 +281,40 @@ export function InteressadosCRM({ repasseId }: { repasseId: number }) {
               </tr>
             </thead>
             <tbody>
-              {interessados.map((i) => (
+              {interesses.map((i) => (
                 <tr
                   key={i.id}
                   className="border-b border-[var(--border-soft)] last:border-0 hover:bg-[var(--bg-muted)]"
                 >
                   <Td>
-                    <span className="font-medium text-[var(--text-strong)]">{i.nome}</span>
+                    <Link
+                      href={`/leads/${i.lead_id}`}
+                      className="inline-flex items-center gap-1 font-medium text-[var(--text-strong)] hover:text-[var(--brand-700)] hover:underline"
+                      title="Ver lead"
+                    >
+                      {i.lead_nome}
+                    </Link>
                   </Td>
-                  <Td className="text-xs text-[var(--text-muted)]">{i.cidade_uf ?? "—"}</Td>
+                  <Td className="text-xs text-[var(--text-muted)]">{i.lead_cidade_uf ?? "—"}</Td>
                   <Td className="font-mono text-xs">
-                    {i.telefone_whatsapp ?? (
+                    {i.lead_telefone_whatsapp ?? (
                       <span className="text-amber-700 dark:text-amber-400">—</span>
                     )}
                   </Td>
-                  <Td className="text-xs text-[var(--text-muted)]">{i.email ?? "—"}</Td>
+                  <Td className="text-xs text-[var(--text-muted)]">{i.lead_email ?? "—"}</Td>
                   <Td className="text-right tabular-nums">{i.qtd_visualizacoes}</Td>
                   <Td>
                     <StatusSelect
                       value={i.status_followup}
                       onChange={(v) => void handlePatch(i.id, { status_followup: v })}
-                      nome={i.nome}
+                      nome={i.lead_nome}
                     />
                   </Td>
                   <Td>
                     <ObservacaoInput
                       value={i.observacao}
                       onCommit={(v) => void handlePatch(i.id, { observacao: v })}
-                      nome={i.nome}
+                      nome={i.lead_nome}
                     />
                   </Td>
                   <Td className="text-right">
@@ -297,9 +322,9 @@ export function InteressadosCRM({ repasseId }: { repasseId: number }) {
                       <button
                         type="button"
                         onClick={() => handleWhatsapp(i)}
-                        disabled={!i.telefone_whatsapp}
+                        disabled={!i.lead_telefone_whatsapp}
                         title={
-                          i.telefone_whatsapp
+                          i.lead_telefone_whatsapp
                             ? "Abrir WhatsApp com mensagem pronta"
                             : "Sem celular pra WhatsApp"
                         }
@@ -315,11 +340,18 @@ export function InteressadosCRM({ repasseId }: { repasseId: number }) {
                       >
                         <Eye className="h-3 w-3" /> Mensagem
                       </button>
+                      <Link
+                        href={`/leads/${i.lead_id}`}
+                        title="Ver lead completo"
+                        className="inline-flex items-center gap-1 rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-2 py-0.5 text-[11px] font-medium text-[var(--text-body)] hover:bg-[var(--bg-muted)]"
+                      >
+                        <ExternalLink className="h-3 w-3" /> Ver lead
+                      </Link>
                       <button
                         type="button"
                         onClick={() => void handleRemover(i.id)}
-                        title="Remover interessado"
-                        aria-label={`Remover ${i.nome}`}
+                        title="Remover interesse"
+                        aria-label={`Remover interesse de ${i.lead_nome}`}
                         className="inline-flex items-center gap-1 rounded-md border border-red-300 bg-red-50 px-1.5 py-0.5 text-[11px] font-medium text-red-800 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300"
                       >
                         <Trash2 className="h-3 w-3" />
@@ -343,8 +375,10 @@ export function InteressadosCRM({ repasseId }: { repasseId: number }) {
       {verMensagem && repasse && (
         <MensagemLeadModal
           key={verMensagem.id}
-          repasse={repasse}
-          interessado={verMensagem}
+          carro={repasseParaCarro(repasse)}
+          nome={verMensagem.lead_nome}
+          telefoneWhatsapp={verMensagem.lead_telefone_whatsapp}
+          contexto="visualizou"
           open={true}
           onClose={() => setVerMensagem(null)}
         />

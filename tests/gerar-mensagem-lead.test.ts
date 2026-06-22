@@ -7,9 +7,13 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { gerarMensagemLead } from "@/lib/repasses/gerar-mensagem-lead";
+import {
+  gerarMensagemLead,
+  repasseParaCarro,
+  veiculoParaCarro,
+} from "@/lib/repasses/gerar-mensagem-lead";
 import type { RepasseInteressado } from "@/lib/repasses/interessados";
-import { repasse } from "./_mocks";
+import { repasse, veiculo } from "./_mocks";
 
 function interessado(over: Partial<RepasseInteressado> = {}): RepasseInteressado {
   return {
@@ -70,5 +74,73 @@ describe("gerarMensagemLead", () => {
     const r = repasse({ modelo: "ONIX LT", ano_modelo: null, ano_fabricacao: 2019, km: 50000 });
     const msg = gerarMensagemLead(r, interessado());
     assert.match(msg, /ONIX LT 2019/);
+  });
+});
+
+describe("gerarMensagemLead — nova API (carro, lead, contexto)", () => {
+  const carro = { modelo: "S10 LTZ", ano: 2016, km: 98000 };
+
+  it("contexto 'visualizou' fala em reaquecer (anúncio no Auto Avaliar)", () => {
+    const msg = gerarMensagemLead(carro, { nome: "João Silva" }, "visualizou");
+    assert.match(msg, /João/);
+    assert.ok(!/Silva/.test(msg), "só o primeiro nome");
+    assert.match(msg, /S10 LTZ 2016/);
+    assert.match(msg, /98\.000 km/);
+    assert.match(msg, /Auto Avaliar/);
+    assert.match(msg, /se interessou/);
+  });
+
+  it("contexto 'oferta' apresenta o carro como novidade", () => {
+    const msg = gerarMensagemLead(carro, { nome: "Maria" }, "oferta");
+    assert.match(msg, /Maria/);
+    assert.match(msg, /S10 LTZ 2016/);
+    assert.match(msg, /pode te interessar/);
+    assert.ok(!/Auto Avaliar/.test(msg), "oferta não menciona Auto Avaliar");
+  });
+
+  it("nenhuma das duas variantes cita valor/preço/R$", () => {
+    for (const ctx of ["visualizou", "oferta"] as const) {
+      const msg = gerarMensagemLead(carro, { nome: "João" }, ctx);
+      assert.ok(!/R\$/.test(msg), `${ctx}: sem R$`);
+      assert.ok(!/pre[çc]o/i.test(msg), `${ctx}: sem preço`);
+      assert.ok(!/valor/i.test(msg), `${ctx}: sem valor`);
+    }
+  });
+
+  it("km null omite o trecho (km) em ambos os contextos", () => {
+    const semKm = { modelo: "S10 LTZ", ano: 2016, km: null };
+    for (const ctx of ["visualizou", "oferta"] as const) {
+      const msg = gerarMensagemLead(semKm, { nome: "João" }, ctx);
+      assert.ok(!/km/.test(msg), `${ctx}: sem km no texto`);
+      assert.ok(!/\(\)/.test(msg), `${ctx}: sem parênteses vazios`);
+      assert.match(msg, /S10 LTZ 2016/);
+    }
+  });
+
+  it("ano null omite o ano mas mantém o modelo", () => {
+    const msg = gerarMensagemLead({ modelo: "S10 LTZ", ano: null, km: 98000 }, { nome: "João" }, "oferta");
+    assert.match(msg, /S10 LTZ \(98\.000 km\)/);
+  });
+});
+
+describe("adaptadores carro", () => {
+  it("repasseParaCarro prioriza ano_modelo", () => {
+    const c = repasseParaCarro(repasse({ modelo: "ONIX", ano_modelo: 2021, ano_fabricacao: 2020, km: 100 }));
+    assert.deepEqual(c, { modelo: "ONIX", ano: 2021, km: 100 });
+  });
+
+  it("repasseParaCarro cai pra ano_fabricacao quando ano_modelo null", () => {
+    const c = repasseParaCarro(repasse({ modelo: "ONIX", ano_modelo: null, ano_fabricacao: 2019, km: null }));
+    assert.deepEqual(c, { modelo: "ONIX", ano: 2019, km: null });
+  });
+
+  it("veiculoParaCarro extrai modelo/ano/km do estoque", () => {
+    const c = veiculoParaCarro(veiculo({ modelo: "TORO", ano_modelo: 2022, ano_fabricacao: 2021, km: 30000 }));
+    assert.deepEqual(c, { modelo: "TORO", ano: 2022, km: 30000 });
+  });
+
+  it("veiculoParaCarro com ambos os anos null → ano null", () => {
+    const c = veiculoParaCarro(veiculo({ modelo: "TORO", ano_modelo: null, ano_fabricacao: null, km: 30000 }));
+    assert.equal(c.ano, null);
   });
 });

@@ -53,7 +53,7 @@ import {
   type MarcarVendidoInput,
   type RepasseCamposManuaisPatch,
 } from "@/lib/repasses/queries";
-import { contarInteressadosPorRepasse } from "@/lib/repasses/interessados";
+import { contarInteressesPorRepasse } from "@/lib/leads/interesses";
 import { calcularMargemReal } from "@/lib/repasses/margem";
 import type {
   CautelarStatus,
@@ -156,7 +156,7 @@ export function RepassesLista() {
     }
     // Contagem de interessados — independente: falha não bloqueia a lista.
     try {
-      setInteressadosPorRepasse(await contarInteressadosPorRepasse());
+      setInteressadosPorRepasse(await contarInteressesPorRepasse());
     } catch {
       // silencioso — badge fica zerado
     }

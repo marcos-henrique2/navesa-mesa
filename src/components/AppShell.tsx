@@ -8,7 +8,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Car, TrendingUp, Building2, Upload, Menu, X, Sparkles, History, ChevronLeft, ChevronRight, LogOut, Loader2, Search, LineChart, Repeat } from "lucide-react";
+import { LayoutDashboard, Car, TrendingUp, Building2, Upload, Menu, X, Sparkles, History, ChevronLeft, ChevronRight, LogOut, Loader2, Search, LineChart, Repeat, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { DataGate } from "./DataGate";
@@ -34,6 +34,7 @@ const NAV: NavItem[] = [
   { href: "/insights", label: "Insights", icon: <Sparkles className="h-4 w-4" />, match: (p) => p.startsWith("/insights") },
   { href: "/analise", label: "Análise", icon: <LineChart className="h-4 w-4" />, match: (p) => p.startsWith("/analise") },
   { href: "/repasses", label: "Repasses", icon: <Repeat className="h-4 w-4" />, match: (p) => p.startsWith("/repasses") },
+  { href: "/leads", label: "Leads", icon: <Users className="h-4 w-4" />, match: (p) => p.startsWith("/leads") },
   { href: "/historico", label: "Histórico", icon: <History className="h-4 w-4" />, match: (p) => p.startsWith("/historico") },
   // Chat IA desativado temporariamente — providers gratuitos não suportam volume real e Anthropic paga
   // é cara pra esse uso. Pra reativar: descomente a linha abaixo.
