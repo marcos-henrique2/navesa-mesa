@@ -10,7 +10,7 @@ import {
   flexRender,
   type ColumnDef,
 } from "@tanstack/react-table";
-import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, X, ClipboardCheck, BarChart3, Repeat, ExternalLink, BadgeAlert } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, X, ClipboardCheck, BarChart3, Repeat, ExternalLink, BadgeAlert, FileSpreadsheet } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { classificarPatio } from "@/lib/inventory/status";
 import { estaReservado } from "@/lib/inventory/reservado";
@@ -28,6 +28,7 @@ import { VeiculoCardMobile } from "./veiculos/VeiculoCardMobile";
 import { calcularDesvioFipe } from "@/lib/fipe/batch";
 import { MarcarRepasseModal } from "./repasses/MarcarRepasseModal";
 import { BulkMarcarRepasseModal } from "./repasses/BulkMarcarRepasseModal";
+import { ConfigurarRelatorioEstoqueModal } from "./veiculos/ConfigurarRelatorioEstoqueModal";
 import { particionarParaBulkSubir } from "@/lib/repasses/bulk";
 import { showInfoToast, showSuccessToast } from "./ui/Toast";
 
@@ -46,6 +47,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
   const vState = useVeiculosTable({ filtrosPrioridade });
   const [veiculoSubindo, setVeiculoSubindo] = useState<VeiculoParsed | null>(null);
   const [bulkVeiculos, setBulkVeiculos] = useState<VeiculoParsed[] | null>(null);
+  const [relatorioCustomOpen, setRelatorioCustomOpen] = useState(false);
 
   const {
     isHydrated,
@@ -398,6 +400,14 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
               { label: "PDF", description: "Versão com bloco resumo", onSelect: () => handleExportarGerencial("pdf") },
             ]}
           />
+          <button
+            type="button"
+            onClick={() => setRelatorioCustomOpen(true)}
+            disabled={filtered.length === 0}
+            className="inline-flex items-center gap-2 rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-4 py-2 text-sm font-medium text-[var(--text-body)] hover:bg-[var(--bg-muted)] disabled:opacity-50"
+          >
+            <FileSpreadsheet className="h-4 w-4" /> Relatório customizado
+          </button>
         </div>
       </div>
 
@@ -613,6 +623,20 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
           }}
         />
       )}
+
+      <ConfigurarRelatorioEstoqueModal
+        open={relatorioCustomOpen}
+        onClose={() => setRelatorioCustomOpen(false)}
+        veiculos={filtered.map((v) => ({
+          ...v,
+          empresa_nome: lojas[v.cod_empresa]?.nome?.trim() ?? null,
+        }))}
+        filtroLoja={
+          filtroLoja === "all"
+            ? "TODAS"
+            : lojas[Number(filtroLoja)]?.nome?.trim() || `Loja ${filtroLoja}`
+        }
+      />
     </div>
   );
 }
