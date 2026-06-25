@@ -21,7 +21,7 @@ describe("gerarAnuncioRepasse", () => {
 
   it("CONDIÇÕES → informa ATPV-e + comunicado de venda (R$ 500) com taxas à parte", () => {
     const txt = gerarAnuncioRepasse(repasse({}));
-    assert.ok(txt.includes("ATPV-e + comunicado de venda"));
+    assert.ok(txt.includes("ATPV + comunicado de venda"));
     assert.ok(/R\$\s*500/.test(txt));
     assert.ok(txt.includes("taxas de transferência à parte"));
   });

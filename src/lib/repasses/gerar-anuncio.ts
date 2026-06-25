@@ -112,7 +112,7 @@ export function gerarAnuncioRepasse(repasse: Repasse, config: AnuncioConfig = AN
     "- O comprador assume integralmente: tributos, multas, transferência, frete, logística e demais encargos",
   );
   blocos.push(
-    `- ATPV-e + comunicado de venda: ${formatBRL(config.custoAtpvComunicado)} (taxas de transferência à parte)`,
+    `- ATPV + comunicado de venda: ${formatBRL(config.custoAtpvComunicado)} (taxas de transferência à parte)`,
   );
 
   // Situação documental
