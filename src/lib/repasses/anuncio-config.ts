@@ -16,6 +16,13 @@ export const ANUNCIO_CONFIG = {
   /** Prazo em dias corridos pra retirada do veículo após aprovação. */
   prazoRetiradaDias: 10,
 
+  /**
+   * Custo de ATPV-e + comunicado de venda (R$), valor fixo informado no anúncio.
+   * As taxas de transferência (Detran/cartório) NÃO entram aqui — variam e são
+   * citadas como "à parte", sem valor exato.
+   */
+  custoAtpvComunicado: 500,
+
   // ─── RESERVADO: não usadas no texto atual (ver doc acima) ───────────────
   taxaAutoAvaliar: 999,
   taxaAdministrativa: 525,

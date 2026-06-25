@@ -9,7 +9,7 @@
  * conforme/não conforme) aparece em destaque na seção SITUAÇÃO DOCUMENTAL.
  */
 
-import { formatInt } from "@/lib/utils";
+import { formatBRL, formatInt } from "@/lib/utils";
 import { ANUNCIO_CONFIG, MSG_CONFIRME_MESA, type AnuncioConfig } from "@/lib/repasses/anuncio-config";
 import type { Repasse } from "@/lib/repasses/types";
 
@@ -110,6 +110,9 @@ export function gerarAnuncioRepasse(repasse: Repasse, config: AnuncioConfig = AN
   blocos.push("- Conferência do veículo e da documentação no ato da retirada");
   blocos.push(
     "- O comprador assume integralmente: tributos, multas, transferência, frete, logística e demais encargos",
+  );
+  blocos.push(
+    `- ATPV-e + comunicado de venda: ${formatBRL(config.custoAtpvComunicado)} (taxas de transferência à parte)`,
   );
 
   // Situação documental

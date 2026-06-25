@@ -19,6 +19,13 @@ describe("gerarAnuncioRepasse", () => {
     assert.ok(txt.includes("- Documentação: APROVADA, em ordem"));
   });
 
+  it("CONDIÇÕES → informa ATPV-e + comunicado de venda (R$ 500) com taxas à parte", () => {
+    const txt = gerarAnuncioRepasse(repasse({}));
+    assert.ok(txt.includes("ATPV-e + comunicado de venda"));
+    assert.ok(/R\$\s*500/.test(txt));
+    assert.ok(txt.includes("taxas de transferência à parte"));
+  });
+
   it("IPVA em_aberto + responsavel comprador → 'EM ABERTO (por conta do comprador)'", () => {
     const txt = gerarAnuncioRepasse(
       repasse({ ipva_status: "em_aberto", ipva_responsavel: "comprador" }),
