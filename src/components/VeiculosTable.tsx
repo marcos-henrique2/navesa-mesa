@@ -14,7 +14,6 @@ import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, X, ClipboardCheck, BarC
 import { useRouter } from "next/navigation";
 import { classificarPatio } from "@/lib/inventory/status";
 import { estaReservado } from "@/lib/inventory/reservado";
-import { CLASSE_COR } from "@/lib/pricing/classificacao";
 import { CAUTELAR_ICONE, CAUTELAR_LABEL } from "@/lib/inventory/cautelar";
 import { cn, formatBRL, formatInt } from "@/lib/utils";
 import { ResumoPorDimensao } from "./ResumoPorDimensao";
@@ -164,25 +163,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
         );
       },
     },
-    {
-      id: "classe",
-      header: "Classe",
-      accessorFn: (v) => classifMap.get(v.chassi)?.classe ?? "?",
-      cell: ({ row }) => {
-        const c = classifMap.get(row.original.chassi);
-        if (!c) return <span className="text-[var(--text-subtle)] text-xs">—</span>;
-        const cor = CLASSE_COR[c.classe];
-        return (
-          <span
-            className={cn("inline-flex h-5 w-5 items-center justify-center rounded text-[10px] font-bold", cor.bg, cor.text)}
-            title={`${c.classe} · ${c.canal === "showroom" ? "Show Room" : "Repasse"}${c.rebaixadoPorEstoque ? " (rebaixado)" : ""}`}
-          >
-            {c.classe}
-          </span>
-        );
-      },
-      size: 60,
-    },
+    { accessorKey: "dias_patio", header: "Dias pátio", cell: (info) => <span className="tabular-nums whitespace-nowrap text-xs">{info.getValue<number | null>() ?? "—"}</span>, size: 50 },
     {
       id: "cautelar",
       header: "Cautelar",
@@ -230,8 +211,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
       },
     },
     { accessorKey: "custo_total", header: "Custo", cell: (info) => <span className="tabular-nums whitespace-nowrap text-xs text-[var(--text-body)]" title="Custo total">{formatBRL(info.getValue<number | null>())}</span> },
-    { accessorKey: "dias_patio", header: "Dias", cell: (info) => <span className="tabular-nums whitespace-nowrap text-xs">{info.getValue<number | null>() ?? "—"}</span>, size: 50 },
-  ], [lojas, classifMap, cautelares, chassisEmRepasse]);
+  ], [lojas, cautelares, chassisEmRepasse]);
 
   // TanStack Table v8 retorna funções não-puras que o React Compiler não consegue memorizar.
   // Limitação conhecida — remover este disable quando migrarmos pra v9 (compatível).
