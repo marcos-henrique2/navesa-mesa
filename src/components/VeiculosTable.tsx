@@ -10,7 +10,7 @@ import {
   flexRender,
   type ColumnDef,
 } from "@tanstack/react-table";
-import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, X, ClipboardCheck, BarChart3, Repeat, ExternalLink, BadgeAlert, FileSpreadsheet } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, X, ClipboardCheck, BarChart3, Repeat, BadgeAlert, FileSpreadsheet } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { classificarPatio } from "@/lib/inventory/status";
 import { estaReservado } from "@/lib/inventory/reservado";
@@ -25,8 +25,6 @@ import { ExportDropdown } from "./ui/ExportDropdown";
 import { useVeiculosTable, type FiltrosPrioridade } from "./veiculos/useVeiculosTable";
 import { FiltrosVeiculos } from "./veiculos/FiltrosVeiculos";
 import { VeiculoCardMobile } from "./veiculos/VeiculoCardMobile";
-import { calcularDesvioFipe } from "@/lib/fipe/batch";
-import { MarcarRepasseModal } from "./repasses/MarcarRepasseModal";
 import { BulkMarcarRepasseModal } from "./repasses/BulkMarcarRepasseModal";
 import { ConfigurarRelatorioEstoqueModal } from "./veiculos/ConfigurarRelatorioEstoqueModal";
 import { particionarParaBulkSubir } from "@/lib/repasses/bulk";
@@ -45,7 +43,6 @@ export type VeiculosTableProps = {
 export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
   const router = useRouter();
   const vState = useVeiculosTable({ filtrosPrioridade });
-  const [veiculoSubindo, setVeiculoSubindo] = useState<VeiculoParsed | null>(null);
   const [bulkVeiculos, setBulkVeiculos] = useState<VeiculoParsed[] | null>(null);
   const [relatorioCustomOpen, setRelatorioCustomOpen] = useState(false);
 
@@ -217,27 +214,8 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
       return <span className={cn("tabular-nums whitespace-nowrap text-xs", tone)}>{formatInt(km)}</span>;
     }, size: 70 },
     { accessorKey: "cor_externa", header: "Cor", cell: (info) => <span className="text-xs whitespace-nowrap">{info.getValue<string>()}</span> },
-    { accessorKey: "combustivel", header: "Comb", cell: (info) => <span className="text-xs whitespace-nowrap">{info.getValue<string>()}</span> },
     { accessorKey: "patio", header: "Pátio", cell: (info) => <span className="text-xs whitespace-nowrap">{info.getValue<string>().trim()}</span> },
     { accessorKey: "preco_venda", header: "Preço", cell: (info) => <span className="tabular-nums whitespace-nowrap text-xs" title="Preço de venda">{formatBRL(info.getValue<number | null>())}</span> },
-    {
-      id: "fipe_pct",
-      header: "vs FIPE",
-      cell: ({ row }) => {
-        const v = row.original;
-        const item = fipeBatch?.items?.[v.chassi];
-        if (!item) return <span className="text-xs text-[var(--text-subtle)] opacity-60">—</span>;
-        const desv = calcularDesvioFipe(v.preco_venda, item.precoFipe);
-        if (!desv) return <span className="text-xs text-[var(--text-subtle)] opacity-60">—</span>;
-        const tone = desv.pct > 5 ? "text-red-700" : desv.pct > 0 ? "text-amber-700" : desv.pct > -5 ? "text-emerald-700" : "text-emerald-800 font-semibold";
-        return (
-          <span className={cn("tabular-nums text-xs", tone)} title={`FIPE: ${formatBRL(item.precoFipe)}`}>
-            {desv.pct >= 0 ? "+" : ""}{desv.pct.toFixed(1)}%
-          </span>
-        );
-      },
-      size: 80,
-    },
     { accessorKey: "valor_aquisicao", header: "Aquis.", cell: (info) => <span className="tabular-nums whitespace-nowrap text-xs text-[var(--text-body)]" title="Valor de aquisição">{formatBRL(info.getValue<number | null>())}</span> },
     {
       id: "gasto_pos_entrada",
@@ -252,76 +230,8 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
       },
     },
     { accessorKey: "custo_total", header: "Custo", cell: (info) => <span className="tabular-nums whitespace-nowrap text-xs text-[var(--text-body)]" title="Custo total">{formatBRL(info.getValue<number | null>())}</span> },
-    {
-      id: "margem_teorica_pct",
-      header: "Margem",
-      cell: ({ row }) => {
-        const v = row.original;
-        if (v.preco_venda == null || v.custo_total == null || v.preco_venda === 0) return <span className="tabular-nums text-xs text-[var(--text-subtle)] opacity-60">—</span>;
-        const pct = ((v.preco_venda - v.custo_total) / v.preco_venda) * 100;
-        if (!Number.isFinite(pct)) return <span className="tabular-nums text-xs text-[var(--text-subtle)] opacity-60">—</span>;
-        const tone = pct >= 5 ? "text-emerald-700 dark:text-emerald-400" : pct >= 0 ? "text-amber-700 dark:text-amber-400" : "text-red-700 dark:text-red-400";
-        const marker = pct >= 5 ? "✓" : pct >= 0 ? "⚠" : "✗";
-        const titleText = pct >= 5 ? "margem saudável" : pct >= 0 ? "atenção" : "prejuízo";
-        const formatted = pct.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1, signDisplay: "exceptZero" });
-        return <span className={cn("tabular-nums whitespace-nowrap text-xs font-medium", tone)} title={`Margem teórica · ${titleText}`}>{marker} {formatted}%</span>;
-      },
-      size: 80,
-    },
-    {
-      id: "custo_por_dia",
-      header: "$/dia",
-      cell: ({ row }) => {
-        const v = row.original;
-        if (v.custo_total == null || v.valor_aquisicao == null || v.dias_patio == null) return <span className="tabular-nums text-[var(--text-subtle)] opacity-60">—</span>;
-        const gasto = v.custo_total - v.valor_aquisicao;
-        if (gasto <= 0 || v.dias_patio <= 0) return <span className="tabular-nums text-[var(--text-subtle)] opacity-60">—</span>;
-        return <span className="tabular-nums whitespace-nowrap text-xs text-[var(--text-body)]" title="Custo médio por dia parado">{formatBRL(gasto / v.dias_patio)}</span>;
-      },
-      size: 70,
-    },
     { accessorKey: "dias_patio", header: "Dias", cell: (info) => <span className="tabular-nums whitespace-nowrap text-xs">{info.getValue<number | null>() ?? "—"}</span>, size: 50 },
-    {
-      id: "acao_repasse",
-      header: "Ação",
-      cell: ({ row }) => {
-        const v = row.original;
-        const repasseId = chassisEmRepasse.get(v.chassi);
-        if (repasseId != null) {
-          return (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                router.push(`/repasses`);
-              }}
-              className="inline-flex items-center justify-center rounded-md p-1 text-blue-700 hover:bg-blue-100 dark:text-blue-300 dark:hover:bg-blue-950/40"
-              title="Ver na lista de repasses"
-              aria-label="Ver na lista de repasses"
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-            </button>
-          );
-        }
-        return (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setVeiculoSubindo(v);
-            }}
-            className="inline-flex items-center justify-center rounded-md p-1 text-[var(--brand-700)] hover:bg-[var(--brand-50)] dark:text-[var(--brand-300)] dark:hover:bg-[var(--brand-900)]/40"
-            title="Subir pra repasse"
-            aria-label="Subir pra repasse"
-          >
-            <Repeat className="h-3.5 w-3.5" />
-          </button>
-        );
-      },
-      size: 50,
-      enableSorting: false,
-    },
-  ], [lojas, classifMap, cautelares, fipeBatch, chassisEmRepasse, router]);
+  ], [lojas, classifMap, cautelares, chassisEmRepasse]);
 
   // TanStack Table v8 retorna funções não-puras que o React Compiler não consegue memorizar.
   // Limitação conhecida — remover este disable quando migrarmos pra v9 (compatível).
@@ -587,20 +497,6 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
         </div>
       </div>
       <ResumoPorDimensao veiculos={filtered} lojas={lojas} />
-
-      {veiculoSubindo && (
-        <MarcarRepasseModal
-          veiculo={veiculoSubindo}
-          open={true}
-          onClose={() => setVeiculoSubindo(null)}
-          onSuccess={(repasseId) => {
-            // Não redireciona — Marcos fica na tabela de estoque pra continuar
-            // marcando outros carros. Indicador "Em repasse" aparece sem reload.
-            marcarChassiEmRepasse(veiculoSubindo.chassi, repasseId);
-            setVeiculoSubindo(null);
-          }}
-        />
-      )}
 
       {bulkVeiculos && (
         <BulkMarcarRepasseModal
