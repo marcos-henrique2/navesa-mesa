@@ -11,6 +11,7 @@ import { useCautelares, type StatusCautelar } from "@/lib/inventory/cautelar";
 import { useFlagsTodas } from "@/lib/data/flags-veiculo";
 import { ehPraRepasse } from "@/lib/analytics/carros-pra-repassar";
 import { estaReservado } from "@/lib/inventory/reservado";
+import { placaCasa } from "@/lib/utils/placa";
 import { useChassisEmRepasse } from "@/lib/repasses/useChassisEmRepasse";
 import { computarDiagnosticoLista, type DiagnosticoStatus } from "@/lib/pricing/diagnostico";
 import { calcularMedianasKm } from "@/lib/pricing/medianas";
@@ -257,7 +258,8 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
       if (search) {
         const q = search.toLowerCase();
         const hay = `${v.placa} ${v.chassi} ${v.modelo} ${v.marca ?? ""}`.toLowerCase();
-        if (!hay.includes(q)) return false;
+        // placaCasa ignora hífen/espaço: "QAE2606" acha "QAE-2606" (placa formato antigo).
+        if (!hay.includes(q) && !placaCasa(v.placa, search)) return false;
       }
       return true;
     });
