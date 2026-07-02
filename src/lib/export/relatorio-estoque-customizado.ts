@@ -25,6 +25,8 @@ export type RelatorioEstoqueOpcoes = {
   colunas: ColunaKey[];
   /** Adiciona coluna "Observações" sempre em branco no fim. */
   incluirObservacoes: boolean;
+  /** Adiciona coluna "Anotações" sempre em branco no fim (depois de Observações). Default: false. */
+  incluirAnotacoes?: boolean;
   /** Nome da loja filtrada na tela (ou "TODAS"). Opcional. */
   filtroLoja?: string;
 };
@@ -64,6 +66,7 @@ const LARGURA_POR_KEY: Partial<Record<ColunaKey, number>> = {
 };
 
 const LARGURA_OBSERVACOES = 40;
+const LARGURA_ANOTACOES = 40;
 
 function thinBorder(): ExcelJS.Borders {
   const side: Partial<ExcelJS.Border> = { style: "thin", color: { argb: COLOR.borderGray } };
@@ -131,10 +134,16 @@ export async function gerarRelatorioEstoqueCustomizado(
   opcoes: RelatorioEstoqueOpcoes,
 ): Promise<Blob> {
   const colunas = resolverColunas(opcoes.colunas);
-  const totalCols = colunas.length + (opcoes.incluirObservacoes ? 1 : 0);
-  // Garante ao menos 1 coluna pro layout não quebrar (Observações ou placeholder).
+  const incluirAnotacoes = opcoes.incluirAnotacoes ?? false;
+  const totalCols =
+    colunas.length + (opcoes.incluirObservacoes ? 1 : 0) + (incluirAnotacoes ? 1 : 0);
+  // Garante ao menos 1 coluna pro layout não quebrar (Observações/Anotações ou placeholder).
   const colCount = Math.max(totalCols, 1);
+  // Ordem no fim: ...dados... → Observações → Anotações.
   const obsCol = opcoes.incluirObservacoes ? colunas.length + 1 : null;
+  const anotCol = incluirAnotacoes
+    ? colunas.length + (opcoes.incluirObservacoes ? 1 : 0) + 1
+    : null;
 
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Navesa Mesa";
@@ -159,6 +168,7 @@ export async function gerarRelatorioEstoqueCustomizado(
     ws.getColumn(i + 1).width = LARGURA_POR_KEY[c.key] ?? LARGURA_PADRAO[c.formato];
   });
   if (obsCol != null) ws.getColumn(obsCol).width = LARGURA_OBSERVACOES;
+  if (anotCol != null) ws.getColumn(anotCol).width = LARGURA_ANOTACOES;
 
   // ─── Linha 1: título ───
   ws.mergeCells(1, 1, 1, colCount);
@@ -201,6 +211,14 @@ export async function gerarRelatorioEstoqueCustomizado(
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR.headerBg } };
     cell.border = thinBorder();
   }
+  if (anotCol != null) {
+    const cell = row3.getCell(anotCol);
+    cell.value = "Anotações";
+    cell.font = { bold: true, size: 11 };
+    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR.headerBg } };
+    cell.border = thinBorder();
+  }
 
   // ─── Linhas 4+: dados ───
   const DATA_START = 4;
@@ -230,6 +248,13 @@ export async function gerarRelatorioEstoqueCustomizado(
 
     if (obsCol != null) {
       const cell = row.getCell(obsCol);
+      // Sempre em branco — só borda + fundo de destaque pra anotação no Excel.
+      cell.border = thinBorder();
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR.obsBg } };
+    }
+
+    if (anotCol != null) {
+      const cell = row.getCell(anotCol);
       // Sempre em branco — só borda + fundo de destaque pra anotação no Excel.
       cell.border = thinBorder();
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR.obsBg } };

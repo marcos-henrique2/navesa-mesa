@@ -51,6 +51,10 @@ export function ConfigurarRelatorioEstoqueModal({
     "estoque:relatorioCustom:observacoes",
     true,
   );
+  const [incluirAnotacoes, setIncluirAnotacoes] = usePersistedState<boolean>(
+    "estoque:relatorioCustom:anotacoes",
+    false,
+  );
   const [exportando, setExportando] = useState(false);
 
   // Fecha com ESC.
@@ -66,7 +70,7 @@ export function ConfigurarRelatorioEstoqueModal({
   if (!open) return null;
 
   const selecionadas = new Set(colunasSel);
-  const nenhumaColuna = selecionadas.size === 0 && !incluirObs;
+  const nenhumaColuna = selecionadas.size === 0 && !incluirObs && !incluirAnotacoes;
 
   function toggleColuna(key: ColunaKey) {
     setColunasSel((prev) =>
@@ -81,6 +85,7 @@ export function ConfigurarRelatorioEstoqueModal({
       await baixarRelatorioEstoqueCustomizado(veiculos, {
         colunas: colunasSel,
         incluirObservacoes: incluirObs,
+        incluirAnotacoes,
         filtroLoja,
       });
       showSuccessToast(`relatorio-estoque-customizado-${todayISOLocal()}.xlsx baixado`);
@@ -151,6 +156,16 @@ export function ConfigurarRelatorioEstoqueModal({
             className="h-4 w-4 accent-[var(--brand-700)]"
           />
           Incluir coluna de Observações (em branco) para anotar no Excel
+        </label>
+
+        <label className="mt-2 flex cursor-pointer items-center gap-2 rounded-md border border-[var(--border-base)] bg-[var(--bg-muted)] px-3 py-2 text-sm text-[var(--text-body)]">
+          <input
+            type="checkbox"
+            checked={incluirAnotacoes}
+            onChange={(e) => setIncluirAnotacoes(e.target.checked)}
+            className="h-4 w-4 accent-[var(--brand-700)]"
+          />
+          Incluir coluna de Anotações (em branco) para anotar no Excel
         </label>
 
         <div className="mt-5 flex flex-wrap items-center justify-end gap-2">

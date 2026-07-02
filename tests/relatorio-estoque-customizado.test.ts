@@ -221,4 +221,80 @@ describe("gerarRelatorioEstoqueCustomizado", () => {
     assert.equal(ws.getCell("A3").value, "Observações");
     assert.equal(ws.getCell("A4").value ?? "", "");
   });
+
+  it("incluirAnotacoes=true adiciona coluna 'Anotações' no FIM, vazia nos dados", async () => {
+    const blob = await gerarRelatorioEstoqueCustomizado([veiculo()], {
+      colunas: COLS_BASICAS,
+      incluirObservacoes: false,
+      incluirAnotacoes: true,
+    });
+    const ws = (await abrir(blob)).worksheets[0]!;
+    // 3 colunas escolhidas + Anotações na 4ª (D).
+    assert.equal(ws.getCell("D3").value, "Anotações");
+    // Célula de dados da Anotações fica vazia.
+    assert.equal(ws.getCell("D4").value ?? "", "");
+    // Não há 5ª coluna.
+    assert.equal(ws.getCell("E3").value ?? "", "");
+  });
+
+  it("Observações + Anotações: ordem é ...dados... → Observações → Anotações", async () => {
+    const blob = await gerarRelatorioEstoqueCustomizado([veiculo()], {
+      colunas: COLS_BASICAS, // A..C
+      incluirObservacoes: true, // D
+      incluirAnotacoes: true, // E
+    });
+    const ws = (await abrir(blob)).worksheets[0]!;
+    assert.equal(ws.getCell("D3").value, "Observações");
+    assert.equal(ws.getCell("E3").value, "Anotações");
+    // Ambas em branco nos dados.
+    assert.equal(ws.getCell("D4").value ?? "", "");
+    assert.equal(ws.getCell("E4").value ?? "", "");
+    // Não há 6ª coluna.
+    assert.equal(ws.getCell("F3").value ?? "", "");
+  });
+
+  it("número de colunas com Observações + Anotações = nº escolhidas + 2", async () => {
+    const ws = (await abrir(
+      await gerarRelatorioEstoqueCustomizado([veiculo()], {
+        colunas: ["placa", "modelo", "km", "preco_venda"],
+        incluirObservacoes: true,
+        incluirAnotacoes: true,
+      }),
+    )).worksheets[0]!;
+    const header = (ws.getRow(3).values as unknown[]).filter((c) => c != null && c !== "");
+    assert.equal(header.length, 6);
+  });
+
+  it("AutoFilter cobre as 2 colunas em branco (Observações + Anotações)", async () => {
+    const blob = await gerarRelatorioEstoqueCustomizado([veiculo()], {
+      colunas: ["placa", "modelo", "km"], // 3 + Obs + Anot = 5 colunas (A..E)
+      incluirObservacoes: true,
+      incluirAnotacoes: true,
+    });
+    const ws = (await abrir(blob)).worksheets[0]!;
+    const af = String(ws.autoFilter ?? "");
+    assert.match(af, /A3/, `autoFilter deve começar em A3: ${af}`);
+    assert.match(af, /E3/, `autoFilter deve ir até E3 (5 colunas): ${af}`);
+  });
+
+  it("só Anotações (sem colunas, sem Observações): gera só a coluna Anotações", async () => {
+    const blob = await gerarRelatorioEstoqueCustomizado([veiculo()], {
+      colunas: [],
+      incluirObservacoes: false,
+      incluirAnotacoes: true,
+    });
+    const ws = (await abrir(blob)).worksheets[0]!;
+    assert.equal(ws.getCell("A3").value, "Anotações");
+    assert.equal(ws.getCell("A4").value ?? "", "");
+  });
+
+  it("sem incluirAnotacoes (retrocompat): NÃO cria coluna Anotações", async () => {
+    const blob = await gerarRelatorioEstoqueCustomizado([veiculo()], {
+      colunas: COLS_BASICAS,
+      incluirObservacoes: false,
+    });
+    const ws = (await abrir(blob)).worksheets[0]!;
+    const headers = (ws.getRow(3).values as Array<string | undefined>).map((h) => String(h ?? ""));
+    assert.ok(!headers.includes("Anotações"), "não deveria ter coluna Anotações");
+  });
 });
