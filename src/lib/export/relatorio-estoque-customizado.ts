@@ -48,25 +48,25 @@ const FMT_INT = "#,##0";
 const FMT_MONEY_INT = '"R$ "#,##0';
 
 const LARGURA_PADRAO: Record<ColunaFormato, number> = {
-  texto: 18,
-  numero: 12,
-  moeda: 14,
-  km: 12,
-  ano: 9,
+  texto: 24,
+  numero: 16,
+  moeda: 19,
+  km: 16,
+  ano: 12,
 };
 
 /** Largura específica por key (sobrescreve o padrão por formato quando faz sentido). */
 const LARGURA_POR_KEY: Partial<Record<ColunaKey, number>> = {
-  modelo: 35,
-  chassi: 22,
-  loja: 22,
-  placa: 11,
-  descricao_situacao: 16,
-  patio: 18,
+  modelo: 48,
+  chassi: 30,
+  loja: 30,
+  placa: 15,
+  descricao_situacao: 22,
+  patio: 24,
 };
 
-const LARGURA_OBSERVACOES = 40;
-const LARGURA_ANOTACOES = 40;
+const LARGURA_OBSERVACOES = 54;
+const LARGURA_ANOTACOES = 54;
 
 function thinBorder(): ExcelJS.Borders {
   const side: Partial<ExcelJS.Border> = { style: "thin", color: { argb: COLOR.borderGray } };
@@ -173,32 +173,32 @@ export async function gerarRelatorioEstoqueCustomizado(
   // ─── Linha 1: título ───
   ws.mergeCells(1, 1, 1, colCount);
   const row1 = ws.getRow(1);
-  row1.height = 32;
+  row1.height = 36;
   const titleCell = row1.getCell(1);
   titleCell.value = "NAVESA — RELATÓRIO DE ESTOQUE CUSTOMIZADO";
-  titleCell.font = { bold: true, size: 16, color: { argb: COLOR.titleFg } };
+  titleCell.font = { bold: true, size: 18, color: { argb: COLOR.titleFg } };
   titleCell.alignment = { horizontal: "center", vertical: "middle" };
   titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR.titleBg } };
 
   // ─── Linha 2: meta ───
   const row2 = ws.getRow(2);
-  row2.height = 22;
+  row2.height = 26;
   const loja = opcoes.filtroLoja?.trim() || "TODAS";
   const metaTexto = `Data: ${fmtDataBR()}   |   Loja: ${loja}   |   Total de veículos: ${veiculos.length}`;
   ws.mergeCells(2, 1, 2, colCount);
   const metaCell = row2.getCell(1);
   metaCell.value = metaTexto;
-  metaCell.font = { size: 11, bold: true };
+  metaCell.font = { size: 14, bold: true };
   metaCell.alignment = { horizontal: "left", vertical: "middle", indent: 1 };
   metaCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR.metaBg } };
 
   // ─── Linha 3: header das colunas ───
   const row3 = ws.getRow(3);
-  row3.height = 28;
+  row3.height = 34;
   colunas.forEach((c, i) => {
     const cell = row3.getCell(i + 1);
     cell.value = c.label;
-    cell.font = { bold: true, size: 11 };
+    cell.font = { bold: true, size: 15 };
     cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR.headerBg } };
     cell.border = thinBorder();
@@ -206,7 +206,7 @@ export async function gerarRelatorioEstoqueCustomizado(
   if (obsCol != null) {
     const cell = row3.getCell(obsCol);
     cell.value = "Observações";
-    cell.font = { bold: true, size: 11 };
+    cell.font = { bold: true, size: 15 };
     cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR.headerBg } };
     cell.border = thinBorder();
@@ -214,7 +214,7 @@ export async function gerarRelatorioEstoqueCustomizado(
   if (anotCol != null) {
     const cell = row3.getCell(anotCol);
     cell.value = "Anotações";
-    cell.font = { bold: true, size: 11 };
+    cell.font = { bold: true, size: 15 };
     cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR.headerBg } };
     cell.border = thinBorder();
@@ -225,7 +225,7 @@ export async function gerarRelatorioEstoqueCustomizado(
   veiculos.forEach((v, idx) => {
     const rowNum = DATA_START + idx;
     const row = ws.getRow(rowNum);
-    row.height = 22;
+    row.height = 26;
     const isZebra = idx % 2 === 1;
 
     colunas.forEach((c, i) => {
@@ -238,7 +238,7 @@ export async function gerarRelatorioEstoqueCustomizado(
         const fmt = numFmtPara(c.formato);
         if (fmt != null && typeof valor === "number") cell.numFmt = fmt;
       }
-      cell.font = { size: 10 };
+      cell.font = { size: 14 };
       cell.alignment = alinhamentoPara(c.formato);
       cell.border = thinBorder();
       if (isZebra) {

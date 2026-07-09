@@ -87,19 +87,19 @@ const COL = {
 const TOTAL_COLS = 13;
 
 const COL_WIDTHS: Record<number, number> = {
-  [COL.A_SEQ]: 5,
-  [COL.B_LOJA]: 22,
-  [COL.C_PLACA]: 10,
-  [COL.D_MARCA]: 12,
-  [COL.E_MODELO]: 35,
-  [COL.F_ANO]: 7,
-  [COL.G_KM]: 11,
-  [COL.H_DIAS]: 10,
-  [COL.I_AQUISICAO]: 14,
-  [COL.J_VENDA]: 14,
-  [COL.K_MARGEM]: 14,
-  [COL.L_STATUS]: 16,
-  [COL.M_LOCAL]: 18,
+  [COL.A_SEQ]: 6,
+  [COL.B_LOJA]: 30,
+  [COL.C_PLACA]: 14,
+  [COL.D_MARCA]: 16,
+  [COL.E_MODELO]: 48,
+  [COL.F_ANO]: 10,
+  [COL.G_KM]: 15,
+  [COL.H_DIAS]: 14,
+  [COL.I_AQUISICAO]: 19,
+  [COL.J_VENDA]: 19,
+  [COL.K_MARGEM]: 19,
+  [COL.L_STATUS]: 22,
+  [COL.M_LOCAL]: 24,
 };
 
 const HEADERS: Record<number, string> = {
@@ -331,10 +331,10 @@ export async function gerarRelatorioGerencial(
   // ─── Linha 1: título ───
   ws.mergeCells(1, COL.A_SEQ, 1, COL.M_LOCAL);
   const row1 = ws.getRow(1);
-  row1.height = 32;
+  row1.height = 36;
   const titleCell = row1.getCell(COL.A_SEQ);
   titleCell.value = "RELATÓRIO DE ESTOQUE GERENCIAL";
-  titleCell.font = { bold: true, size: 16, color: { argb: COLOR.titleFg } };
+  titleCell.font = { bold: true, size: 18, color: { argb: COLOR.titleFg } };
   titleCell.alignment = { horizontal: "center", vertical: "middle" };
   titleCell.fill = {
     type: "pattern",
@@ -344,7 +344,7 @@ export async function gerarRelatorioGerencial(
 
   // ─── Linha 2: meta (Data | Loja | Total) ───
   const row2 = ws.getRow(2);
-  row2.height = 22;
+  row2.height = 26;
   ws.mergeCells(2, COL.A_SEQ, 2, COL.C_PLACA);
   ws.mergeCells(2, COL.D_MARCA, 2, COL.H_DIAS);
   ws.mergeCells(2, COL.I_AQUISICAO, 2, COL.M_LOCAL);
@@ -357,7 +357,7 @@ export async function gerarRelatorioGerencial(
   for (const { col, text } of metaCells) {
     const cell = row2.getCell(col);
     cell.value = text;
-    cell.font = { size: 11, bold: true };
+    cell.font = { size: 14, bold: true };
     cell.alignment = { horizontal: "left", vertical: "middle", indent: 1 };
     cell.fill = {
       type: "pattern",
@@ -368,12 +368,12 @@ export async function gerarRelatorioGerencial(
 
   // ─── Linha 3: header das colunas ───
   const row3 = ws.getRow(3);
-  row3.height = 28;
+  row3.height = 34;
   for (const [colNumStr, label] of Object.entries(HEADERS)) {
     const colNum = Number(colNumStr);
     const cell = row3.getCell(colNum);
     cell.value = label;
-    cell.font = { bold: true, size: 11 };
+    cell.font = { bold: true, size: 15 };
     cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     cell.fill = {
       type: "pattern",
@@ -388,7 +388,7 @@ export async function gerarRelatorioGerencial(
   veiculos.forEach((v, idx) => {
     const rowNum = DATA_START + idx;
     const row = ws.getRow(rowNum);
-    row.height = 22;
+    row.height = 26;
 
     const isZebra = idx % 2 === 1;
     const zebraFill: ExcelJS.FillPattern = {
@@ -402,37 +402,37 @@ export async function gerarRelatorioGerencial(
     aCell.value = idx + 1;
     aCell.numFmt = "0";
     aCell.alignment = { horizontal: "center", vertical: "middle" };
-    aCell.font = { size: 10 };
+    aCell.font = { size: 14 };
 
     // B — Loja
     const bCell = row.getCell(COL.B_LOJA);
     bCell.value = v.empresa_nome ?? "—";
     bCell.alignment = { horizontal: "left", vertical: "middle", indent: 1 };
-    bCell.font = { size: 10 };
+    bCell.font = { size: 14 };
 
     // C — Placa (monospace)
     const cCell = row.getCell(COL.C_PLACA);
     cCell.value = v.placa;
     cCell.alignment = { horizontal: "center", vertical: "middle" };
-    cCell.font = { name: "Consolas", size: 10, bold: true };
+    cCell.font = { name: "Consolas", size: 14, bold: true };
 
     // D — Marca
     const dCell = row.getCell(COL.D_MARCA);
     dCell.value = v.marca ?? "—";
     dCell.alignment = { horizontal: "left", vertical: "middle", indent: 1 };
-    dCell.font = { size: 10 };
+    dCell.font = { size: 14 };
 
     // E — Modelo
     const eCell = row.getCell(COL.E_MODELO);
     eCell.value = v.modelo;
     eCell.alignment = { horizontal: "left", vertical: "middle", indent: 1 };
-    eCell.font = { size: 10 };
+    eCell.font = { size: 14 };
 
     // F — Ano (centro)
     const fCell = row.getCell(COL.F_ANO);
     fCell.value = fmtAno(v.ano_fabricacao, v.ano_modelo);
     fCell.alignment = { horizontal: "center", vertical: "middle" };
-    fCell.font = { size: 10 };
+    fCell.font = { size: 14 };
 
     // G — KM
     const gCell = row.getCell(COL.G_KM);
@@ -443,7 +443,7 @@ export async function gerarRelatorioGerencial(
       gCell.value = "—";
     }
     gCell.alignment = { horizontal: "right", vertical: "middle", indent: 1 };
-    gCell.font = { size: 10 };
+    gCell.font = { size: 14 };
 
     // H — Dias pátio
     const hCell = row.getCell(COL.H_DIAS);
@@ -454,7 +454,7 @@ export async function gerarRelatorioGerencial(
       hCell.value = "—";
     }
     hCell.alignment = { horizontal: "center", vertical: "middle" };
-    hCell.font = { size: 10 };
+    hCell.font = { size: 14 };
 
     // I — Preço entrada (aquisição)
     const iCell = row.getCell(COL.I_AQUISICAO);
@@ -465,7 +465,7 @@ export async function gerarRelatorioGerencial(
       iCell.value = "—";
     }
     iCell.alignment = { horizontal: "right", vertical: "middle", indent: 1 };
-    iCell.font = { size: 10 };
+    iCell.font = { size: 14 };
 
     // J — Preço venda
     const jCell = row.getCell(COL.J_VENDA);
@@ -476,7 +476,7 @@ export async function gerarRelatorioGerencial(
       jCell.value = "—";
     }
     jCell.alignment = { horizontal: "right", vertical: "middle", indent: 1 };
-    jCell.font = { size: 10 };
+    jCell.font = { size: 14 };
 
     // K — Margem estimada (com cor condicional)
     const kCell = row.getCell(COL.K_MARGEM);
@@ -489,21 +489,21 @@ export async function gerarRelatorioGerencial(
     }
     kCell.alignment = { horizontal: "right", vertical: "middle", indent: 1 };
     if (margem.tone === "neg") {
-      kCell.font = { size: 10, bold: true, color: { argb: COLOR.marginNegFg } };
+      kCell.font = { size: 14, bold: true, color: { argb: COLOR.marginNegFg } };
       kCell.fill = {
         type: "pattern",
         pattern: "solid",
         fgColor: { argb: COLOR.marginNegBg },
       };
     } else if (margem.tone === "good") {
-      kCell.font = { size: 10, bold: true, color: { argb: COLOR.marginGoodFg } };
+      kCell.font = { size: 14, bold: true, color: { argb: COLOR.marginGoodFg } };
       kCell.fill = {
         type: "pattern",
         pattern: "solid",
         fgColor: { argb: COLOR.marginGoodBg },
       };
     } else {
-      kCell.font = { size: 10 };
+      kCell.font = { size: 14 };
     }
 
     // L — Status (descrição da situação, com cor condicional)
@@ -512,28 +512,28 @@ export async function gerarRelatorioGerencial(
     lCell.value = v.descricao_situacao?.trim() || "—";
     lCell.alignment = { horizontal: "center", vertical: "middle" };
     if (statusTone === "disponivel") {
-      lCell.font = { size: 10, bold: true, color: { argb: COLOR.statusDisponivelFg } };
+      lCell.font = { size: 14, bold: true, color: { argb: COLOR.statusDisponivelFg } };
       lCell.fill = {
         type: "pattern",
         pattern: "solid",
         fgColor: { argb: COLOR.statusDisponivelBg },
       };
     } else if (statusTone === "faltaDoc") {
-      lCell.font = { size: 10, bold: true, color: { argb: COLOR.statusFaltaDocFg } };
+      lCell.font = { size: 14, bold: true, color: { argb: COLOR.statusFaltaDocFg } };
       lCell.fill = {
         type: "pattern",
         pattern: "solid",
         fgColor: { argb: COLOR.statusFaltaDocBg },
       };
     } else if (statusTone === "bloqueado") {
-      lCell.font = { size: 10, bold: true, color: { argb: COLOR.statusBloqueadoFg } };
+      lCell.font = { size: 14, bold: true, color: { argb: COLOR.statusBloqueadoFg } };
       lCell.fill = {
         type: "pattern",
         pattern: "solid",
         fgColor: { argb: COLOR.statusBloqueadoBg },
       };
     } else {
-      lCell.font = { size: 10 };
+      lCell.font = { size: 14 };
     }
 
     // M — Localização (pátio, com cor condicional por categoria)
@@ -541,7 +541,7 @@ export async function gerarRelatorioGerencial(
     const patioCategoria = categorizarPatio(v.patio);
     mCell.value = v.patio.trim() || "—";
     mCell.alignment = { horizontal: "left", vertical: "middle", indent: 1 };
-    mCell.font = { size: 10 };
+    mCell.font = { size: 14 };
     if (patioCategoria === "prep") {
       mCell.fill = {
         type: "pattern",
@@ -601,10 +601,10 @@ export async function gerarRelatorioGerencial(
   // Cabeçalho do bloco
   ws.mergeCells(cursor, COL.A_SEQ, cursor, COL.M_LOCAL);
   const blockHeaderRow = ws.getRow(cursor);
-  blockHeaderRow.height = 26;
+  blockHeaderRow.height = 30;
   const blockHeaderCell = blockHeaderRow.getCell(COL.A_SEQ);
   blockHeaderCell.value = "TOTALIZADORES";
-  blockHeaderCell.font = { bold: true, size: 13, color: { argb: COLOR.titleFg } };
+  blockHeaderCell.font = { bold: true, size: 16, color: { argb: COLOR.titleFg } };
   blockHeaderCell.alignment = { horizontal: "center", vertical: "middle" };
   blockHeaderCell.fill = {
     type: "pattern",
@@ -669,7 +669,7 @@ export async function gerarRelatorioGerencial(
 
   for (const linha of linhas) {
     const r = ws.getRow(cursor);
-    r.height = 22;
+    r.height = 26;
 
     // Cor do texto e fundo do valor (alerta vermelho > destaque ok/warn > neutro)
     const labelColor = linha.alerta
@@ -693,7 +693,7 @@ export async function gerarRelatorioGerencial(
     labelCell.value = linha.label + (linha.alerta ? "  ⚠" : "");
     labelCell.font = {
       bold: true,
-      size: 11,
+      size: 14,
       color: labelColor,
     };
     labelCell.alignment = { horizontal: "left", vertical: "middle", indent: 1 };
@@ -711,7 +711,7 @@ export async function gerarRelatorioGerencial(
     if (linha.numFmt) valorCell.numFmt = linha.numFmt;
     valorCell.font = {
       bold: true,
-      size: 11,
+      size: 14,
       color: labelColor,
     };
     valorCell.alignment = { horizontal: "right", vertical: "middle", indent: 1 };

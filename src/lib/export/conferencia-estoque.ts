@@ -63,17 +63,17 @@ const COL = {
 const TOTAL_COLS = 11;
 
 const COL_WIDTHS: Record<number, number> = {
-  [COL.A_SEQ]: 5,
-  [COL.B_LOJA]: 22,
-  [COL.C_PLACA]: 10,
-  [COL.D_CHASSI]: 22,
-  [COL.E_VEICULO]: 30,
-  [COL.F_ANO]: 11,
-  [COL.G_KM]: 12,
-  [COL.H_DIAS]: 10,
-  [COL.I_AQUISICAO]: 14,
-  [COL.J_LOCALIZACAO]: 20,
-  [COL.K_CONFERIDO]: 14,
+  [COL.A_SEQ]: 6,
+  [COL.B_LOJA]: 30,
+  [COL.C_PLACA]: 14,
+  [COL.D_CHASSI]: 30,
+  [COL.E_VEICULO]: 41,
+  [COL.F_ANO]: 15,
+  [COL.G_KM]: 16,
+  [COL.H_DIAS]: 14,
+  [COL.I_AQUISICAO]: 19,
+  [COL.J_LOCALIZACAO]: 27,
+  [COL.K_CONFERIDO]: 19,
 };
 
 const HEADERS: Record<number, string> = {
@@ -168,10 +168,10 @@ export async function gerarConferenciaEstoque(
   // ─── Linha 1: título ───
   ws.mergeCells(1, COL.A_SEQ, 1, COL.K_CONFERIDO);
   const row1 = ws.getRow(1);
-  row1.height = 32;
+  row1.height = 36;
   const titleCell = row1.getCell(COL.A_SEQ);
   titleCell.value = "CONFERÊNCIA DE ESTOQUE FÍSICO";
-  titleCell.font = { bold: true, size: 16, color: { argb: COLOR.titleFg } };
+  titleCell.font = { bold: true, size: 18, color: { argb: COLOR.titleFg } };
   titleCell.alignment = { horizontal: "center", vertical: "middle" };
   titleCell.fill = {
     type: "pattern",
@@ -181,7 +181,7 @@ export async function gerarConferenciaEstoque(
 
   // ─── Linha 2: meta (Data | Loja | Total) ───
   const row2 = ws.getRow(2);
-  row2.height = 22;
+  row2.height = 26;
   ws.mergeCells(2, COL.A_SEQ, 2, COL.C_PLACA);
   ws.mergeCells(2, COL.D_CHASSI, 2, COL.F_ANO);
   ws.mergeCells(2, COL.G_KM, 2, COL.K_CONFERIDO);
@@ -194,7 +194,7 @@ export async function gerarConferenciaEstoque(
   for (const { col, text } of metaCells) {
     const cell = row2.getCell(col);
     cell.value = text;
-    cell.font = { size: 11, bold: true };
+    cell.font = { size: 14, bold: true };
     cell.alignment = { horizontal: "left", vertical: "middle", indent: 1 };
     cell.fill = {
       type: "pattern",
@@ -205,12 +205,12 @@ export async function gerarConferenciaEstoque(
 
   // ─── Linha 3: header das colunas ───
   const row3 = ws.getRow(3);
-  row3.height = 28;
+  row3.height = 34;
   for (const [colNumStr, label] of Object.entries(HEADERS)) {
     const colNum = Number(colNumStr);
     const cell = row3.getCell(colNum);
     cell.value = label;
-    cell.font = { bold: true, size: 11 };
+    cell.font = { bold: true, size: 15 };
     cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     cell.fill = {
       type: "pattern",
@@ -225,7 +225,7 @@ export async function gerarConferenciaEstoque(
   veiculos.forEach((v, idx) => {
     const rowNum = DATA_START + idx;
     const row = ws.getRow(rowNum);
-    row.height = 22;
+    row.height = 26;
 
     const isZebra = idx % 2 === 1; // linhas pares (idx ímpar = 2ª, 4ª...) zebradas
     const zebraFill: ExcelJS.FillPattern = {
@@ -239,37 +239,37 @@ export async function gerarConferenciaEstoque(
     aCell.value = idx + 1;
     aCell.numFmt = "0";
     aCell.alignment = { horizontal: "center", vertical: "middle" };
-    aCell.font = { size: 10 };
+    aCell.font = { size: 14 };
 
     // B — Loja
     const bCell = row.getCell(COL.B_LOJA);
     bCell.value = v.empresa_nome || "—";
     bCell.alignment = { horizontal: "left", vertical: "middle", indent: 1 };
-    bCell.font = { size: 10 };
+    bCell.font = { size: 14 };
 
     // C — Placa (monospace)
     const cCell = row.getCell(COL.C_PLACA);
     cCell.value = v.placa;
     cCell.alignment = { horizontal: "center", vertical: "middle" };
-    cCell.font = { name: "Consolas", size: 10, bold: true };
+    cCell.font = { name: "Consolas", size: 14, bold: true };
 
     // D — Chassi (monospace, font 9)
     const dCell = row.getCell(COL.D_CHASSI);
     dCell.value = v.chassi;
     dCell.alignment = { horizontal: "center", vertical: "middle" };
-    dCell.font = { name: "Consolas", size: 9 };
+    dCell.font = { name: "Consolas", size: 13 };
 
     // E — Veículo (marca + modelo)
     const eCell = row.getCell(COL.E_VEICULO);
     eCell.value = fmtVeiculo(v.marca, v.modelo);
     eCell.alignment = { horizontal: "left", vertical: "middle", indent: 1 };
-    eCell.font = { size: 10 };
+    eCell.font = { size: 14 };
 
     // F — Ano
     const fCell = row.getCell(COL.F_ANO);
     fCell.value = fmtAno(v.ano_fabricacao, v.ano_modelo);
     fCell.alignment = { horizontal: "center", vertical: "middle" };
-    fCell.font = { size: 10 };
+    fCell.font = { size: 14 };
 
     // G — KM
     const gCell = row.getCell(COL.G_KM);
@@ -280,7 +280,7 @@ export async function gerarConferenciaEstoque(
       gCell.value = "—";
     }
     gCell.alignment = { horizontal: "right", vertical: "middle", indent: 1 };
-    gCell.font = { size: 10 };
+    gCell.font = { size: 14 };
 
     // H — Dias pátio (centro)
     const hCell = row.getCell(COL.H_DIAS);
@@ -290,7 +290,7 @@ export async function gerarConferenciaEstoque(
       hCell.value = "—";
     }
     hCell.alignment = { horizontal: "center", vertical: "middle" };
-    hCell.font = { size: 10 };
+    hCell.font = { size: 14 };
 
     // I — Aquisição (R$, sem decimais)
     const iCell = row.getCell(COL.I_AQUISICAO);
@@ -301,13 +301,13 @@ export async function gerarConferenciaEstoque(
       iCell.value = "—";
     }
     iCell.alignment = { horizontal: "right", vertical: "middle", indent: 1 };
-    iCell.font = { size: 10 };
+    iCell.font = { size: 14 };
 
     // J — Localização (pátio físico — pode ser diferente da Loja dona)
     const jCell = row.getCell(COL.J_LOCALIZACAO);
     jCell.value = v.patio?.trim() || "—";
     jCell.alignment = { horizontal: "left", vertical: "middle", indent: 1 };
-    jCell.font = { size: 10 };
+    jCell.font = { size: 14 };
 
     // K — Conferido (vazio pra marcação manual)
     const kCell = row.getCell(COL.K_CONFERIDO);
@@ -329,10 +329,10 @@ export async function gerarConferenciaEstoque(
   // Linha de total (merge A:J pra ficar destacado, fundo cinza, bold)
   ws.mergeCells(totalRowNum, COL.A_SEQ, totalRowNum, COL.K_CONFERIDO);
   const totalRow = ws.getRow(totalRowNum);
-  totalRow.height = 24;
+  totalRow.height = 28;
   const totalCell = totalRow.getCell(COL.A_SEQ);
   totalCell.value = `Total: ${veiculos.length} veículo${veiculos.length === 1 ? "" : "s"}`;
-  totalCell.font = { bold: true, size: 11 };
+  totalCell.font = { bold: true, size: 14 };
   totalCell.alignment = { horizontal: "left", vertical: "middle", indent: 1 };
   totalCell.fill = {
     type: "pattern",
@@ -345,21 +345,21 @@ export async function gerarConferenciaEstoque(
   const conferidoRowNum = totalRowNum + 2;
   ws.mergeCells(conferidoRowNum, COL.A_SEQ, conferidoRowNum, COL.E_VEICULO);
   const conferidoRow = ws.getRow(conferidoRowNum);
-  conferidoRow.height = 26;
+  conferidoRow.height = 30;
   const conferidoCell = conferidoRow.getCell(COL.A_SEQ);
   conferidoCell.value = "Conferido por: ____________________________________";
-  conferidoCell.font = { size: 11 };
+  conferidoCell.font = { size: 14 };
   conferidoCell.alignment = { horizontal: "left", vertical: "middle", indent: 1 };
 
   // Pula 1 linha → "Assinatura: ______  Data: __/__/____" (merge 8 colunas, A:H)
   const assinaturaRowNum = conferidoRowNum + 2;
   ws.mergeCells(assinaturaRowNum, COL.A_SEQ, assinaturaRowNum, COL.H_DIAS);
   const assinaturaRow = ws.getRow(assinaturaRowNum);
-  assinaturaRow.height = 26;
+  assinaturaRow.height = 30;
   const assinaturaCell = assinaturaRow.getCell(COL.A_SEQ);
   assinaturaCell.value =
     "Assinatura: ______________________________________   Data: ___/___/______";
-  assinaturaCell.font = { size: 11 };
+  assinaturaCell.font = { size: 14 };
   assinaturaCell.alignment = { horizontal: "left", vertical: "middle", indent: 1 };
 
   // ═══════════════════════════════════════════════════════════════════
