@@ -173,7 +173,11 @@ export function RepassesLista() {
     return repasses.filter((r) => {
       if (statusFiltro !== "todos" && r.status !== statusFiltro) return false;
       if (lojaFiltro !== "all" && String(r.loja_origem ?? "") !== lojaFiltro) return false;
-      if (!placaCasa(r.placa, buscaPlaca)) return false;
+      if (buscaPlaca.trim() !== "") {
+        // Acha por placa (normaliza hífen) OU por nome do modelo (contém o termo).
+        const termo = buscaPlaca.trim().toLowerCase();
+        if (!placaCasa(r.placa, buscaPlaca) && !r.modelo.toLowerCase().includes(termo)) return false;
+      }
       // Período aplica sobre data_marcado (ou data_subido se status='subido')
       const ref = r.status === "subido" ? r.data_subido : r.data_marcado;
       if (periodoIni && ref && ref < periodoIni) return false;
@@ -588,7 +592,7 @@ export function RepassesLista() {
             type="text"
             value={buscaPlaca}
             onChange={(e) => setBuscaPlaca(e.target.value)}
-            placeholder="Buscar placa..."
+            placeholder="Buscar placa ou modelo..."
             aria-label="Buscar por placa"
             className="w-40 rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] py-1 pl-7 pr-2 text-xs focus:border-[var(--brand-500)] focus:outline-none"
           />
