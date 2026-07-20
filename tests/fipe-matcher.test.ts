@@ -8,7 +8,7 @@ import {
   contarFipeConfirmada,
   FIPE_SCORE_MIN,
   FIPE_RATIO_MIN,
-  FIPE_RATIO_MAX,
+  FIPE_RATIO_REVISAO,
   SCORE_MANUAL,
   type BatchFipeItem,
 } from "@/lib/fipe/batch";
@@ -144,17 +144,77 @@ test("guard: preço abaixo de 60% do custo é rejeitado", () => {
   assert.equal(r.motivo, "abaixo-do-piso");
 });
 
-test("guard: preço acima de 250% do custo é rejeitado", () => {
+test("guard: preço acima de 250% do custo NÃO é rejeitado — vai pra revisão", () => {
   const custo = 100_000;
   const r = validarPlausibilidadeFipe(250_001, custo);
-  assert.equal(r.ok, false);
+  assert.equal(r.ok, true, "rejeitar puniria a compra bem-feita");
+  assert.equal(r.revisaoRecomendada, true);
   assert.equal(r.motivo, "acima-do-teto");
 });
 
-test("guard: fronteiras exatas (60% e 250% do custo) são aceitas", () => {
+test("guard: fronteiras exatas (60% e 250% do custo) são aceitas sem revisão", () => {
   const custo = 100_000;
-  assert.equal(validarPlausibilidadeFipe(custo * FIPE_RATIO_MIN, custo).ok, true);
-  assert.equal(validarPlausibilidadeFipe(custo * FIPE_RATIO_MAX, custo).ok, true);
+  const piso = validarPlausibilidadeFipe(custo * FIPE_RATIO_MIN, custo);
+  assert.equal(piso.ok, true);
+  assert.equal(piso.revisaoRecomendada, false);
+  const teto = validarPlausibilidadeFipe(custo * FIPE_RATIO_REVISAO, custo);
+  assert.equal(teto.ok, true);
+  assert.equal(teto.revisaoRecomendada, false);
+});
+
+// ─── Assimetria piso vs teto ────────────────────────────────────────────────
+// Os dois lados não são espelhados. Abaixo do piso a evidência é conclusiva
+// (21/21 casos reais eram erro). Acima do teto ela é ambígua, e os dois casos
+// reais abaixo — ratio quase idêntico, veredito oposto — mostram que nenhum
+// limiar de ratio separa erro de bom negócio.
+
+test("teto: trade-ins baratos com match CORRETO são aceitos (não rejeitados)", () => {
+  // Casos reais confirmados: modelo E ano batem, o carro só entrou barato.
+  const reais: [string, number, number][] = [
+    ["SCENIC 1.6 EXPRESSION 2008", 8_208, 17_066], // ratio 2.08
+    ["COOPER 1.6 CABRIO 2011", 41_515, 90_410], // ratio 2.18
+    ["FOCUS SEDAN 2.0 2015", 21_258, 50_435], // ratio 2.37
+    ["C 180 CGI 1.8 TB 2012", 26_397, 64_947], // ratio 2.46
+  ];
+  for (const [nome, custo, fipe] of reais) {
+    const r = validarPlausibilidadeFipe(fipe, custo);
+    assert.equal(r.ok, true, `${nome} é match correto — não pode ser rejeitado`);
+  }
+});
+
+test("teto: Land Cruiser real (ratio 3.38, match correto) não é rejeitado", () => {
+  // Trade-in 2008 comprado a R$ 31.420 valendo R$ 106.218. Match correto.
+  // Prova que o falso positivo do teto não tem topo: um usado velho pode valer
+  // muitas vezes o que a loja pagou.
+  const r = validarPlausibilidadeFipe(106_218, 31_420.32);
+  assert.equal(r.ok, true);
+  assert.equal(r.revisaoRecomendada, true, "não rejeita, mas pede confirmação humana");
+});
+
+test("teto: Kwid→Kangoo real (ratio 3.42, match ERRADO) também vai pra revisão", () => {
+  // Mesmo ratio do Land Cruiser acima, veredito oposto — e o score os ordena ao
+  // contrário da verdade (0.625 no errado, 0.571 no certo). Nenhum sinal
+  // automático decide, então o item é gravado sem confirmação e um humano decide.
+  const r = validarPlausibilidadeFipe(241_241, 70_563.17);
+  assert.equal(r.ok, true);
+  assert.equal(r.revisaoRecomendada, true);
+});
+
+test("teto: item em revisão NÃO alimenta precificação até um humano confirmar", () => {
+  const emRevisao = item({ chassi: "K", score: 0.625, plausibilidadeVerificada: false });
+  assert.equal(isFipeConfirmado(emRevisao), false);
+  assert.equal(precoFipeConfiavel({ items: { K: emRevisao } }, "K"), null);
+});
+
+test("piso segue REJEITANDO — a assimetria é intencional", () => {
+  const custo = 100_000;
+  const abaixo = validarPlausibilidadeFipe(50_000, custo);
+  assert.equal(abaixo.ok, false, "abaixo do piso a evidência é conclusiva");
+  assert.equal(abaixo.revisaoRecomendada, false);
+
+  const acima = validarPlausibilidadeFipe(300_000, custo);
+  assert.equal(acima.ok, true, "acima do teto a evidência é ambígua");
+  assert.equal(acima.revisaoRecomendada, true);
 });
 
 test("guard: dentro da faixa é aceito", () => {
@@ -168,6 +228,7 @@ test("guard: custo_total null não aplica o guard e não quebra", () => {
   const r = validarPlausibilidadeFipe(RANGER_FIPE_CONTAMINADA, null);
   assert.equal(r.ok, true, "sem custo não dá pra validar — não bloqueia");
   assert.equal(r.aplicado, false, "mas registra que nada foi verificado");
+  assert.equal(r.revisaoRecomendada, false);
 });
 
 test("guard: custo_total zero, undefined e NaN também não aplicam o guard", () => {

@@ -147,6 +147,10 @@ export function FipeBatchRunner() {
     // ano não encontrados, falha de API, preço implausível rejeitado); os itens
     // gravados porém não confiáveis já são contados por `totalNaoConfirmados`.
     const erros = batch.erros.filter((e) => !batch.items[e.chassi]).length;
+    // Conjunto pequeno e acionável: FIPE muito acima do custo pode ser compra
+    // bem-feita ou match errado, e nenhum sinal automático decide. Vale destaque
+    // próprio porque um clique no drawer resolve cada um.
+    const emRevisao = batch.erros.filter((e) => e.motivo === "revisao-recomendada").length;
     const cobertura = batch.totalVeiculos > 0 ? (totalComFipe / batch.totalVeiculos) * 100 : 0;
     return (
       <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4 shadow-[var(--shadow-sm)]">
@@ -164,6 +168,12 @@ export function FipeBatchRunner() {
                   <span className="text-amber-700">
                     {" "}
                     · {formatInt(totalNaoConfirmados)} não confirmada{totalNaoConfirmados === 1 ? "" : "s"}
+                  </span>
+                )}
+                {emRevisao > 0 && (
+                  <span className="text-amber-700">
+                    {" "}
+                    · {formatInt(emRevisao)} aguardando conferência (FIPE bem acima do custo)
                   </span>
                 )}
               </p>
