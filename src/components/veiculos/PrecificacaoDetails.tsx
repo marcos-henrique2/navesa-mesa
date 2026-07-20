@@ -16,6 +16,7 @@ import type { DiagnosticoResult } from "@/lib/pricing/diagnostico";
 import type { PrecoSuggestion } from "@/lib/pricing/suggest";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import { formatBRL, formatInt } from "@/lib/utils";
+import { formatReferenciaCurta } from "@/lib/fipe/service";
 
 // ─── Breakdown do cálculo ───────────────────────────────────────────────────
 
@@ -24,17 +25,24 @@ export function BreakdownAjustes({
   medianaKm,
   veiculo,
   sugestao,
+  fipeReferencia,
 }: {
   diagnostico: DiagnosticoResult;
   medianaKm: number | null;
   veiculo: VeiculoParsed;
   sugestao: PrecoSuggestion;
+  /** Tabela FIPE de origem do preço (`"julho/2026"`), ou `null` no legado. */
+  fipeReferencia: string | null;
 }) {
   const baseProxy = veiculo.valor_aquisicao != null ? veiculo.valor_aquisicao * 1.18 : null;
   // `diagnostico.precoFipe` já vem filtrado por confiança (usePrecificacao):
   // match não confirmado chega como null e cai no proxy de custo.
+  //
+  // A referência entra aqui porque esta lista é a fórmula AUDITÁVEL do preço
+  // esperado: sem o mês, a primeira linha não é reproduzível.
+  const refCurtaBreakdown = formatReferenciaCurta(fipeReferencia);
   const baseRefLabel = diagnostico.precoFipe != null
-    ? `FIPE: ${formatBRL(diagnostico.precoFipe)}`
+    ? `FIPE${refCurtaBreakdown ? ` ${refCurtaBreakdown}` : ""}: ${formatBRL(diagnostico.precoFipe)}`
     : `FIPE não confirmada — usando custo × 1,18 (proxy): ${formatBRL(baseProxy)}`;
   const baseClasseLabel = `Base classe (${formatPct(diagnostico.baseClassePct)})`;
 
@@ -74,13 +82,17 @@ export function BreakdownAjustes({
 
 export function FipeSecao({
   fipeBatchPreco,
+  fipeReferencia,
   modeloNbs,
   onAbrirDrawer,
 }: {
   fipeBatchPreco: number | null;
+  /** Tabela FIPE de origem do preço (`"julho/2026"`), ou `null` no legado. */
+  fipeReferencia: string | null;
   modeloNbs: string;
   onAbrirDrawer: () => void;
 }) {
+  const refCurta = formatReferenciaCurta(fipeReferencia);
   return (
     <section>
       <h4 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider opacity-70">
@@ -91,9 +103,16 @@ export function FipeSecao({
         <p className="font-mono text-[var(--text-body)]">{modeloNbs}</p>
         <div className="mt-2 flex items-center justify-between gap-3">
           <div>
-            <p className="text-[10px] uppercase tracking-wider opacity-60">Preço FIPE atual</p>
+            {/* "atual" saiu do rótulo: o preço é de uma tabela mensal específica,
+                e chamá-lo de atual foi parte do que escondeu a defasagem. */}
+            <p className="text-[10px] uppercase tracking-wider opacity-60">Preço FIPE</p>
             <p className="font-bold tabular-nums">
               {fipeBatchPreco != null ? formatBRL(fipeBatchPreco) : "—"}
+              {fipeBatchPreco != null && refCurta && (
+                <span className="ml-1.5 font-normal text-[10px] uppercase tracking-wider opacity-60">
+                  {refCurta}
+                </span>
+              )}
             </p>
           </div>
           <button

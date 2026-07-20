@@ -47,8 +47,11 @@ export function FipeBatchRunner() {
   }, [veiculos]);
 
   const limpar = useCallback(() => {
-    // `clearBatch` já limpa o localStorage FIPE junto com a tabela.
-    if (!confirm("Limpar o cache de preços FIPE? Você vai precisar rodar de novo.")) return;
+    // `clearBatch` limpa a tabela `fipe_batch` e o cache em memória — NÃO o
+    // cache de chamadas da API no localStorage. Desde que as chaves passaram a
+    // incluir a referência FIPE, o valor de um mês fechado é imutável: re-buscar
+    // devolveria exatamente o mesmo número, ao custo de milhares de requisições.
+    if (!confirm("Limpar os preços FIPE salvos? Você vai precisar rodar de novo.")) return;
     clearBatch();
     setProgresso(null);
   }, []);

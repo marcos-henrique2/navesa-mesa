@@ -59,6 +59,10 @@ function item(over: Partial<BatchFipeItem> = {}): BatchFipeItem {
     },
     score: 0.92,
     plausibilidadeVerificada: true,
+    // Item "bom" por default precisa da tabela FIPE carimbada: desde a migration
+    // 022, preço sem referência não conta como confirmado (ver isFipeConfirmado).
+    fipeReferencia: "julho/2026",
+    fipeReferenciaCod: 335,
     ...over,
   };
 }

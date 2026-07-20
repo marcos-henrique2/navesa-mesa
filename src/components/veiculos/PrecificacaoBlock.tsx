@@ -40,6 +40,7 @@ import {
   type PrecoAlvoRow,
 } from "@/lib/data/preco-alvo";
 import { useFipeDirty } from "@/lib/fipe/useFipeDirty";
+import { formatReferenciaCurta } from "@/lib/fipe/service";
 import { formatBRL, cn } from "@/lib/utils";
 import { usePrecificacao } from "./usePrecificacao";
 import { ConfidenceChip, type ConfidenceChipType } from "./ConfidenceChip";
@@ -67,7 +68,8 @@ import {
 // ═════════════════════════════════════════════════════════════════════════════
 
 export function PrecificacaoBlock({ veiculo }: { veiculo: VeiculoParsed }) {
-  const { diagnostico, sugestao, medianaKm, cautelar, fipeBatchPreco } = usePrecificacao(veiculo);
+  const { diagnostico, sugestao, medianaKm, cautelar, fipeBatchPreco, fipeReferencia } =
+    usePrecificacao(veiculo);
 
   if (!diagnostico || !sugestao) return null;
 
@@ -79,6 +81,7 @@ export function PrecificacaoBlock({ veiculo }: { veiculo: VeiculoParsed }) {
       medianaKm={medianaKm}
       cautelar={cautelar}
       fipeBatchPreco={fipeBatchPreco}
+      fipeReferencia={fipeReferencia}
     />
   );
 }
@@ -90,6 +93,7 @@ function PrecificacaoView({
   medianaKm,
   cautelar,
   fipeBatchPreco,
+  fipeReferencia,
 }: {
   veiculo: VeiculoParsed;
   diagnostico: DiagnosticoResult;
@@ -97,6 +101,8 @@ function PrecificacaoView({
   medianaKm: number | null;
   cautelar: StatusCautelar | null;
   fipeBatchPreco: number | null;
+  /** Tabela FIPE de origem do preço (`"julho/2026"`), ou `null` no legado. */
+  fipeReferencia: string | null;
 }) {
   const aparencia = APARENCIA[diagnostico.status];
   const { Icon } = aparencia;
@@ -361,8 +367,11 @@ function PrecificacaoView({
   const tituloContexto = TITULO_POR_STATUS[diagnostico.status];
 
   // ─ FIPE summary pro accordion ─
+  // O resumo fechado do accordion é onde o número mais aparece — carrega a
+  // tabela junto pra que "FIPE R$ X" nunca seja lido sem saber de que mês é.
+  const refCurta = formatReferenciaCurta(fipeReferencia);
   const fipeMatch = fipeBatchPreco != null
-    ? `FIPE ${formatBRL(fipeBatchPreco)}`
+    ? `FIPE${refCurta ? ` ${refCurta}` : ""} ${formatBRL(fipeBatchPreco)}`
     : "Sem FIPE";
   const totalAvisos = chips.length + avisosOperacionais.length;
   const accordionSummary = (
@@ -524,6 +533,7 @@ function PrecificacaoView({
                   medianaKm={medianaKm}
                   veiculo={veiculo}
                   sugestao={sugestao}
+                  fipeReferencia={fipeReferencia}
                 />
               </section>
             )}
@@ -564,6 +574,7 @@ function PrecificacaoView({
             {/* FIPE & matching */}
             <FipeSecao
               fipeBatchPreco={fipeBatchPreco}
+              fipeReferencia={fipeReferencia}
               modeloNbs={veiculo.modelo}
               onAbrirDrawer={() => setDrawerOpen(true)}
             />

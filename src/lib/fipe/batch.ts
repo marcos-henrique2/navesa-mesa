@@ -15,9 +15,16 @@
  */
 
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
-import type { FipeMatch } from "./types";
+import type { FipeMatch, FipeReferencia } from "./types";
 import { findMarca, findModelos, findAno } from "./matcher";
-import { getMarcas, getModelos, getAnos, getValor, parseFipeValor, clearFipeLocalCache } from "./service";
+import {
+  getMarcas,
+  getModelos,
+  getAnos,
+  getValor,
+  getReferenciaAtual,
+  parseFipeValor,
+} from "./service";
 import {
   loadBatchFromSupabase,
   saveBatchToSupabase,
@@ -52,6 +59,20 @@ export type BatchFipeItem = {
    * depois de um reload. Por isso o sinal é persistido, não só reportado.
    */
   plausibilidadeVerificada: boolean;
+  /**
+   * Rótulo da tabela FIPE de onde o preço veio (`"julho/2026"`).
+   *
+   * `null` = linha gravada antes da migration 022, quando a referência não era
+   * registrada. Essas são justamente as linhas do bug de defasagem: o cache
+   * antigo tinha TTL de 30 dias e chave SEM referência, então `fipe_batch`
+   * chegou a ter preços de tabelas diferentes convivendo (medido: R$ 5.841 de
+   * diferença no mesmo carro entre junho e julho/2026). Sem saber de qual mês
+   * cada número veio, nenhum deles é auditável — por isso `isFipeConfirmado`
+   * trata `null` como não confirmado.
+   */
+  fipeReferencia: string | null;
+  /** Código numérico da referência (`335`) — é o que reproduz a consulta na API. */
+  fipeReferenciaCod: number | null;
 };
 
 export type BatchFipeError = {
@@ -66,6 +87,8 @@ export type BatchFipeError = {
     | "score-baixo"
     /** Match aceito, mas sem `custo_total` — o guard de plausibilidade não pôde rodar. */
     | "sem-custo-referencia"
+    /** Preço sem tabela FIPE registrada — não é auditável nem reproduzível. */
+    | "sem-referencia-fipe"
     /** FIPE muito acima do custo: pode ser compra bem-feita OU match errado. Humano decide. */
     | "revisao-recomendada";
   detalhe?: string;
@@ -166,18 +189,41 @@ export function validarPlausibilidadeFipe(
 }
 
 /**
- * `true` só quando as DUAS provas existem: o nome do modelo casou bem (score) e
- * o preço foi confrontado com o custo do carro (plausibilidade verificada).
+ * `true` só quando as TRÊS provas existem: o nome do modelo casou bem (score),
+ * o preço foi confrontado com o custo do carro (plausibilidade verificada) e
+ * sabemos de QUAL tabela FIPE o número veio (referência).
  *
- * Exigir as duas é o que impede o caminho de vendas — que rodava sem
- * `custo_total` — de produzir linhas que parecem confirmadas mas nunca passaram
- * por nenhuma checagem de valor.
+ * As duas primeiras impedem que o caminho de vendas — que rodava sem
+ * `custo_total` — produza linhas que parecem confirmadas mas nunca passaram por
+ * checagem de valor.
+ *
+ * A terceira é a que fecha a defasagem: um preço sem referência pode ser de
+ * qualquer mês, e meses vizinhos diferem em milhares de reais no mesmo carro.
+ * "Está certo" e "está desatualizado" são indistinguíveis sem ela, então o
+ * número não pode alimentar precificação — cai no proxy de custo até o batch
+ * rodar de novo e carimbar a tabela.
  */
 export function isFipeConfirmado(item: BatchFipeItem | null | undefined): boolean {
   if (!item) return false;
   if (item.score == null) return false;
   if (!item.plausibilidadeVerificada) return false;
+  if (!item.fipeReferencia) return false;
   return item.score >= FIPE_SCORE_MIN && item.precoFipe > 0;
+}
+
+/**
+ * Item do batch utilizável como referência de precificação, ou `null`.
+ *
+ * Existe pra UI conseguir mostrar preço E tabela juntos — exibir o valor sem
+ * dizer de que mês ele é foi o que deixou a defasagem invisível pro usuário.
+ */
+export function itemFipeConfiavel(
+  batch: { items: Record<string, BatchFipeItem> } | null | undefined,
+  chassi: string,
+): BatchFipeItem | null {
+  const item = batch?.items?.[chassi];
+  if (!item || !isFipeConfirmado(item)) return null;
+  return item;
 }
 
 /**
@@ -190,9 +236,7 @@ export function precoFipeConfiavel(
   batch: { items: Record<string, BatchFipeItem> } | null | undefined,
   chassi: string,
 ): number | null {
-  const item = batch?.items?.[chassi];
-  if (!item || !isFipeConfirmado(item)) return null;
-  return item.precoFipe;
+  return itemFipeConfiavel(batch, chassi)?.precoFipe ?? null;
 }
 
 /** Quantos chassis do batch têm FIPE efetivamente confirmada. */
@@ -333,11 +377,30 @@ export async function runFipeBatch(
     grupos.get(k)!.push(v);
   }
 
-  // 2) Baixa marcas FIPE uma vez (cacheado)
-  report({ fase: "marcas", atual: 0, total: grupos.size, mensagem: "Carregando marcas FIPE...", matchesAteAgora: 0, errosAteAgora: 0 });
-  const fipeMarcas = await getMarcas();
+  // 2) Descobre a referência corrente ANTES de qualquer consulta.
+  //
+  // É o pivô de toda a rodada: fixa a tabela em cada requisição e é gravada
+  // junto do preço. Se falhar, o batch inteiro aborta — gravar preço sem saber
+  // de que mês ele é foi exatamente o que produziu a defasagem que este código
+  // corrige. Melhor não ter número do que ter um número não auditável.
+  report({ fase: "marcas", atual: 0, total: grupos.size, mensagem: "Identificando a tabela FIPE do mês...", matchesAteAgora: 0, errosAteAgora: 0 });
+  let ref: FipeReferencia;
+  try {
+    ref = await getReferenciaAtual();
+  } catch (err) {
+    const detalhe = err instanceof Error ? err.message : String(err);
+    report({ fase: "erro", atual: 0, total: grupos.size, mensagem: "Não foi possível identificar a tabela FIPE.", matchesAteAgora: 0, errosAteAgora: 0 });
+    throw new Error(
+      `Não foi possível identificar a tabela FIPE de referência — nenhum preço foi buscado nem gravado, ` +
+        `porque preço sem tabela não é auditável. Tente de novo em alguns minutos. Detalhe: ${detalhe}`,
+    );
+  }
 
-  // 3) Resolve cada grupo
+  // 3) Baixa marcas FIPE uma vez (cacheado por referência)
+  report({ fase: "marcas", atual: 0, total: grupos.size, mensagem: `Carregando marcas FIPE (${ref.mes})...`, matchesAteAgora: 0, errosAteAgora: 0 });
+  const fipeMarcas = await getMarcas(ref.codigo);
+
+  // 4) Resolve cada grupo
   const items: Record<string, BatchFipeItem> = {};
   const erros: BatchFipeError[] = [];
   let matches = 0;
@@ -364,7 +427,7 @@ export async function runFipeBatch(
       }
 
       // Modelos (cacheado pela primeira marca)
-      const fipeModelos = await getModelos(fipeMarca.codigo);
+      const fipeModelos = await getModelos(ref.codigo, fipeMarca.codigo);
       const modeloMatches = findModelos(sample.modelo, fipeModelos, 1, sample.combustivel ?? null);
       if (modeloMatches.length === 0) {
         for (const v of veiculosGrupo) erros.push({ chassi: v.chassi, modelo: v.modelo, motivo: "modelo-nao-encontrado" });
@@ -374,7 +437,7 @@ export async function runFipeBatch(
       const score = modeloMatches[0].score;
 
       // Anos
-      const fipeAnos = await getAnos(fipeMarca.codigo, fipeModelo.codigo);
+      const fipeAnos = await getAnos(ref.codigo, fipeMarca.codigo, fipeModelo.codigo);
       const fipeAno = findAno(sample.ano_modelo, sample.combustivel, fipeAnos);
       if (!fipeAno) {
         for (const v of veiculosGrupo) erros.push({ chassi: v.chassi, modelo: v.modelo, motivo: "ano-nao-encontrado" });
@@ -382,7 +445,7 @@ export async function runFipeBatch(
       }
 
       // Valor
-      const fipeValor = await getValor(fipeMarca.codigo, fipeModelo.codigo, fipeAno.codigo);
+      const fipeValor = await getValor(ref, fipeMarca.codigo, fipeModelo.codigo, fipeAno.codigo);
       const precoFipe = parseFipeValor(fipeValor.Valor);
       if (!Number.isFinite(precoFipe) || precoFipe <= 0) {
         for (const v of veiculosGrupo) erros.push({ chassi: v.chassi, modelo: v.modelo, motivo: "erro-api", detalhe: `Valor inválido: ${fipeValor.Valor}` });
@@ -426,6 +489,8 @@ export async function runFipeBatch(
           match,
           score,
           plausibilidadeVerificada: plausivel.aplicado && !plausivel.revisaoRecomendada,
+          fipeReferencia: ref.mes,
+          fipeReferenciaCod: ref.codigo,
         };
 
         if (plausivel.revisaoRecomendada) {
@@ -536,16 +601,26 @@ export function batchIdadeHoras(): number | null {
 }
 
 /**
- * Limpa o batch: cache em memória + localStorage FIPE + tabela `fipe_batch`.
+ * Limpa o batch: cache em memória + tabela `fipe_batch`.
  *
- * O `clearFipeLocalCache()` é obrigatório aqui — limpar só a tabela deixava o
- * cache de 30 dias do localStorage reproduzir os mesmos matches errados na
- * próxima execução.
+ * Deixou de limpar o cache FIPE do localStorage, e isso é uma mudança
+ * deliberada. Aquela chamada existia porque o cache antigo tinha TTL de 30 dias
+ * e chave SEM referência: rodar o batch de novo devolvia as mesmas listas e os
+ * mesmos matches errados, então só nuking resolvia.
+ *
+ * Com as chaves por referência isso se inverteu. O valor de uma referência
+ * fechada é imutável — re-buscar devolve exatamente o mesmo número. Limpar
+ * passou a custar milhares de requisições contra uma API gratuita (com risco
+ * real de 429 no meio da rodada, que vira `erro-api` em dezenas de chassis) em
+ * troca de zero correção. A virada de mês já invalida o que precisa ser
+ * invalidado, sozinha, porque as chaves novas dão miss.
+ *
+ * `clearFipeLocalCache()` continua exportado pra uso excepcional (resposta
+ * corrompida da API, depuração).
  */
 export function clearBatch(): void {
   cached = null;
   loaded = true;
-  clearFipeLocalCache();
   notify();
   clearBatchSupabase().catch((err) => console.warn("Falha ao limpar batch FIPE no Supabase:", err));
 }

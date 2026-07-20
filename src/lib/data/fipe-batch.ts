@@ -17,6 +17,10 @@ type FipeBatchRow = {
   score: number | null;
   /** Guard de plausibilidade rodou e aprovou (migration 021). `false` no legado. */
   plausibilidade_verificada: boolean | null;
+  /** Tabela FIPE de origem do preço, ex. `"julho/2026"` (migration 022). `null` no legado. */
+  fipe_referencia: string | null;
+  /** Código numérico da referência, ex. `335` (migration 022). Reproduz a consulta. */
+  fipe_referencia_cod: number | null;
   atualizado_em: string;
 };
 
@@ -35,6 +39,10 @@ function fromRow(r: FipeBatchRow): BatchFipeItem {
     score: r.score == null ? null : Number(r.score),
     // `null` (coluna ausente / linha legada) é lido como NÃO verificado.
     plausibilidadeVerificada: r.plausibilidade_verificada === true,
+    // String vazia é tratada como ausente: um rótulo em branco não identifica
+    // tabela nenhuma e não pode passar por referência válida.
+    fipeReferencia: r.fipe_referencia?.trim() ? r.fipe_referencia.trim() : null,
+    fipeReferenciaCod: r.fipe_referencia_cod == null ? null : Number(r.fipe_referencia_cod),
   };
 }
 
@@ -50,7 +58,43 @@ function toRow(item: BatchFipeItem, timestamp: number): Omit<FipeBatchRow, "atua
     fipe_ano_nome: item.match.anoNome,
     score: item.score,
     plausibilidade_verificada: item.plausibilidadeVerificada,
+    fipe_referencia: item.fipeReferencia,
+    fipe_referencia_cod: item.fipeReferenciaCod,
     atualizado_em: new Date(timestamp).toISOString(),
+  };
+}
+
+/**
+ * Traduz "por que essa linha não conta como confirmada" num motivo exibível.
+ *
+ * A ordem importa: o score é a falha mais grave (o carro pode estar casado com
+ * outro modelo), a referência vem em seguida (o carro está certo, mas o preço
+ * pode ser de qualquer mês), e a plausibilidade por último (preço nunca
+ * confrontado com o custo).
+ */
+function motivoNaoConfirmado(item: BatchFipeItem): Pick<BatchFipeError, "motivo" | "detalhe"> {
+  if (item.score == null) {
+    return {
+      motivo: "score-baixo",
+      detalhe: "match sem score registrado (anterior à migration 021) — reveja ou rode o batch de novo",
+    };
+  }
+  if (item.score < FIPE_SCORE_MIN) {
+    return {
+      motivo: "score-baixo",
+      detalhe: `score ${item.score.toFixed(2)} abaixo do mínimo de confiança`,
+    };
+  }
+  if (!item.fipeReferencia) {
+    return {
+      motivo: "sem-referencia-fipe",
+      detalhe:
+        "preço sem tabela FIPE registrada (anterior à migration 022) — pode ser de qualquer mês. Rode o batch de novo pra carimbar a referência.",
+    };
+  }
+  return {
+    motivo: "sem-custo-referencia",
+    detalhe: "preço nunca confrontado com o custo do veículo (importado sem custo_total)",
   };
 }
 
@@ -74,19 +118,13 @@ export async function loadBatchFromSupabase(): Promise<BatchResult | null> {
     const item = fromRow(r);
     items[r.chassi] = item;
     if (!isFipeConfirmado(item)) {
-      // Os dois motivos são reconstruídos: antes só `score-baixo` voltava, então
+      // Os três motivos são reconstruídos: antes só `score-baixo` voltava, então
       // uma linha com score alto que NUNCA passou pelo guard de plausibilidade
       // reaparecia como totalmente confirmada depois de um F5.
-      const semScore = item.score == null || item.score < FIPE_SCORE_MIN;
       erros.push({
         chassi: r.chassi,
         modelo: r.fipe_modelo_nome ?? "—",
-        motivo: semScore ? "score-baixo" : "sem-custo-referencia",
-        detalhe: semScore
-          ? item.score == null
-            ? "match sem score registrado (anterior à migration 021) — reveja ou rode o batch de novo"
-            : `score ${item.score.toFixed(2)} abaixo do mínimo de confiança`
-          : "preço nunca confrontado com o custo do veículo (importado sem custo_total)",
+        ...motivoNaoConfirmado(item),
       });
     }
     const t = new Date(r.atualizado_em).getTime();
@@ -105,7 +143,25 @@ export async function loadBatchFromSupabase(): Promise<BatchResult | null> {
 
 export async function saveBatchToSupabase(result: BatchResult): Promise<void> {
   const sb = getSupabase();
-  const rows = Object.values(result.items).map((it) => toRow(it, result.timestamp));
+  const itens = Object.values(result.items);
+
+  // Invariante de escrita: preço sem tabela de referência não entra no banco.
+  //
+  // `runFipeBatch` já aborta antes de buscar qualquer preço quando não consegue
+  // resolver a referência, e o drawer sempre carimba a que usou — então chegar
+  // aqui sem referência é bug de programação, não caso de borda operacional.
+  // Falhar alto é o certo: gravar em silêncio recria exatamente a situação que
+  // a migration 022 existe pra encerrar (preço não auditável, impossível de
+  // conferir contra o Auto Avaliar).
+  const semRef = itens.filter((it) => !it.fipeReferencia);
+  if (semRef.length > 0) {
+    throw new Error(
+      `saveBatchToSupabase: ${semRef.length} item(ns) sem referência FIPE (ex.: chassi ${semRef[0].chassi}). ` +
+        `Nada foi gravado — preço sem tabela de origem não é auditável.`,
+    );
+  }
+
+  const rows = itens.map((it) => toRow(it, result.timestamp));
   if (rows.length === 0) return;
   for (const grupo of chunk(rows)) {
     const { error } = await sb.from("fipe_batch").upsert(grupo, { onConflict: "chassi" });

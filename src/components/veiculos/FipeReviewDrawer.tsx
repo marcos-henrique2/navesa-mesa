@@ -22,8 +22,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, Loader2, RefreshCw, X } from "lucide-react";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
-import type { FipeMarca, FipeModelo, FipeAno, FipeMatch } from "@/lib/fipe/types";
-import { getMarcas, getModelos, getAnos, getValor, parseFipeValor } from "@/lib/fipe/service";
+import type { FipeMarca, FipeModelo, FipeAno, FipeMatch, FipeReferencia } from "@/lib/fipe/types";
+import {
+  getMarcas,
+  getModelos,
+  getAnos,
+  getValor,
+  getReferenciaAtual,
+  parseFipeValor,
+  formatReferenciaCurta,
+} from "@/lib/fipe/service";
 import { findMarca, findModelos, findAno } from "@/lib/fipe/matcher";
 import { saveMatch, forgetMatch, forgetModelMatch, countSimilarVeiculos } from "@/lib/store/fipeMatches";
 import { upsertBatchItem, SCORE_MANUAL } from "@/lib/fipe/batch";
@@ -39,7 +47,11 @@ type Props = {
 type LoadState =
   | { kind: "idle" }
   | { kind: "loading"; msg: string }
-  | { kind: "ready"; marca: FipeMarca; modelos: FipeModelo[]; sugeridos: FipeModelo[] }
+  // `ref` viaja junto no estado de propósito: a MESMA referência que listou os
+  // modelos precisa ser a que busca o valor e a que é gravada. Resolver de novo
+  // no confirmar abriria uma janela pra virada de mês entre abrir o drawer e
+  // clicar — e o preço seria carimbado com a tabela errada.
+  | { kind: "ready"; ref: FipeReferencia; marca: FipeMarca; modelos: FipeModelo[]; sugeridos: FipeModelo[] }
   | { kind: "error"; message: string };
 
 export function FipeReviewDrawer({ veiculo, open, onClose }: Props) {
@@ -62,15 +74,16 @@ export function FipeReviewDrawer({ veiculo, open, onClose }: Props) {
     let ativo = true;
     (async () => {
       try {
-        const marcas = await getMarcas();
+        const ref = await getReferenciaAtual();
+        const marcas = await getMarcas(ref.codigo);
         const marca = veiculo.marca ? findMarca(veiculo.marca, marcas) : null;
         if (!marca) {
           if (ativo) setLoad({ kind: "error", message: `Marca "${veiculo.marca ?? "—"}" não encontrada na FIPE.` });
           return;
         }
-        const modelos = await getModelos(marca.codigo);
+        const modelos = await getModelos(ref.codigo, marca.codigo);
         const sugeridos = findModelos(veiculo.modelo, modelos, 5, veiculo.combustivel ?? null).map((m) => m.modelo);
-        if (ativo) setLoad({ kind: "ready", marca, modelos, sugeridos });
+        if (ativo) setLoad({ kind: "ready", ref, marca, modelos, sugeridos });
       } catch (err) {
         if (ativo) setLoad({ kind: "error", message: err instanceof Error ? err.message : "Erro desconhecido" });
       }
@@ -103,7 +116,7 @@ export function FipeReviewDrawer({ veiculo, open, onClose }: Props) {
     if (load.kind !== "ready" || !escolhido || confirmando) return;
     setConfirmando(true);
     try {
-      const anos = await getAnos(load.marca.codigo, escolhido.codigo);
+      const anos = await getAnos(load.ref.codigo, load.marca.codigo, escolhido.codigo);
       // Sem `?? anos[0]`: cair no primeiro ano da lista é exatamente como uma
       // Ranger 2024 herdava o preço de uma geração 2005-2012. Se o ano do carro
       // não existe nesse modelo FIPE, o modelo escolhido está errado.
@@ -113,7 +126,7 @@ export function FipeReviewDrawer({ veiculo, open, onClose }: Props) {
           `Esse modelo FIPE não tem o ano ${veiculo.ano_modelo ?? "?"}. Escolha outro modelo.`,
         );
       }
-      const valor = await getValor(load.marca.codigo, escolhido.codigo, ano.codigo);
+      const valor = await getValor(load.ref, load.marca.codigo, escolhido.codigo, ano.codigo);
       const precoFipe = parseFipeValor(valor.Valor);
       if (!Number.isFinite(precoFipe) || precoFipe <= 0) {
         throw new Error(`FIPE retornou valor inválido: ${valor.Valor}`);
@@ -155,6 +168,8 @@ export function FipeReviewDrawer({ veiculo, open, onClose }: Props) {
             match,
             score: SCORE_MANUAL,
             plausibilidadeVerificada: true,
+            fipeReferencia: load.ref.mes,
+            fipeReferenciaCod: load.ref.codigo,
           }),
         ),
       );
@@ -243,6 +258,12 @@ export function FipeReviewDrawer({ veiculo, open, onClose }: Props) {
 
           {load.kind === "ready" && (
             <div className="mt-4 space-y-4">
+              {/* Qual tabela está sendo consultada. O preço confirmado aqui será
+                  carimbado com ela — o usuário precisa saber disso antes de decidir. */}
+              <p className="text-[11px] text-[var(--text-muted)]">
+                Tabela FIPE {formatReferenciaCurta(load.ref.mes)}
+              </p>
+
               {load.sugeridos.length > 0 && (
                 <section>
                   <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">

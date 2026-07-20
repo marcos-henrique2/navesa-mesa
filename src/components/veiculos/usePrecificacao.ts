@@ -16,7 +16,7 @@
 import { useMemo } from "react";
 import { useInventory } from "@/lib/store/inventory";
 import { useFipeBatch } from "@/lib/fipe/useFipeBatch";
-import { precoFipeConfiavel } from "@/lib/fipe/batch";
+import { itemFipeConfiavel } from "@/lib/fipe/batch";
 import { useCautelares } from "@/lib/inventory/cautelar";
 import { classificarVeiculo, contarPorModelo } from "@/lib/pricing/classificacao";
 import { calcularDiagnostico, type DiagnosticoResult } from "@/lib/pricing/diagnostico";
@@ -34,6 +34,13 @@ export type UsePrecificacaoResult = {
   cautelar: StatusCautelar | null;
   /** Preço FIPE do batch (já reflete overrides manuais). */
   fipeBatchPreco: number | null;
+  /**
+   * Tabela FIPE de onde `fipeBatchPreco` veio (`"julho/2026"`), ou `null`.
+   *
+   * Anda colada ao preço porque um valor FIPE sem o mês não é conferível: meses
+   * vizinhos diferem em milhares de reais no mesmo carro.
+   */
+  fipeReferencia: string | null;
 };
 
 export function usePrecificacao(veiculo: VeiculoParsed | null): UsePrecificacaoResult {
@@ -54,6 +61,7 @@ export function usePrecificacao(veiculo: VeiculoParsed | null): UsePrecificacaoR
         medianaKm: null,
         cautelar: null,
         fipeBatchPreco: null,
+        fipeReferencia: null,
       };
     }
 
@@ -64,9 +72,12 @@ export function usePrecificacao(veiculo: VeiculoParsed | null): UsePrecificacaoR
       cautelar,
     });
     const { mediana, heuristica } = buscarMedianaKm(medianas, veiculo);
-    // Match não confirmado (score < 0.6) é tratado como ausência de FIPE:
-    // o diagnóstico cai no proxy de custo em vez de precificar sobre um chute.
-    const precoFipe = precoFipeConfiavel(fipeBatch, veiculo.chassi);
+    // Match não confirmado (score < 0.6, plausibilidade não verificada ou sem
+    // referência FIPE) é tratado como ausência de FIPE: o diagnóstico cai no
+    // proxy de custo em vez de precificar sobre um chute ou sobre um preço de
+    // mês desconhecido.
+    const fipeItem = itemFipeConfiavel(fipeBatch, veiculo.chassi);
+    const precoFipe = fipeItem?.precoFipe ?? null;
 
     const diagnostico = calcularDiagnostico({
       veiculo,
@@ -85,6 +96,7 @@ export function usePrecificacao(veiculo: VeiculoParsed | null): UsePrecificacaoR
       medianaKm: mediana,
       cautelar,
       fipeBatchPreco: precoFipe,
+      fipeReferencia: fipeItem?.fipeReferencia ?? null,
     };
   }, [veiculo, veiculos, vendas, custosPorPlaca, fipeBatch, cautelares, medianas]);
 }

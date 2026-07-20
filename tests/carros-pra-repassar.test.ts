@@ -27,13 +27,17 @@ function fipeBatch(items: Record<string, number>): BatchResult {
     items: Object.fromEntries(
       Object.entries(items).map(([chassi, precoFipe]) => [
         chassi,
-        // As duas provas de confiança precisam estar presentes: sem elas o match
+        // As TRÊS provas de confiança precisam estar presentes: sem elas o match
         // conta como não confirmado e o cálculo cai no proxy de preço, não na FIPE.
+        // A referência entrou na migration 022 — preço de mês desconhecido não
+        // alimenta precificação.
         {
           chassi,
           precoFipe,
           score: 0.9,
           plausibilidadeVerificada: true,
+          fipeReferencia: "julho/2026",
+          fipeReferenciaCod: 335,
           match: { confianca: "alta", razao: "test" },
         },
       ]),
