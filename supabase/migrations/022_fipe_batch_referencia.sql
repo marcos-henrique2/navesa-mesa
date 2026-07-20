@@ -101,7 +101,13 @@ end $$;
 -- Suporta a pergunta operacional que motivou tudo isso: "o estoque está todo
 -- na mesma tabela FIPE, ou tem mês misturado?"
 --
---   select fipe_referencia, count(*) from fipe_batch group by 1 order by 1;
+--   select fipe_referencia_cod, fipe_referencia, count(*)
+--     from fipe_batch group by 1, 2 order by 1;
+--
+-- O índice é em `fipe_referencia_cod` (não no rótulo textual) porque o código é
+-- o que ordena cronologicamente: 'julho/2026' < 'junho/2026' em ordem
+-- alfabética, o que tornaria o rótulo inútil pra ordenar. Agrupar pelas duas
+-- colunas mantém o índice utilizável e traz o nome do mês junto.
 --
 -- Índice comum (não parcial): a varredura é por agrupamento de TODAS as linhas,
 -- não por um subconjunto — diferente do índice parcial da 021, que serve à

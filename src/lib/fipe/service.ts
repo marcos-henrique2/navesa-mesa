@@ -147,7 +147,19 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`FIPE ${res.status} em ${url}`);
+  if (!res.ok) {
+    // O corpo costuma trazer a explicação real e acionável — o caso concreto é
+    // pedir uma referência fora do plano gratuito, que responde HTTP 402 com
+    // "apenas assinantes pagos podem acessar o histórico de preços extendido".
+    // Sem isso o usuário via só "FIPE 402", que não diz o que fazer.
+    const detalhe = await res
+      .json()
+      .then((body: unknown) =>
+        isRecord(body) && typeof body.error === "string" ? ` — ${body.error}` : "",
+      )
+      .catch(() => "");
+    throw new Error(`FIPE ${res.status} em ${url}${detalhe}`);
+  }
   const data: unknown = await res.json();
   if (isRecord(data) && typeof data.error === "string") {
     throw new Error(`FIPE: ${data.error}`);
@@ -225,7 +237,9 @@ export async function getReferenciaAtual(): Promise<FipeReferencia> {
 /**
  * Compara dois rótulos de mês FIPE ignorando as diferenças de formatação entre
  * endpoints: `/referencias` devolve `"julho/2026"`, o endpoint de valor devolve
- * `"julho de 2026 "` (com " de " e às vezes espaço à direita).
+ * `"julho de 2026"`. A diferença medida é o separador (" de " vs "/"); o `trim`
+ * e a normalização de espaços são defesa contra variação futura, não descrição
+ * de um espaço que exista hoje.
  */
 export function mesmoMesReferencia(a: string, b: string): boolean {
   return normalizarMes(a) === normalizarMes(b);

@@ -72,6 +72,13 @@ export function MigrarParaSupabase() {
             <li>🚗 Estoque: <strong>{formatInt(resultado.veiculosMigrados)}</strong> veículos no novo snapshot (já tinham {formatInt(resultado.jaTinhamNoSupabase.veiculos)} antes)</li>
             <li>📋 Cautelares: <strong>{formatInt(resultado.cautelaresMigrados)}</strong> subiram (já tinham {formatInt(resultado.jaTinhamNoSupabase.cautelares)} antes)</li>
             <li>💲 FIPE batch: <strong>{formatInt(resultado.fipeBatchMigrados)}</strong> preços (já tinham {formatInt(resultado.jaTinhamNoSupabase.fipeBatch)} antes)</li>
+            {resultado.fipeBatchPuladosSemReferencia > 0 && (
+              <li className="opacity-80">
+                ↳ <strong>{formatInt(resultado.fipeBatchPuladosSemReferencia)}</strong> preços FIPE
+                antigos foram pulados por não terem a tabela de referência (mês desconhecido).
+                Rode &quot;Atualizar FIPE&quot; pra recalculá-los.
+              </li>
+            )}
             <li>📸 Fotos KPI: <strong>{formatInt(resultado.snapshotsMigrados)}</strong> fotos (já tinham {formatInt(resultado.jaTinhamNoSupabase.snapshots)} antes)</li>
             <li>💬 Chat: <strong>{formatInt(resultado.chatMensagensMigradas)}</strong> mensagens {resultado.jaTinhamNoSupabase.chat > 0 ? <>(já tinha {formatInt(resultado.jaTinhamNoSupabase.chat)} no Supabase — pulei pra não duplicar)</> : null}</li>
           </ul>

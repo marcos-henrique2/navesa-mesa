@@ -142,7 +142,6 @@ export async function loadBatchFromSupabase(): Promise<BatchResult | null> {
 }
 
 export async function saveBatchToSupabase(result: BatchResult): Promise<void> {
-  const sb = getSupabase();
   const itens = Object.values(result.items);
 
   // Invariante de escrita: preço sem tabela de referência não entra no banco.
@@ -163,6 +162,10 @@ export async function saveBatchToSupabase(result: BatchResult): Promise<void> {
 
   const rows = itens.map((it) => toRow(it, result.timestamp));
   if (rows.length === 0) return;
+
+  // `getSupabase()` só depois da validação: valida a entrada antes de adquirir
+  // o recurso. Também é o que torna a invariante testável sem credenciais.
+  const sb = getSupabase();
   for (const grupo of chunk(rows)) {
     const { error } = await sb.from("fipe_batch").upsert(grupo, { onConflict: "chassi" });
     if (error) throw new Error(`saveBatchToSupabase: ${error.message}`);

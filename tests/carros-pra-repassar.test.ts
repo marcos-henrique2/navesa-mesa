@@ -17,35 +17,52 @@ import {
   resumirRepasse,
 } from "@/lib/analytics/carros-pra-repassar";
 import { veiculo } from "./_mocks";
-import type { BatchResult } from "@/lib/fipe/batch";
+import type { BatchFipeItem, BatchResult } from "@/lib/fipe/batch";
 
 const ANO_REF = 2026; // ano fixo pra testes determinísticos
+
+/**
+ * Monta um `BatchResult` a partir de chassi→preço.
+ *
+ * Tipado como `BatchFipeItem` de verdade (sem `as unknown as`): o cast antigo
+ * escondia que `match` não tinha a forma de `FipeMatch` e deixava o `tsc` passar
+ * enquanto o teste quebrava em runtime — foi assim que a exigência de referência
+ * da migration 022 só apareceu ao rodar a suíte, não no typecheck.
+ */
+function fipeItem(chassi: string, precoFipe: number): BatchFipeItem {
+  return {
+    chassi,
+    precoFipe,
+    // As TRÊS provas de confiança precisam estar presentes: sem elas o match
+    // conta como não confirmado e o cálculo cai no proxy de preço, não na FIPE.
+    // A referência entrou na migration 022 — preço de mês desconhecido não
+    // alimenta precificação.
+    score: 0.9,
+    plausibilidadeVerificada: true,
+    fipeReferencia: "julho/2026",
+    fipeReferenciaCod: 335,
+    match: {
+      marcaCod: "22",
+      marcaNome: "Ford",
+      modeloCod: 8000,
+      modeloNome: "Modelo Teste",
+      anoCod: "2024-3",
+      anoNome: "2024 Diesel",
+    },
+  };
+}
 
 function fipeBatch(items: Record<string, number>): BatchResult {
   return {
     timestamp: 0,
     items: Object.fromEntries(
-      Object.entries(items).map(([chassi, precoFipe]) => [
-        chassi,
-        // As TRÊS provas de confiança precisam estar presentes: sem elas o match
-        // conta como não confirmado e o cálculo cai no proxy de preço, não na FIPE.
-        // A referência entrou na migration 022 — preço de mês desconhecido não
-        // alimenta precificação.
-        {
-          chassi,
-          precoFipe,
-          score: 0.9,
-          plausibilidadeVerificada: true,
-          fipeReferencia: "julho/2026",
-          fipeReferenciaCod: 335,
-          match: { confianca: "alta", razao: "test" },
-        },
-      ]),
+      Object.entries(items).map(([chassi, precoFipe]) => [chassi, fipeItem(chassi, precoFipe)]),
     ),
     erros: [],
     totalGrupos: 0,
     totalVeiculos: Object.keys(items).length,
-  } as unknown as BatchResult;
+    persistenciaErro: null,
+  };
 }
 
 describe("calcularCarrosPraRepassar — critérios objetivos", () => {

@@ -56,6 +56,17 @@ export type MigracaoResultado = {
   veiculosMigrados: number;
   cautelaresMigrados: number;
   fipeBatchMigrados: number;
+  /**
+   * Preços FIPE do localStorage descartados por não terem tabela de referência.
+   *
+   * O cache local é anterior à migration 022 por construção, então esses preços
+   * são de mês desconhecido — podem ser de qualquer tabela mensal, e meses
+   * vizinhos diferem em milhares de reais no mesmo carro. Subir é pior que
+   * descartar: viraria linha não confirmada no banco, ocupando o lugar do
+   * chassi e impedindo que a próxima rodada do batch grave o preço bom.
+   * Mesmo raciocínio da 022 não ter feito backfill.
+   */
+  fipeBatchPuladosSemReferencia: number;
   snapshotsMigrados: number;
   chatMensagensMigradas: number;
   duplicatas: { vendas: number; custos: number };
@@ -229,11 +240,36 @@ export async function migrarLocalStorageParaSupabase(
   }
 
   // FIPE BATCH
+  //
+  // Filtra ANTES de chamar: `saveBatchToSupabase` recusa (com exceção) qualquer
+  // item sem `fipeReferencia`, e o cache local é anterior à migration 022 por
+  // construção — nenhum item dele tem a referência. Sem este filtro a migração
+  // estourava exatamente aqui, no meio: vendas, custos, estoque (com snapshot
+  // novo JÁ inserido) e cautelares subiam, e KPI snapshots e chat nunca subiam.
+  // Sem rollback, e re-rodar duplicaria o snapshot de estoque.
+  //
+  // A invariante em `saveBatchToSupabase` está certa; quem estava errado era
+  // este caller. Descartar é o comportamento correto: esses preços são de mês
+  // desconhecido e o batch os regrava carimbados na próxima rodada.
   let totalFipe = 0;
+  let fipePulados = 0;
   if (fipeBatch && Object.keys(fipeBatch.items).length > 0) {
-    totalFipe = Object.keys(fipeBatch.items).length;
-    report({ fase: "fipe-batch", mensagem: `Subindo ${totalFipe} preços FIPE...` });
-    await saveBatchToSupabase(fipeBatch);
+    const comReferencia: typeof fipeBatch.items = {};
+    for (const [chassi, item] of Object.entries(fipeBatch.items)) {
+      if (item.fipeReferencia) comReferencia[chassi] = item;
+      else fipePulados++;
+    }
+    totalFipe = Object.keys(comReferencia).length;
+    if (totalFipe > 0) {
+      report({ fase: "fipe-batch", mensagem: `Subindo ${totalFipe} preços FIPE...` });
+      await saveBatchToSupabase({ ...fipeBatch, items: comReferencia });
+    }
+    if (fipePulados > 0) {
+      report({
+        fase: "fipe-batch",
+        mensagem: `${fipePulados} preço(s) FIPE sem tabela de referência foram pulados — rode o batch FIPE depois pra recalculá-los.`,
+      });
+    }
   }
 
   // KPI SNAPSHOTS
@@ -263,6 +299,7 @@ export async function migrarLocalStorageParaSupabase(
     veiculosMigrados: veiculos.length,
     cautelaresMigrados: totalCaut,
     fipeBatchMigrados: totalFipe,
+    fipeBatchPuladosSemReferencia: fipePulados,
     snapshotsMigrados: totalSnap,
     chatMensagensMigradas: totalChat,
     duplicatas: { vendas: dupVendas, custos: dupCustos },

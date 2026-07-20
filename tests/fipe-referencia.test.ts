@@ -30,8 +30,10 @@ import {
   __setFipeCacheStorage,
   type CacheStorageLike,
 } from "@/lib/fipe/service";
-import { isFipeConfirmado, type BatchFipeItem } from "@/lib/fipe/batch";
+import { isFipeConfirmado, runFipeBatch, type BatchFipeItem, type BatchResult } from "@/lib/fipe/batch";
+import { saveBatchToSupabase } from "@/lib/data/fipe-batch";
 import type { FipeValor } from "@/lib/fipe/types";
+import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Harness
@@ -382,6 +384,71 @@ test("lista de referências vazia derruba a descoberta em vez de assumir um mês
   setup({ referencias: [] });
   try {
     await assert.rejects(() => getReferenciaAtual(), /referências/i);
+  } finally {
+    teardown();
+  }
+});
+
+test("saveBatchToSupabase RECUSA gravar item sem referência", async () => {
+  // Invariante de escrita no banco. Este teste é o que teria pego, na hora, o
+  // caminho de migração localStorage→Supabase passando itens legados (todos sem
+  // referência por construção) e estourando a migração no meio.
+  const batch = (items: Record<string, BatchFipeItem>): BatchResult => ({
+    timestamp: Date.now(),
+    items,
+    erros: [],
+    totalGrupos: 0,
+    totalVeiculos: Object.keys(items).length,
+    persistenciaErro: null,
+  });
+
+  await assert.rejects(
+    () => saveBatchToSupabase(batch({ A: itemBase({ chassi: "A", fipeReferencia: null }) })),
+    /sem referência FIPE/i,
+  );
+
+  // Um item bom no meio de um ruim não salva o lote: a recusa é do lote inteiro.
+  await assert.rejects(
+    () =>
+      saveBatchToSupabase(
+        batch({
+          A: itemBase({ chassi: "A" }),
+          B: itemBase({ chassi: "B", fipeReferencia: null }),
+        }),
+      ),
+    /1 item\(ns\) sem referência/i,
+  );
+
+  // Lote vazio é no-op, não erro.
+  await assert.doesNotReject(() => saveBatchToSupabase(batch({})));
+});
+
+test("runFipeBatch aborta sem buscar nem gravar quando a referência não resolve", async () => {
+  // Fallback seguro: sem saber a tabela, nenhum preço é buscado nem gravado.
+  // Melhor não ter número do que ter um número não auditável.
+  setup({ referencias: [] });
+  try {
+    const veiculo = {
+      chassi: "9BFXXXXXXXXXXXXXX",
+      marca: "Ford",
+      modelo: "RANGER LIMITED",
+      ano_modelo: 2024,
+      combustivel: "Diesel",
+      custo_total: 250_000,
+    } as unknown as VeiculoParsed;
+
+    await assert.rejects(
+      () => runFipeBatch([veiculo]),
+      /tabela FIPE de referência/i,
+    );
+
+    // Nada além do próprio /referencias pode ter sido chamado.
+    assert.equal(
+      chamadas.filter((c) => !c.url.includes("/referencias")).length,
+      0,
+      "nenhuma consulta de marca/modelo/ano/valor pode acontecer sem referência",
+    );
+    assert.equal(chamadasDeValor().length, 0);
   } finally {
     teardown();
   }

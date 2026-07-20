@@ -25,15 +25,23 @@ export function FipeBatchRunner() {
   const [progresso, setProgresso] = useState<BatchProgress | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
-  const rodar = useCallback(async () => {
+  /**
+   * Roda o batch. `forcarRebusca` descarta o cache local de chamadas da API antes.
+   *
+   * O caminho normal NÃO limpa mais o cache. Ele limpava porque o esquema antigo
+   * tinha TTL de 30 dias e chave SEM referência: reprocessar devolvia as mesmas
+   * listas e os mesmos matches errados. Com as chaves por referência o valor de
+   * um mês fechado é imutável — re-buscar devolve número idêntico, e limpar só
+   * custaria milhares de requisições contra uma API gratuita (com risco de 429
+   * no meio da rodada, que vira `erro-api` em dezenas de chassis). Na virada de
+   * mês as chaves novas dão miss sozinhas.
+   */
+  const rodar = useCallback(async (forcarRebusca = false) => {
     setRodando(true);
     setErro(null);
     setProgresso(null);
     try {
-      // Invalida o cache de 30 dias do localStorage antes de rodar. Sem isso,
-      // "Atualizar" só reprocessava as mesmas listas cacheadas e reproduzia os
-      // mesmos matches errados — o botão parecia funcionar e não corrigia nada.
-      clearFipeLocalCache();
+      if (forcarRebusca) clearFipeLocalCache();
       const r = await runFipeBatch(veiculos, (p) => setProgresso(p));
       // Persistência falhou em silêncio até aqui: a UI dizia "Pronto" com zero
       // linha gravada. Agora vira erro visível.
@@ -45,6 +53,26 @@ export function FipeBatchRunner() {
       setRodando(false);
     }
   }, [veiculos]);
+
+  /**
+   * Escape hatch explícito: descarta o cache local de chamadas da API e re-busca tudo.
+   *
+   * Precisa existir como ação própria porque o cache por referência não expira:
+   * uma resposta corrompida da API gravada sob uma chave de mês fechado ficaria
+   * cacheada até a virada do mês. Antes essa saída existia por acidente, embutida
+   * no "Atualizar" — o que fazia TODA rodada pagar o custo de uma re-busca total.
+   */
+  const forcarRebusca = useCallback(() => {
+    if (
+      !confirm(
+        "Descartar o cache local da FIPE e buscar tudo de novo?\n\n" +
+          "Use só se desconfiar que algum preço veio corrompido da API. " +
+          "A busca refaz marcas, modelos, anos e valores do zero e leva alguns minutos.",
+      )
+    )
+      return;
+    void rodar(true);
+  }, [rodar]);
 
   const limpar = useCallback(() => {
     // `clearBatch` limpa a tabela `fipe_batch` e o cache em memória — NÃO o
@@ -87,7 +115,7 @@ export function FipeBatchRunner() {
             </p>
           </div>
           <button
-            onClick={rodar}
+            onClick={() => rodar()}
             className="inline-flex items-center gap-2 rounded-lg bg-[var(--brand-700)] px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-[var(--brand-800)]"
           >
             <RefreshCw className="h-4 w-4" /> Buscar FIPE
@@ -131,7 +159,7 @@ export function FipeBatchRunner() {
         </div>
         <p className="mt-1 text-xs text-red-700 dark:text-red-300">{erro}</p>
         <button
-          onClick={rodar}
+          onClick={() => rodar()}
           className={cn(
             "mt-2 inline-flex items-center gap-1 rounded-md bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700",
           )}
@@ -184,10 +212,17 @@ export function FipeBatchRunner() {
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={rodar}
+              onClick={() => rodar()}
               className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] px-3 py-1.5 text-xs font-medium text-[var(--text-body)] transition hover:bg-[var(--bg-muted)]"
             >
               <RefreshCw className="h-3 w-3" /> Atualizar
+            </button>
+            <button
+              onClick={forcarRebusca}
+              className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs text-[var(--text-subtle)] transition hover:bg-[var(--bg-muted)] hover:text-[var(--text-body)]"
+              title="Descarta o cache local da FIPE e busca tudo de novo (leva alguns minutos)"
+            >
+              Forçar re-busca
             </button>
             <button
               onClick={limpar}
