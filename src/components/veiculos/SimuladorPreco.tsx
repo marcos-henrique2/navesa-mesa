@@ -27,6 +27,7 @@ import { Calculator, ClipboardCopy, RotateCcw, AlertTriangle, TrendingUp, Trendi
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import type { CustoEstoqueDetalhado } from "@/lib/parsers/nbs-custos-estoque-pdf";
 import { useFipeBatch } from "@/lib/fipe/useFipeBatch";
+import { precoFipeConfiavel } from "@/lib/fipe/batch";
 import { useInventory } from "@/lib/store/inventory";
 import { setPrecoSimulado } from "@/lib/store/simulador-preco";
 import { normalizarPlaca } from "@/lib/utils/placa";
@@ -48,7 +49,7 @@ type Composicao = {
 export function SimuladorPreco({ veiculo }: { veiculo: VeiculoParsed }) {
   const fipeBatch = useFipeBatch();
   const { custosEstoquePorPlaca } = useInventory();
-  const precoFipe = fipeBatch?.items[veiculo.chassi]?.precoFipe ?? null;
+  const precoFipe = precoFipeConfiavel(fipeBatch, veiculo.chassi);
   const custoEstoque = veiculo.placa
     ? custosEstoquePorPlaca[normalizarPlaca(veiculo.placa)] ?? null
     : null;
@@ -371,7 +372,7 @@ function SimuladorView({
             value={calc?.desvioFipePct != null
               ? `${calc.desvioFipePct >= 0 ? "+" : ""}${calc.desvioFipePct.toFixed(1)}%`
               : "—"}
-            sub={precoFipe != null ? `FIPE ${formatBRL(precoFipe)}` : "FIPE não calculada"}
+            sub={precoFipe != null ? `FIPE ${formatBRL(precoFipe)}` : "FIPE não confirmada"}
             tone={
               calc?.desvioFipePct == null ? "neutral"
                 : calc.desvioFipePct > 5 ? "warn"

@@ -15,6 +15,7 @@ import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import type { VendaParsed } from "@/lib/parsers/nbs-vendas-xlsx";
 import type { CustoDetalhado } from "@/lib/parsers/nbs-custos-xls";
 import type { BatchResult } from "@/lib/fipe/batch";
+import { isFipeConfirmado, precoFipeConfiavel } from "@/lib/fipe/batch";
 import type { StatusCautelar } from "@/lib/inventory/cautelar";
 import type { LojaInfo } from "@/lib/store/inventory";
 import {
@@ -161,7 +162,7 @@ function montarResumo(input: ExportInput): Row[] {
     const fipeRecord: Record<string, number> = {};
     if (fipeBatch) {
       for (const [chassi, item] of Object.entries(fipeBatch.items)) {
-        fipeRecord[chassi] = item.precoFipe;
+        if (isFipeConfirmado(item)) fipeRecord[chassi] = item.precoFipe;
       }
     }
     const diagMap = computarDiagnosticoLista({
@@ -280,7 +281,7 @@ function montarEstoque(input: ExportInput): LinhaEstoque[] {
   const fipeRecord: Record<string, number> = {};
   if (fipeBatch) {
     for (const [chassi, item] of Object.entries(fipeBatch.items)) {
-      fipeRecord[chassi] = item.precoFipe;
+      if (isFipeConfirmado(item)) fipeRecord[chassi] = item.precoFipe;
     }
   }
   const diagMap = computarDiagnosticoLista({
@@ -295,8 +296,9 @@ function montarEstoque(input: ExportInput): LinhaEstoque[] {
   for (const v of veiculos) {
     const classif = classifsPorChassi.get(v.chassi);
     const diag = diagMap.get(v.chassi);
-    const fipeItem = fipeBatch?.items[v.chassi];
-    const fipe = fipeItem?.precoFipe ?? null;
+    // Match não confirmado sai do export como célula vazia — exportar um número
+    // errado é pior que exportar nada, porque a planilha circula sem contexto.
+    const fipe = precoFipeConfiavel(fipeBatch, v.chassi);
     const custo = custosPorPlaca[v.placa];
 
     let vsFipePct: number | null = null;

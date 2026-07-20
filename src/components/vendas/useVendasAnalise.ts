@@ -8,7 +8,7 @@ import { agregarMargem, calcMargemVenda } from "@/lib/analytics/margem";
 import { baixarAnaliseNavesa } from "@/lib/export/analise-navesa";
 import { baixarAnaliseNavesaPdf } from "@/lib/export/analise-navesa-pdf";
 import { showSuccessToast, showErrorToast } from "../ui/Toast";
-import { runFipeBatch, type BatchProgress } from "@/lib/fipe/batch";
+import { runFipeBatch, isFipeConfirmado, type BatchProgress } from "@/lib/fipe/batch";
 import { useFipeBatch } from "@/lib/fipe/useFipeBatch";
 import type { SortingState } from "@tanstack/react-table";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
@@ -258,7 +258,7 @@ export function useVendasAnalise() {
         const itemsByChassi = fipeBatch.items;
         for (const v of filtered) {
           const item = itemsByChassi[v.chassi];
-          if (item && item.precoFipe > 0) {
+          if (isFipeConfirmado(item)) {
             mapaFipe.set(v.chassi, item.precoFipe);
           }
         }

@@ -16,6 +16,7 @@
 import { useMemo } from "react";
 import { useInventory } from "@/lib/store/inventory";
 import { useFipeBatch } from "@/lib/fipe/useFipeBatch";
+import { precoFipeConfiavel } from "@/lib/fipe/batch";
 import { useCautelares } from "@/lib/inventory/cautelar";
 import { classificarVeiculo, contarPorModelo } from "@/lib/pricing/classificacao";
 import { calcularDiagnostico, type DiagnosticoResult } from "@/lib/pricing/diagnostico";
@@ -63,7 +64,9 @@ export function usePrecificacao(veiculo: VeiculoParsed | null): UsePrecificacaoR
       cautelar,
     });
     const { mediana, heuristica } = buscarMedianaKm(medianas, veiculo);
-    const precoFipe = fipeBatch?.items[veiculo.chassi]?.precoFipe ?? null;
+    // Match não confirmado (score < 0.6) é tratado como ausência de FIPE:
+    // o diagnóstico cai no proxy de custo em vez de precificar sobre um chute.
+    const precoFipe = precoFipeConfiavel(fipeBatch, veiculo.chassi);
 
     const diagnostico = calcularDiagnostico({
       veiculo,

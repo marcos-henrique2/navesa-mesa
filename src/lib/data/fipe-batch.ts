@@ -1,6 +1,7 @@
 "use client";
 
-import type { BatchFipeItem, BatchResult } from "@/lib/fipe/batch";
+import type { BatchFipeError, BatchFipeItem, BatchResult } from "@/lib/fipe/batch";
+import { isFipeConfirmado } from "@/lib/fipe/batch";
 import { chunk, getSupabase, selectAll } from "./supabase";
 
 type FipeBatchRow = {
@@ -12,6 +13,8 @@ type FipeBatchRow = {
   fipe_modelo_nome: string | null;
   fipe_ano_cod: string | null;
   fipe_ano_nome: string | null;
+  /** Score do match (migration 021). `null` em linhas gravadas antes dela. */
+  score: number | null;
   atualizado_em: string;
 };
 
@@ -27,6 +30,7 @@ function fromRow(r: FipeBatchRow): BatchFipeItem {
       anoCod: r.fipe_ano_cod ?? "",
       anoNome: r.fipe_ano_nome ?? "",
     },
+    score: r.score == null ? null : Number(r.score),
   };
 }
 
@@ -40,13 +44,18 @@ function toRow(item: BatchFipeItem, timestamp: number): Omit<FipeBatchRow, "atua
     fipe_modelo_nome: item.match.modeloNome,
     fipe_ano_cod: item.match.anoCod,
     fipe_ano_nome: item.match.anoNome,
+    score: item.score,
     atualizado_em: new Date(timestamp).toISOString(),
   };
 }
 
 /**
  * Lê todo o batch do Supabase e monta o BatchResult.
- * Erros não persistem (são da execução). totalGrupos é derivado.
+ *
+ * Os erros da EXECUÇÃO não persistem, mas os erros de CONFIANÇA são recalculáveis
+ * a partir das linhas — e precisam ser, senão o painel mente. Antes essa função
+ * devolvia `erros: []` e `totalVeiculos: rows.length`, o que fazia a cobertura
+ * dar 100% mesmo com metade das linhas sendo match não confirmado.
  */
 export async function loadBatchFromSupabase(): Promise<BatchResult | null> {
   const sb = getSupabase();
@@ -54,16 +63,29 @@ export async function loadBatchFromSupabase(): Promise<BatchResult | null> {
   if (rows.length === 0) return null;
 
   const items: Record<string, BatchFipeItem> = {};
+  const erros: BatchFipeError[] = [];
   let maxTs = 0;
   for (const r of rows) {
-    items[r.chassi] = fromRow(r);
+    const item = fromRow(r);
+    items[r.chassi] = item;
+    if (!isFipeConfirmado(item)) {
+      erros.push({
+        chassi: r.chassi,
+        modelo: r.fipe_modelo_nome ?? "—",
+        motivo: "score-baixo",
+        detalhe:
+          item.score == null
+            ? "match sem score registrado (anterior à migration 021) — reveja ou rode o batch de novo"
+            : `score ${item.score.toFixed(2)} abaixo do mínimo de confiança`,
+      });
+    }
     const t = new Date(r.atualizado_em).getTime();
     if (t > maxTs) maxTs = t;
   }
   return {
     timestamp: maxTs,
     items,
-    erros: [],
+    erros,
     totalGrupos: 0,
     totalVeiculos: rows.length,
   };

@@ -258,6 +258,16 @@ export function findModelos(
   return scored.map(({ modelo, score }) => ({ modelo, score }));
 }
 
+/**
+ * Distância máxima (em anos) tolerada no fallback do `findAno`.
+ *
+ * Antes não havia limite: uma Ranger 2024 sem geração correspondente caía no ano
+ * mais próximo disponível — que podia ser 2005 — e herdava o preço daquela geração
+ * (caso real: FIPE de R$ 75.042 numa Ranger Limited+ 2024 de ~R$ 280 mil).
+ * Fora dessa janela preferimos NENHUM match a um match errado.
+ */
+export const ANO_DIST_MAX = 1;
+
 export function findAno(
   anoModeloNbs: number | null,
   combNbs: string | null,
@@ -288,5 +298,7 @@ export function findAno(
     })
     .sort((a, b) => a.dist - b.dist);
 
-  return sortedByDist[0]?.ano ?? null;
+  const best = sortedByDist[0];
+  if (!best || best.dist > ANO_DIST_MAX) return null;
+  return best.ano;
 }

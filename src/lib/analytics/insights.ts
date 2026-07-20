@@ -13,7 +13,7 @@ import type { VendaParsed } from "@/lib/parsers/nbs-vendas-xlsx";
 import type { CustoDetalhado } from "@/lib/parsers/nbs-custos-xls";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import type { BatchResult } from "@/lib/fipe/batch";
-import { calcularDesvioFipe } from "@/lib/fipe/batch";
+import { calcularDesvioFipe, precoFipeConfiavel } from "@/lib/fipe/batch";
 import { calcMargemVenda } from "./margem";
 import { classificarVeiculo } from "@/lib/pricing/classificacao";
 import type { StatusCautelar } from "@/lib/inventory/cautelar";
@@ -1212,9 +1212,9 @@ export function gerarAlertas(
     let qtAcima5 = 0, valorAcima5 = 0;
     let qtAcima10 = 0, valorAcima10 = 0;
     for (const v of veiculos) {
-      const item = fipeBatch.items[v.chassi];
-      if (!item) continue;
-      const d = calcularDesvioFipe(v.preco_venda, item.precoFipe);
+      const precoFipe = precoFipeConfiavel(fipeBatch, v.chassi);
+      if (precoFipe == null) continue;
+      const d = calcularDesvioFipe(v.preco_venda, precoFipe);
       if (!d) continue;
       if (d.pct > 10) {
         qtAcima10++;
@@ -1363,13 +1363,13 @@ export function gerarAlertas(
     let qtMuitoAbaixo = 0;
     let valorMuitoAbaixo = 0;
     for (const v of veiculos) {
-      const item = fipeBatch.items[v.chassi];
-      if (!item?.precoFipe || !v.preco_venda || v.preco_venda <= 0) continue;
-      const desvio = ((v.preco_venda - item.precoFipe) / item.precoFipe) * 100;
+      const precoFipe = precoFipeConfiavel(fipeBatch, v.chassi);
+      if (precoFipe == null || !v.preco_venda || v.preco_venda <= 0) continue;
+      const desvio = ((v.preco_venda - precoFipe) / precoFipe) * 100;
       if (desvio < -10) {
         qtMuitoAbaixo++;
         // Valor "perdido": diferença entre FIPE-5% (preço razoável) e preço atual
-        const precoRazoavel = item.precoFipe * 0.95;
+        const precoRazoavel = precoFipe * 0.95;
         valorMuitoAbaixo += Math.max(0, precoRazoavel - v.preco_venda);
       }
     }
@@ -1470,12 +1470,12 @@ export function fipeAnaliseEstoque(
   let semFipe = 0;
 
   for (const v of veiculos) {
-    const item = fipeBatch.items[v.chassi];
-    if (!item) {
+    const precoFipe = precoFipeConfiavel(fipeBatch, v.chassi);
+    if (precoFipe == null) {
       semFipe++;
       continue;
     }
-    const desv = calcularDesvioFipe(v.preco_venda, item.precoFipe);
+    const desv = calcularDesvioFipe(v.preco_venda, precoFipe);
     if (!desv) continue;
     const preco = v.preco_venda ?? 0;
     if (desv.pct > 10) {
@@ -1499,7 +1499,7 @@ export function fipeAnaliseEstoque(
       modelo: v.modelo ?? "—",
       marca: v.marca,
       precoVenda: preco,
-      precoFipe: item.precoFipe,
+      precoFipe,
       desvioPct: desv.pct,
       desvioReais: desv.desvio,
       diasPatio: v.dias_patio ?? null,

@@ -3,7 +3,14 @@
 import { useCallback, useState } from "react";
 import { RefreshCw, CheckCircle2, AlertCircle, Loader2, X } from "lucide-react";
 import { useInventory } from "@/lib/store/inventory";
-import { runFipeBatch, batchIdadeHoras, clearBatch, type BatchProgress } from "@/lib/fipe/batch";
+import {
+  runFipeBatch,
+  batchIdadeHoras,
+  clearBatch,
+  contarFipeConfirmada,
+  type BatchProgress,
+} from "@/lib/fipe/batch";
+import { clearFipeLocalCache } from "@/lib/fipe/service";
 import { useFipeBatch } from "@/lib/fipe/useFipeBatch";
 import { formatInt, cn } from "@/lib/utils";
 
@@ -23,6 +30,10 @@ export function FipeBatchRunner() {
     setErro(null);
     setProgresso(null);
     try {
+      // Invalida o cache de 30 dias do localStorage antes de rodar. Sem isso,
+      // "Atualizar" só reprocessava as mesmas listas cacheadas e reproduzia os
+      // mesmos matches errados — o botão parecia funcionar e não corrigia nada.
+      clearFipeLocalCache();
       await runFipeBatch(veiculos, (p) => setProgresso(p));
       // batch atualiza automaticamente via useFipeBatch hook
     } catch (err) {
@@ -33,6 +44,7 @@ export function FipeBatchRunner() {
   }, [veiculos]);
 
   const limpar = useCallback(() => {
+    // `clearBatch` já limpa o localStorage FIPE junto com a tabela.
     if (!confirm("Limpar o cache de preços FIPE? Você vai precisar rodar de novo.")) return;
     clearBatch();
     setProgresso(null);
@@ -50,7 +62,10 @@ export function FipeBatchRunner() {
           ? `há ${Math.floor(idadeHoras)}h`
           : `há ${Math.floor(idadeHoras / 24)}d`;
 
-  const totalComFipe = batch ? Object.keys(batch.items).length : 0;
+  // Cobertura conta só match CONFIRMADO. Contar `Object.keys(batch.items)` fazia
+  // o painel exibir 100% mesmo quando metade das linhas era match não confiável.
+  const totalComFipe = contarFipeConfirmada(batch);
+  const totalNaoConfirmados = batch ? Object.keys(batch.items).length - totalComFipe : 0;
 
   // Banner inicial (sem batch ou batch antigo)
   if (!batch && !rodando) {
@@ -115,6 +130,12 @@ export function FipeBatchRunner() {
               <p className="mt-0.5 text-xs text-[var(--text-muted)]">
                 Última busca: {idadeLabel} · {formatInt(batch.totalGrupos)} grupos consultados
                 {erros > 0 && <span className="text-amber-700"> · {erros} sem match</span>}
+                {totalNaoConfirmados > 0 && (
+                  <span className="text-amber-700">
+                    {" "}
+                    · {formatInt(totalNaoConfirmados)} não confirmada{totalNaoConfirmados === 1 ? "" : "s"}
+                  </span>
+                )}
               </p>
             </div>
           </div>

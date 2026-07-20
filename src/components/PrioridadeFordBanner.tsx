@@ -20,6 +20,7 @@ import { useMemo, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { useInventory } from "@/lib/store/inventory";
 import { useFipeBatch } from "@/lib/fipe/useFipeBatch";
+import { isFipeConfirmado } from "@/lib/fipe/batch";
 import { useCautelares } from "@/lib/inventory/cautelar";
 import {
   classificarVeiculo,
@@ -92,11 +93,12 @@ export function usePrioridadeFord(): PrioridadeFordResumo {
       classesPorChassi.set(v.chassi, classe);
     }
 
-    // FIPE batch: chassi → precoFipe
+    // FIPE batch: chassi → precoFipe. Só matches confirmados entram — um match
+    // não confirmado precifica sobre chute e é pior que não ter FIPE nenhuma.
     const fipeMap: Record<string, number> = {};
     if (fipeBatch?.items) {
       for (const [chassi, item] of Object.entries(fipeBatch.items)) {
-        if (item.precoFipe != null) fipeMap[chassi] = item.precoFipe;
+        if (isFipeConfirmado(item)) fipeMap[chassi] = item.precoFipe;
       }
     }
 

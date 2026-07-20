@@ -10,7 +10,7 @@ import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import type { LojaInfo } from "@/lib/store/inventory";
 import type { FlagsVeiculo } from "@/lib/data/flags-veiculo";
 import { cn, formatBRL, formatInt } from "@/lib/utils";
-import { calcularDesvioFipe, type BatchFipeItem } from "@/lib/fipe/batch";
+import { calcularDesvioFipe, isFipeConfirmado, type BatchFipeItem } from "@/lib/fipe/batch";
 
 /**
  * Card vertical do veículo pra uso em viewport mobile (<md).
@@ -49,7 +49,12 @@ export function VeiculoCardMobile({
       ? veiculo.custo_total - veiculo.valor_aquisicao
       : null;
 
-  const desvioFipe = calcularDesvioFipe(veiculo.preco_venda, fipeItem?.precoFipe ?? null);
+  // Match não confirmado não vira desvio: o card mostraria um % calculado
+  // sobre um preço que a UI se recusa a exibir.
+  const desvioFipe =
+    fipeItem && isFipeConfirmado(fipeItem)
+      ? calcularDesvioFipe(veiculo.preco_venda, fipeItem.precoFipe)
+      : null;
 
   const margemTone =
     margemTeorica == null

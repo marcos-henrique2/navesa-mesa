@@ -27,7 +27,9 @@ function fipeBatch(items: Record<string, number>): BatchResult {
     items: Object.fromEntries(
       Object.entries(items).map(([chassi, precoFipe]) => [
         chassi,
-        { chassi, precoFipe, match: { confianca: "alta", razao: "test" } },
+        // `score` acima de FIPE_SCORE_MIN: sem ele o match conta como não
+        // confirmado e o cálculo cai no proxy de preço, não na FIPE.
+        { chassi, precoFipe, score: 0.9, match: { confianca: "alta", razao: "test" } },
       ]),
     ),
     erros: [],

@@ -6,7 +6,8 @@
  * Estratégia:
  *   1. Agrupa veículos por (marca, modelo, ano, comb) — muitos carros iguais → 1 chamada FIPE.
  *   2. Pra cada grupo único: resolve marca → modelos → ano → valor (4 chamadas).
- *   3. Aplica o resultado em todos os veículos do grupo.
+ *   3. Aplica o resultado em cada veículo do grupo, validando plausibilidade
+ *      individualmente (`custo_total` é por veículo).
  *   4. Salva tudo no Supabase indexado por chassi.
  *
  * Cache: persiste o batch result no Supabase (tabela fipe_batch). Hook useFipeBatch
@@ -16,7 +17,7 @@
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import type { FipeMatch } from "./types";
 import { findMarca, findModelos, findAno } from "./matcher";
-import { getMarcas, getModelos, getAnos, getValor, parseFipeValor } from "./service";
+import { getMarcas, getModelos, getAnos, getValor, parseFipeValor, clearFipeLocalCache } from "./service";
 import {
   loadBatchFromSupabase,
   saveBatchToSupabase,
@@ -33,14 +34,121 @@ export type BatchFipeItem = {
   chassi: string;
   precoFipe: number;
   match: FipeMatch;
+  /**
+   * Score do match de modelo que originou esse preço (`findModelos`).
+   *
+   * `null` = procedência desconhecida (linha gravada antes da coluna `score` existir).
+   * Tratamos `null` como NÃO confirmado — as linhas legadas são justamente as que
+   * podem carregar o preço contaminado. Overrides manuais do `FipeReviewDrawer`
+   * gravam `SCORE_MANUAL` (1) porque foram escolhidos por um humano.
+   */
+  score: number | null;
 };
 
 export type BatchFipeError = {
   chassi: string;
   modelo: string;
-  motivo: "marca-nao-encontrada" | "modelo-nao-encontrado" | "ano-nao-encontrado" | "erro-api";
+  motivo:
+    | "marca-nao-encontrada"
+    | "modelo-nao-encontrado"
+    | "ano-nao-encontrado"
+    | "erro-api"
+    | "preco-implausivel"
+    | "score-baixo"
+    /** Match aceito, mas sem `custo_total` — o guard de plausibilidade não pôde rodar. */
+    | "sem-custo-referencia";
   detalhe?: string;
 };
+
+// ───── Congelamento da FIPE: limiares de confiança ──────────────────────────
+
+/** Score mínimo de `findModelos` pra exibir/usar o preço FIPE como referência. */
+export const FIPE_SCORE_MIN = 0.6;
+
+/** Score atribuído a um match escolhido manualmente por um humano. */
+export const SCORE_MANUAL = 1;
+
+/** Piso de plausibilidade: FIPE abaixo de 60% do custo total é match errado. */
+export const FIPE_RATIO_MIN = 0.6;
+
+/** Teto de plausibilidade: FIPE acima de 250% do custo total é match errado. */
+export const FIPE_RATIO_MAX = 2.5;
+
+export type PlausibilidadeFipe = {
+  /** `false` só quando o guard rodou E reprovou. */
+  ok: boolean;
+  /** `false` quando não havia `custo_total` utilizável — nada foi validado. */
+  aplicado: boolean;
+  motivo?: "abaixo-do-piso" | "acima-do-teto";
+  detalhe?: string;
+};
+
+/**
+ * Guard de sanidade: um preço FIPE muito distante do custo total do veículo é,
+ * na prática, um match de modelo/ano errado — não uma oportunidade de margem.
+ *
+ * Quando `custoTotal` é null/zero não há como validar; devolvemos `ok: true` com
+ * `aplicado: false` pra que o caller registre que o veículo passou sem verificação.
+ */
+export function validarPlausibilidadeFipe(
+  precoFipe: number,
+  custoTotal: number | null | undefined,
+): PlausibilidadeFipe {
+  if (custoTotal == null || !Number.isFinite(custoTotal) || custoTotal <= 0) {
+    return { ok: true, aplicado: false };
+  }
+  const piso = custoTotal * FIPE_RATIO_MIN;
+  const teto = custoTotal * FIPE_RATIO_MAX;
+  if (precoFipe < piso) {
+    return {
+      ok: false,
+      aplicado: true,
+      motivo: "abaixo-do-piso",
+      detalhe: `FIPE ${precoFipe} < ${FIPE_RATIO_MIN * 100}% do custo total ${custoTotal}`,
+    };
+  }
+  if (precoFipe > teto) {
+    return {
+      ok: false,
+      aplicado: true,
+      motivo: "acima-do-teto",
+      detalhe: `FIPE ${precoFipe} > ${FIPE_RATIO_MAX * 100}% do custo total ${custoTotal}`,
+    };
+  }
+  return { ok: true, aplicado: true };
+}
+
+/** `true` só quando o item tem score conhecido e acima do limiar. */
+export function isFipeConfirmado(item: BatchFipeItem | null | undefined): boolean {
+  if (!item) return false;
+  if (item.score == null) return false;
+  return item.score >= FIPE_SCORE_MIN && item.precoFipe > 0;
+}
+
+/**
+ * Preço FIPE utilizável como referência de precificação.
+ *
+ * Retorna `null` quando o match não é confirmado — consumidores devem tratar
+ * exatamente como "sem FIPE" (cair no proxy de custo), nunca exibir o número.
+ */
+export function precoFipeConfiavel(
+  batch: { items: Record<string, BatchFipeItem> } | null | undefined,
+  chassi: string,
+): number | null {
+  const item = batch?.items?.[chassi];
+  if (!item || !isFipeConfirmado(item)) return null;
+  return item.precoFipe;
+}
+
+/** Quantos chassis do batch têm FIPE efetivamente confirmada. */
+export function contarFipeConfirmada(
+  batch: { items: Record<string, BatchFipeItem> } | null | undefined,
+): number {
+  if (!batch) return 0;
+  let n = 0;
+  for (const item of Object.values(batch.items)) if (isFipeConfirmado(item)) n++;
+  return n;
+}
 
 export type BatchResult = {
   timestamp: number;
@@ -193,6 +301,7 @@ export async function runFipeBatch(
         continue;
       }
       const fipeModelo = modeloMatches[0].modelo;
+      const score = modeloMatches[0].score;
 
       // Anos
       const fipeAnos = await getAnos(fipeMarca.codigo, fipeModelo.codigo);
@@ -219,8 +328,44 @@ export async function runFipeBatch(
         anoNome: fipeAno.nome,
       };
 
+      // O lookup é por grupo, mas a validação é POR VEÍCULO: `custo_total` é
+      // individual, então um match ruim não contamina o grupo inteiro em bloco.
       for (const v of veiculosGrupo) {
-        items[v.chassi] = { chassi: v.chassi, precoFipe, match };
+        const plausivel = validarPlausibilidadeFipe(precoFipe, v.custo_total);
+        if (!plausivel.ok) {
+          erros.push({
+            chassi: v.chassi,
+            modelo: v.modelo,
+            motivo: "preco-implausivel",
+            detalhe: `${fipeModelo.nome} ${fipeAno.nome}: ${plausivel.detalhe}`,
+          });
+          continue;
+        }
+
+        items[v.chassi] = { chassi: v.chassi, precoFipe, match, score };
+
+        if (score < FIPE_SCORE_MIN) {
+          // Persistimos pra que o usuário possa revisar/corrigir no drawer, mas
+          // registramos como não coberto — a UI vai exibir "FIPE não confirmada".
+          erros.push({
+            chassi: v.chassi,
+            modelo: v.modelo,
+            motivo: "score-baixo",
+            detalhe: `score ${score.toFixed(2)} < ${FIPE_SCORE_MIN} em "${fipeModelo.nome}"`,
+          });
+          continue;
+        }
+
+        if (!plausivel.aplicado) {
+          // Sem custo_total não dá pra validar. Não bloqueia, mas fica no relatório.
+          erros.push({
+            chassi: v.chassi,
+            modelo: v.modelo,
+            motivo: "sem-custo-referencia",
+            detalhe: "custo_total ausente — plausibilidade não verificada",
+          });
+        }
+
         matches++;
       }
 
@@ -279,10 +424,17 @@ export function batchIdadeHoras(): number | null {
   return (Date.now() - c.timestamp) / (1000 * 60 * 60);
 }
 
-/** Limpa o batch (Supabase + cache + dispara evento). Fire-and-forget. */
+/**
+ * Limpa o batch: cache em memória + localStorage FIPE + tabela `fipe_batch`.
+ *
+ * O `clearFipeLocalCache()` é obrigatório aqui — limpar só a tabela deixava o
+ * cache de 30 dias do localStorage reproduzir os mesmos matches errados na
+ * próxima execução.
+ */
 export function clearBatch(): void {
   cached = null;
   loaded = true;
+  clearFipeLocalCache();
   notify();
   clearBatchSupabase().catch((err) => console.warn("Falha ao limpar batch FIPE no Supabase:", err));
 }
@@ -302,9 +454,11 @@ export function clearBatch(): void {
 export async function upsertBatchItem(item: BatchFipeItem): Promise<boolean> {
   const now = Date.now();
   if (cached) {
+    // NÃO mexe em `cached.timestamp`: rejuvenescer o batch inteiro a cada override
+    // manual fazia o TTL de 7 dias nunca vencer, então um match errado nunca expirava.
+    // A frescura de cada linha vive no `atualizado_em` dela no Supabase.
     cached = {
       ...cached,
-      timestamp: now,
       items: { ...cached.items, [item.chassi]: item },
       totalVeiculos: Object.keys(cached.items).includes(item.chassi)
         ? cached.totalVeiculos

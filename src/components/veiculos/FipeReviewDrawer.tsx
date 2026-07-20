@@ -26,7 +26,7 @@ import type { FipeMarca, FipeModelo, FipeAno, FipeMatch } from "@/lib/fipe/types
 import { getMarcas, getModelos, getAnos, getValor, parseFipeValor } from "@/lib/fipe/service";
 import { findMarca, findModelos, findAno } from "@/lib/fipe/matcher";
 import { saveMatch, forgetMatch, forgetModelMatch, countSimilarVeiculos } from "@/lib/store/fipeMatches";
-import { upsertBatchItem } from "@/lib/fipe/batch";
+import { upsertBatchItem, SCORE_MANUAL } from "@/lib/fipe/batch";
 import { useInventory } from "@/lib/store/inventory";
 import { cn } from "@/lib/utils";
 
@@ -104,9 +104,15 @@ export function FipeReviewDrawer({ veiculo, open, onClose }: Props) {
     setConfirmando(true);
     try {
       const anos = await getAnos(load.marca.codigo, escolhido.codigo);
-      const matchedAno = findAno(veiculo.ano_modelo, veiculo.combustivel, anos);
-      const ano: FipeAno | null = matchedAno ?? anos[0] ?? null;
-      if (!ano) throw new Error("Nenhum ano disponível pra esse modelo na FIPE.");
+      // Sem `?? anos[0]`: cair no primeiro ano da lista é exatamente como uma
+      // Ranger 2024 herdava o preço de uma geração 2005-2012. Se o ano do carro
+      // não existe nesse modelo FIPE, o modelo escolhido está errado.
+      const ano: FipeAno | null = findAno(veiculo.ano_modelo, veiculo.combustivel, anos);
+      if (!ano) {
+        throw new Error(
+          `Esse modelo FIPE não tem o ano ${veiculo.ano_modelo ?? "?"}. Escolha outro modelo.`,
+        );
+      }
       const valor = await getValor(load.marca.codigo, escolhido.codigo, ano.codigo);
       const precoFipe = parseFipeValor(valor.Valor);
       if (!Number.isFinite(precoFipe) || precoFipe <= 0) {
@@ -140,7 +146,10 @@ export function FipeReviewDrawer({ veiculo, open, onClose }: Props) {
 
       // Persiste em paralelo pra ser rápido — mas aguarda TODOS pra reportar falhas.
       const resultados = await Promise.all(
-        targets.map((v) => upsertBatchItem({ chassi: v.chassi, precoFipe, match })),
+        // score = SCORE_MANUAL: match escolhido por um humano é confiável por definição.
+        targets.map((v) =>
+          upsertBatchItem({ chassi: v.chassi, precoFipe, match, score: SCORE_MANUAL }),
+        ),
       );
       if (aplicarTodos) {
         for (const v of targets) {

@@ -6,7 +6,7 @@ import { classificarPatio } from "@/lib/inventory/status";
 import { classificarVeiculo, contarPorModelo, type Classe } from "@/lib/pricing/classificacao";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import { useFipeBatch } from "@/lib/fipe/useFipeBatch";
-import { calcularDesvioFipe } from "@/lib/fipe/batch";
+import { calcularDesvioFipe, isFipeConfirmado, precoFipeConfiavel } from "@/lib/fipe/batch";
 import { useCautelares, type StatusCautelar } from "@/lib/inventory/cautelar";
 import { useFlagsTodas } from "@/lib/data/flags-veiculo";
 import { ehPraRepasse } from "@/lib/analytics/carros-pra-repassar";
@@ -143,7 +143,7 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
     const fipeMap: Record<string, number> = {};
     if (fipeBatch?.items) {
       for (const [chassi, item] of Object.entries(fipeBatch.items)) {
-        if (item.precoFipe != null) fipeMap[chassi] = item.precoFipe;
+        if (isFipeConfirmado(item)) fipeMap[chassi] = item.precoFipe;
       }
     }
 
@@ -206,10 +206,12 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
         if (filtroFlag === "qualquer" && !(f?.em_promocao || f?.brinde_acessorios)) return false;
       }
       if (filtroFipe !== "all") {
-        const item = fipeBatch?.items[v.chassi];
-        const desv = item ? calcularDesvioFipe(v.preco_venda, item.precoFipe) : null;
+        // Match não confirmado conta como "sem FIPE" — o filtro precisa refletir
+        // o mesmo que a tabela exibe.
+        const precoConfiavel = precoFipeConfiavel(fipeBatch, v.chassi);
+        const desv = calcularDesvioFipe(v.preco_venda, precoConfiavel);
         if (filtroFipe === "sem") {
-          if (item) return false;
+          if (precoConfiavel != null) return false;
         } else if (!desv) {
           return false;
         } else if (filtroFipe === "acima" && desv.pct <= 0) {

@@ -70,6 +70,31 @@ export async function getValor(marcaCod: string, modeloCod: number, anoCod: stri
   return data;
 }
 
+/**
+ * Apaga TODO o cache FIPE do localStorage (marcas, modelos, anos e valores).
+ *
+ * Sem isso, limpar a tabela `fipe_batch` não adianta: o TTL de 30 dias devolve
+ * as mesmas listas de modelos/anos e o batch reproduz exatamente os mesmos
+ * matches errados. Quem limpa o batch precisa limpar o cache local junto.
+ *
+ * Retorna quantas chaves foram removidas.
+ */
+export function clearFipeLocalCache(): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    const alvos: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(CACHE_PREFIX)) alvos.push(k);
+    }
+    for (const k of alvos) localStorage.removeItem(k);
+    return alvos.length;
+  } catch (err) {
+    console.warn("Falha ao limpar cache FIPE local:", err);
+    return 0;
+  }
+}
+
 export function parseFipeValor(brValue: string): number {
   // "R$ 67.295,00" → 67295
   const cleaned = brValue.replace(/[R$\s.]/g, "").replace(",", ".");

@@ -31,9 +31,11 @@ export function BreakdownAjustes({
   sugestao: PrecoSuggestion;
 }) {
   const baseProxy = veiculo.valor_aquisicao != null ? veiculo.valor_aquisicao * 1.18 : null;
+  // `diagnostico.precoFipe` já vem filtrado por confiança (usePrecificacao):
+  // match não confirmado chega como null e cai no proxy de custo.
   const baseRefLabel = diagnostico.precoFipe != null
     ? `FIPE: ${formatBRL(diagnostico.precoFipe)}`
-    : `Custo × 1,18 (proxy): ${formatBRL(baseProxy)}`;
+    : `FIPE não confirmada — usando custo × 1,18 (proxy): ${formatBRL(baseProxy)}`;
   const baseClasseLabel = `Base classe (${formatPct(diagnostico.baseClassePct)})`;
 
   return (

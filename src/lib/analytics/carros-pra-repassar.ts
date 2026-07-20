@@ -15,6 +15,7 @@
 
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import type { BatchResult } from "@/lib/fipe/batch";
+import { precoFipeConfiavel } from "@/lib/fipe/batch";
 import type { StatusCautelar } from "@/lib/inventory/cautelar";
 
 const LIMITE_IDADE_ANOS = 10;
@@ -190,7 +191,7 @@ export function calcularCarrosPraRepassar(
     const score = Math.min(100, Math.round(scoreBase + bonusIntensidade));
 
     // Dados auxiliares (FIPE, cautelar, margem) — só pra contexto, não pra qualificação
-    const precoFipe = fipeBatch?.items?.[v.chassi]?.precoFipe ?? null;
+    const precoFipe = precoFipeConfiavel(fipeBatch, v.chassi);
     const desvioFipePct =
       precoFipe != null && precoFipe > 0 && v.preco_venda != null
         ? ((v.preco_venda - precoFipe) / precoFipe) * 100
