@@ -43,6 +43,15 @@ export type BatchFipeItem = {
    * gravam `SCORE_MANUAL` (1) porque foram escolhidos por um humano.
    */
   score: number | null;
+  /**
+   * `true` só quando o guard `validarPlausibilidadeFipe` RODOU e aprovou.
+   *
+   * Score alto prova que o nome do modelo casou; não prova que o preço faz
+   * sentido pro carro. Sem `custo_total` o guard não roda — e um item nunca
+   * verificado precisa ser distinguível de um verificado e aprovado, inclusive
+   * depois de um reload. Por isso o sinal é persistido, não só reportado.
+   */
+  plausibilidadeVerificada: boolean;
 };
 
 export type BatchFipeError = {
@@ -118,10 +127,18 @@ export function validarPlausibilidadeFipe(
   return { ok: true, aplicado: true };
 }
 
-/** `true` só quando o item tem score conhecido e acima do limiar. */
+/**
+ * `true` só quando as DUAS provas existem: o nome do modelo casou bem (score) e
+ * o preço foi confrontado com o custo do carro (plausibilidade verificada).
+ *
+ * Exigir as duas é o que impede o caminho de vendas — que rodava sem
+ * `custo_total` — de produzir linhas que parecem confirmadas mas nunca passaram
+ * por nenhuma checagem de valor.
+ */
 export function isFipeConfirmado(item: BatchFipeItem | null | undefined): boolean {
   if (!item) return false;
   if (item.score == null) return false;
+  if (!item.plausibilidadeVerificada) return false;
   return item.score >= FIPE_SCORE_MIN && item.precoFipe > 0;
 }
 
@@ -156,6 +173,14 @@ export type BatchResult = {
   erros: BatchFipeError[];
   totalGrupos: number;
   totalVeiculos: number;
+  /**
+   * Mensagem de falha ao gravar o batch no Supabase, ou `null` se persistiu.
+   *
+   * Antes essa falha era engolida por um `console.warn` e a UI seguia exibindo
+   * "Pronto: N carros com FIPE" com ZERO linha gravada. Dado financeiro não
+   * pode falhar em silêncio — o caller é obrigado a olhar esse campo.
+   */
+  persistenciaErro: string | null;
 };
 
 export type BatchProgress = {
@@ -251,7 +276,14 @@ export async function runFipeBatch(
   const report = (p: BatchProgress) => onProgress?.(p);
 
   if (veiculos.length === 0) {
-    return { timestamp: Date.now(), items: {}, erros: [], totalGrupos: 0, totalVeiculos: 0 };
+    return {
+      timestamp: Date.now(),
+      items: {},
+      erros: [],
+      totalGrupos: 0,
+      totalVeiculos: 0,
+      persistenciaErro: null,
+    };
   }
 
   // 1) Agrupa por chave
@@ -342,7 +374,15 @@ export async function runFipeBatch(
           continue;
         }
 
-        items[v.chassi] = { chassi: v.chassi, precoFipe, match, score };
+        // O sinal de "guard rodou" vai DENTRO do item, não só no array de erros:
+        // o array morre no reload, o item é persistido.
+        items[v.chassi] = {
+          chassi: v.chassi,
+          precoFipe,
+          match,
+          score,
+          plausibilidadeVerificada: plausivel.aplicado,
+        };
 
         if (score < FIPE_SCORE_MIN) {
           // Persistimos pra que o usuário possa revisar/corrigir no drawer, mas
@@ -383,6 +423,7 @@ export async function runFipeBatch(
     erros,
     totalGrupos: grupos.size,
     totalVeiculos: veiculos.length,
+    persistenciaErro: null,
   };
 
   report({
@@ -394,14 +435,30 @@ export async function runFipeBatch(
     errosAteAgora: erros.length,
   });
 
-  // Persiste no Supabase + atualiza cache
+  // Persiste no Supabase + atualiza cache.
+  //
+  // Falha aqui NÃO pode ser silenciosa: o caso concreto é a coluna `score` não
+  // existir ainda (migration 021 não aplicada) — o PostgREST devolve PGRST204,
+  // nada é gravado, e sem esse sinal a UI anunciava "Pronto: N carros com FIPE".
   try {
     await saveBatchToSupabase(result);
     cached = result;
     loaded = true;
     notify();
   } catch (err) {
-    console.warn("Falha ao salvar batch FIPE no Supabase:", err);
+    const detalhe = err instanceof Error ? err.message : String(err);
+    console.error("Falha ao salvar batch FIPE no Supabase:", err);
+    const comErro: BatchResult = {
+      ...result,
+      persistenciaErro:
+        `Os preços NÃO foram salvos no banco — eles valem só nesta aba e se perdem ao recarregar. Detalhe: ${detalhe}`,
+    };
+    // Cache em memória segue populado (a UI atual continua utilizável), mas o
+    // caller é obrigado a exibir `persistenciaErro`.
+    cached = comErro;
+    loaded = true;
+    notify();
+    return comErro;
   }
 
   return result;
@@ -471,6 +528,7 @@ export async function upsertBatchItem(item: BatchFipeItem): Promise<boolean> {
       erros: [],
       totalGrupos: 0,
       totalVeiculos: 1,
+      persistenciaErro: null,
     };
   }
   loaded = true;
@@ -488,6 +546,7 @@ export async function upsertBatchItem(item: BatchFipeItem): Promise<boolean> {
       erros: [],
       totalGrupos: 0,
       totalVeiculos: 1,
+      persistenciaErro: null,
     });
     chassisDirty.delete(item.chassi);
     notifyDirty();

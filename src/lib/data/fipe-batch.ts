@@ -1,7 +1,7 @@
 "use client";
 
 import type { BatchFipeError, BatchFipeItem, BatchResult } from "@/lib/fipe/batch";
-import { isFipeConfirmado } from "@/lib/fipe/batch";
+import { isFipeConfirmado, FIPE_SCORE_MIN } from "@/lib/fipe/batch";
 import { chunk, getSupabase, selectAll } from "./supabase";
 
 type FipeBatchRow = {
@@ -15,6 +15,8 @@ type FipeBatchRow = {
   fipe_ano_nome: string | null;
   /** Score do match (migration 021). `null` em linhas gravadas antes dela. */
   score: number | null;
+  /** Guard de plausibilidade rodou e aprovou (migration 021). `false` no legado. */
+  plausibilidade_verificada: boolean | null;
   atualizado_em: string;
 };
 
@@ -31,6 +33,8 @@ function fromRow(r: FipeBatchRow): BatchFipeItem {
       anoNome: r.fipe_ano_nome ?? "",
     },
     score: r.score == null ? null : Number(r.score),
+    // `null` (coluna ausente / linha legada) é lido como NÃO verificado.
+    plausibilidadeVerificada: r.plausibilidade_verificada === true,
   };
 }
 
@@ -45,6 +49,7 @@ function toRow(item: BatchFipeItem, timestamp: number): Omit<FipeBatchRow, "atua
     fipe_ano_cod: item.match.anoCod,
     fipe_ano_nome: item.match.anoNome,
     score: item.score,
+    plausibilidade_verificada: item.plausibilidadeVerificada,
     atualizado_em: new Date(timestamp).toISOString(),
   };
 }
@@ -69,14 +74,19 @@ export async function loadBatchFromSupabase(): Promise<BatchResult | null> {
     const item = fromRow(r);
     items[r.chassi] = item;
     if (!isFipeConfirmado(item)) {
+      // Os dois motivos são reconstruídos: antes só `score-baixo` voltava, então
+      // uma linha com score alto que NUNCA passou pelo guard de plausibilidade
+      // reaparecia como totalmente confirmada depois de um F5.
+      const semScore = item.score == null || item.score < FIPE_SCORE_MIN;
       erros.push({
         chassi: r.chassi,
         modelo: r.fipe_modelo_nome ?? "—",
-        motivo: "score-baixo",
-        detalhe:
-          item.score == null
+        motivo: semScore ? "score-baixo" : "sem-custo-referencia",
+        detalhe: semScore
+          ? item.score == null
             ? "match sem score registrado (anterior à migration 021) — reveja ou rode o batch de novo"
-            : `score ${item.score.toFixed(2)} abaixo do mínimo de confiança`,
+            : `score ${item.score.toFixed(2)} abaixo do mínimo de confiança`
+          : "preço nunca confrontado com o custo do veículo (importado sem custo_total)",
       });
     }
     const t = new Date(r.atualizado_em).getTime();
@@ -88,6 +98,8 @@ export async function loadBatchFromSupabase(): Promise<BatchResult | null> {
     erros,
     totalGrupos: 0,
     totalVeiculos: rows.length,
+    // Veio do banco: por definição está persistido.
+    persistenciaErro: null,
   };
 }
 

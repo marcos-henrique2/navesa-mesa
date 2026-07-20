@@ -8,7 +8,12 @@ import { agregarMargem, calcMargemVenda } from "@/lib/analytics/margem";
 import { baixarAnaliseNavesa } from "@/lib/export/analise-navesa";
 import { baixarAnaliseNavesaPdf } from "@/lib/export/analise-navesa-pdf";
 import { showSuccessToast, showErrorToast } from "../ui/Toast";
-import { runFipeBatch, isFipeConfirmado, type BatchProgress } from "@/lib/fipe/batch";
+import {
+  runFipeBatch,
+  isFipeConfirmado,
+  contarFipeConfirmada,
+  type BatchProgress,
+} from "@/lib/fipe/batch";
 import { useFipeBatch } from "@/lib/fipe/useFipeBatch";
 import type { SortingState } from "@tanstack/react-table";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
@@ -232,16 +237,31 @@ export function useVendasAnalise() {
         patio: v.patio ?? "",
         descricao_situacao: null,
         preco_venda: v.valor_venda,
-        valor_aquisicao: null,
-        custo_total: null,
+        valor_aquisicao: v.total_nota_fabrica,
+        // `custo_total` alimenta o guard de plausibilidade da FIPE. Passar null
+        // aqui (como antes) desligava o guard em 100% das vendas e era a origem
+        // das linhas de `fipe_batch` gravadas sem nenhuma verificação de valor.
+        custo_total: v.custo_total_final,
         dias_patio: v.dias_estoque,
         data_entrada: null,
         vendedor_recebeu: v.vendedor_recebeu,
         cod_proposta: null,
       }));
       const r = await runFipeBatch(veiculos, (p) => setProgressoFipe(p));
-      const matches = Object.keys(r.items).length;
-      setFipeMsg(`FIPE atualizado para ${matches} carro${matches === 1 ? "" : "s"}${r.erros.length > 0 ? ` · ${r.erros.length} sem match` : ""}.`);
+      if (r.persistenciaErro) {
+        setFipeMsg(`Erro ao salvar FIPE: ${r.persistenciaErro}`);
+        return;
+      }
+      // Só match CONFIRMADO conta como cobertura — mesmo bug que o FipeBatchRunner tinha.
+      const matches = contarFipeConfirmada(r);
+      const naoConfirmados = Object.keys(r.items).length - matches;
+      const semMatch = r.erros.filter((e) => !r.items[e.chassi]).length;
+      setFipeMsg(
+        `FIPE atualizado para ${matches} carro${matches === 1 ? "" : "s"}` +
+          (naoConfirmados > 0 ? ` · ${naoConfirmados} não confirmada${naoConfirmados === 1 ? "" : "s"}` : "") +
+          (semMatch > 0 ? ` · ${semMatch} sem match` : "") +
+          ".",
+      );
     } catch (err) {
       setFipeMsg(`Erro ao buscar FIPE: ${err instanceof Error ? err.message : String(err)}`);
     } finally {

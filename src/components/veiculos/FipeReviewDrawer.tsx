@@ -146,9 +146,16 @@ export function FipeReviewDrawer({ veiculo, open, onClose }: Props) {
 
       // Persiste em paralelo pra ser rápido — mas aguarda TODOS pra reportar falhas.
       const resultados = await Promise.all(
-        // score = SCORE_MANUAL: match escolhido por um humano é confiável por definição.
+        // Match escolhido por um humano que viu modelo, ano e preço na tela:
+        // vale como score máximo E como plausibilidade verificada.
         targets.map((v) =>
-          upsertBatchItem({ chassi: v.chassi, precoFipe, match, score: SCORE_MANUAL }),
+          upsertBatchItem({
+            chassi: v.chassi,
+            precoFipe,
+            match,
+            score: SCORE_MANUAL,
+            plausibilidadeVerificada: true,
+          }),
         ),
       );
       if (aplicarTodos) {

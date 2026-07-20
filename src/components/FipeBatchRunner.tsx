@@ -34,7 +34,10 @@ export function FipeBatchRunner() {
       // "Atualizar" só reprocessava as mesmas listas cacheadas e reproduzia os
       // mesmos matches errados — o botão parecia funcionar e não corrigia nada.
       clearFipeLocalCache();
-      await runFipeBatch(veiculos, (p) => setProgresso(p));
+      const r = await runFipeBatch(veiculos, (p) => setProgresso(p));
+      // Persistência falhou em silêncio até aqui: a UI dizia "Pronto" com zero
+      // linha gravada. Agora vira erro visível.
+      if (r.persistenciaErro) setErro(r.persistenciaErro);
       // batch atualiza automaticamente via useFipeBatch hook
     } catch (err) {
       setErro(err instanceof Error ? err.message : String(err));
@@ -114,9 +117,36 @@ export function FipeBatchRunner() {
     );
   }
 
+  // Erro ANTES do histórico: quando a persistência falha o cache em memória
+  // fica populado, então o bloco `if (batch)` capturava o render e o erro
+  // nunca aparecia.
+  if (erro) {
+    return (
+      <div className="rounded-xl border border-red-300 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950/30">
+        <div className="flex items-center gap-2 text-sm font-semibold text-red-900 dark:text-red-200">
+          <AlertCircle className="h-4 w-4" /> Erro na busca FIPE
+        </div>
+        <p className="mt-1 text-xs text-red-700 dark:text-red-300">{erro}</p>
+        <button
+          onClick={rodar}
+          className={cn(
+            "mt-2 inline-flex items-center gap-1 rounded-md bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700",
+          )}
+        >
+          Tentar de novo
+        </button>
+      </div>
+    );
+  }
+
   // Concluído ou histórico
   if (batch) {
-    const erros = batch.erros.length;
+    // Após reload, `loadBatchFromSupabase` gera um erro por item não confirmado,
+    // então somar os dois contadores exibia o dobro do problema real. Os erros
+    // que interessam aqui são os que NÃO produziram linha nenhuma (marca/modelo/
+    // ano não encontrados, falha de API, preço implausível rejeitado); os itens
+    // gravados porém não confiáveis já são contados por `totalNaoConfirmados`.
+    const erros = batch.erros.filter((e) => !batch.items[e.chassi]).length;
     const cobertura = batch.totalVeiculos > 0 ? (totalComFipe / batch.totalVeiculos) * 100 : 0;
     return (
       <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4 shadow-[var(--shadow-sm)]">
@@ -155,25 +185,6 @@ export function FipeBatchRunner() {
             </button>
           </div>
         </div>
-      </div>
-    );
-  }
-
-  if (erro) {
-    return (
-      <div className="rounded-xl border border-red-300 bg-red-50 p-4 dark:border-red-900 dark:bg-red-950/30">
-        <div className="flex items-center gap-2 text-sm font-semibold text-red-900 dark:text-red-200">
-          <AlertCircle className="h-4 w-4" /> Erro na busca FIPE
-        </div>
-        <p className="mt-1 text-xs text-red-700 dark:text-red-300">{erro}</p>
-        <button
-          onClick={rodar}
-          className={cn(
-            "mt-2 inline-flex items-center gap-1 rounded-md bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-700",
-          )}
-        >
-          Tentar de novo
-        </button>
       </div>
     );
   }

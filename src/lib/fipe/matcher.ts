@@ -273,7 +273,12 @@ export function findAno(
   combNbs: string | null,
   fipeAnos: FipeAno[],
 ): FipeAno | null {
-  if (!anoModeloNbs) return fipeAnos[0] ?? null;
+  // Sem ano do NBS não há como escolher: devolver `fipeAnos[0]` é o mesmo
+  // "pega o primeiro da lista" que produziu Ranger 2026 casada com 2012 — só
+  // que sem nem a distância de ano pra limitar o estrago. Hoje nenhum registro
+  // de `veiculos`/`vendas` tem ano_modelo nulo, então isso está inerte; se um
+  // import degradado passar a produzir nulos, a resposta certa é "sem FIPE".
+  if (!anoModeloNbs) return null;
 
   const combMap: Record<string, string> = {
     GASOLINA: "Gasolina",

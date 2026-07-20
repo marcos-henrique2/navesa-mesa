@@ -58,6 +58,7 @@ function item(over: Partial<BatchFipeItem> = {}): BatchFipeItem {
       anoNome: "2024 Diesel",
     },
     score: 0.92,
+    plausibilidadeVerificada: true,
     ...over,
   };
 }
@@ -109,9 +110,13 @@ test("findAno: lista vazia retorna null", () => {
   assert.equal(findAno(2024, "DIESEL", []), null);
 });
 
-test("findAno: sem ano_modelo cai no primeiro da lista (comportamento preservado)", () => {
-  const r = findAno(null, "DIESEL", ANOS_RANGER_ATUAL);
-  assert.equal(r?.codigo, "2025-3");
+test("findAno: sem ano_modelo retorna null em vez de chutar o primeiro da lista", () => {
+  // Devolver `fipeAnos[0]` aqui é o mesmo "pega o primeiro" que casou Ranger
+  // 2026 com 2012 — e sem sequer a distância de ano pra limitar o erro. Um
+  // veículo sem ano_modelo não tem como ser precificado por FIPE; "sem FIPE" é
+  // a única resposta honesta.
+  assert.equal(findAno(null, "DIESEL", ANOS_RANGER_ATUAL), null);
+  assert.equal(findAno(0, "DIESEL", ANOS_RANGER_ATUAL), null);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -191,6 +196,34 @@ test("score: null (linha legada, procedência desconhecida) → NÃO confirmado"
   assert.equal(isFipeConfirmado(item({ score: null })), false);
 });
 
+test("score alto SEM plausibilidade verificada → NÃO confirmado", () => {
+  // Caminho de vendas: o nome do modelo casa bem, mas o preço nunca foi
+  // confrontado com o custo do carro. Score alto sozinho não é prova de preço.
+  assert.equal(isFipeConfirmado(item({ score: 0.98, plausibilidadeVerificada: false })), false);
+});
+
+test("plausibilidade verificada SEM score suficiente → NÃO confirmado", () => {
+  assert.equal(isFipeConfirmado(item({ score: 0.2, plausibilidadeVerificada: true })), false);
+});
+
+test("confirmação exige as DUAS provas juntas", () => {
+  const casos: [number | null, boolean, boolean][] = [
+    [0.9, true, true],
+    [0.9, false, false],
+    [0.2, true, false],
+    [0.2, false, false],
+    [null, true, false],
+    [null, false, false],
+  ];
+  for (const [score, verificada, esperado] of casos) {
+    assert.equal(
+      isFipeConfirmado(item({ score, plausibilidadeVerificada: verificada })),
+      esperado,
+      `score=${String(score)} verificada=${verificada}`,
+    );
+  }
+});
+
 test("score: override manual vale como confirmado", () => {
   assert.equal(isFipeConfirmado(item({ score: SCORE_MANUAL })), true);
 });
@@ -215,6 +248,15 @@ test("precoFipeConfiavel: score alto devolve o preço", () => {
   assert.equal(precoFipeConfiavel(batch, "ABC"), 280_000);
 });
 
+test("precoFipeConfiavel: score alto mas nunca verificado devolve null", () => {
+  const batch = {
+    items: {
+      ABC: item({ chassi: "ABC", score: 0.95, plausibilidadeVerificada: false, precoFipe: 57_377 }),
+    },
+  };
+  assert.equal(precoFipeConfiavel(batch, "ABC"), null);
+});
+
 test("precoFipeConfiavel: chassi inexistente e batch null devolvem null", () => {
   assert.equal(precoFipeConfiavel({ items: {} }, "NAO_EXISTE"), null);
   assert.equal(precoFipeConfiavel(null, "ABC"), null);
@@ -227,9 +269,10 @@ test("contarFipeConfirmada: cobertura conta só match confiável", () => {
       B: item({ chassi: "B", score: 0.2 }),
       C: item({ chassi: "C", score: null }),
       D: item({ chassi: "D", score: SCORE_MANUAL }),
+      E: item({ chassi: "E", score: 0.95, plausibilidadeVerificada: false }),
     },
   };
-  // O painel antigo diria 4/4 = 100%. A verdade é 2/4.
+  // O painel antigo diria 5/5 = 100%. A verdade é 2/5.
   assert.equal(contarFipeConfirmada(batch), 2);
   assert.equal(contarFipeConfirmada(null), 0);
 });
@@ -288,7 +331,10 @@ test("findModelos: match fraco produz score abaixo do limiar de confiança", () 
       r[0].score < FIPE_SCORE_MIN,
       `match espúrio deveria ficar abaixo de ${FIPE_SCORE_MIN}, veio ${r[0].score}`,
     );
-    assert.equal(isFipeConfirmado(item({ score: r[0].score })), false);
+    assert.equal(
+      isFipeConfirmado(item({ score: r[0].score, plausibilidadeVerificada: true })),
+      false,
+    );
   }
 });
 
