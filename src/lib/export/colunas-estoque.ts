@@ -15,13 +15,18 @@
  */
 
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
+import type { ColunaAgregacao, ColunaDef } from "@/lib/export/relatorio/tipos";
 
 /** Veículo enriquecido com o nome da loja já resolvido (como o gerencial usa). */
 export type VeiculoExportavel = VeiculoParsed & {
   empresa_nome?: string | null;
 };
 
-/** Formato visual da coluna no XLSX. */
+/**
+ * Formato visual da coluna no XLSX. Subconjunto do `ColunaFormato` do contrato
+ * genérico (`relatorio/tipos`) — o estoque só usa estes 5. Mantido local pra não
+ * quebrar consumidores que fazem `Record<ColunaFormato, …>` com estas 5 chaves.
+ */
 export type ColunaFormato = "texto" | "numero" | "moeda" | "km" | "ano";
 
 export type ColunaKey =
@@ -51,6 +56,8 @@ export type ColunaEstoque = {
   key: ColunaKey;
   label: string;
   formato: ColunaFormato;
+  /** Como a coluna participa das linhas TOTAIS/MÉDIA do motor genérico. */
+  agregacao: ColunaAgregacao;
   getValor: (v: VeiculoExportavel) => ValorColuna;
 };
 
@@ -66,31 +73,42 @@ function fmtAno(fab: number | null, mod: number | null): string | null {
  * O gerador respeita essa ordem ao montar o XLSX.
  */
 export const COLUNAS_ESTOQUE: readonly ColunaEstoque[] = [
-  { key: "loja", label: "Loja", formato: "texto", getValor: (v) => v.empresa_nome ?? null },
-  { key: "placa", label: "Placa", formato: "texto", getValor: (v) => v.placa },
-  { key: "chassi", label: "Chassi", formato: "texto", getValor: (v) => v.chassi },
-  { key: "marca", label: "Marca", formato: "texto", getValor: (v) => v.marca },
-  { key: "modelo", label: "Modelo", formato: "texto", getValor: (v) => v.modelo },
-  { key: "ano_fabricacao", label: "Ano fabricação", formato: "ano", getValor: (v) => v.ano_fabricacao },
-  { key: "ano_modelo", label: "Ano modelo", formato: "ano", getValor: (v) => v.ano_modelo },
-  { key: "ano", label: "Ano", formato: "texto", getValor: (v) => fmtAno(v.ano_fabricacao, v.ano_modelo) },
-  { key: "km", label: "KM", formato: "km", getValor: (v) => v.km },
-  { key: "cor_externa", label: "Cor", formato: "texto", getValor: (v) => v.cor_externa },
-  { key: "combustivel", label: "Combustível", formato: "texto", getValor: (v) => v.combustivel },
-  { key: "dias_patio", label: "Dias parado", formato: "numero", getValor: (v) => v.dias_patio },
-  { key: "valor_aquisicao", label: "Custo de entrada", formato: "moeda", getValor: (v) => v.valor_aquisicao },
-  { key: "custo_total", label: "Custo total", formato: "moeda", getValor: (v) => v.custo_total },
-  { key: "preco_venda", label: "Preço de venda", formato: "moeda", getValor: (v) => v.preco_venda },
+  { key: "loja", label: "Loja", formato: "texto", agregacao: "nenhuma", getValor: (v) => v.empresa_nome ?? null },
+  { key: "placa", label: "Placa", formato: "texto", agregacao: "nenhuma", getValor: (v) => v.placa },
+  { key: "chassi", label: "Chassi", formato: "texto", agregacao: "nenhuma", getValor: (v) => v.chassi },
+  { key: "marca", label: "Marca", formato: "texto", agregacao: "nenhuma", getValor: (v) => v.marca },
+  { key: "modelo", label: "Modelo", formato: "texto", agregacao: "nenhuma", getValor: (v) => v.modelo },
+  { key: "ano_fabricacao", label: "Ano fabricação", formato: "ano", agregacao: "nenhuma", getValor: (v) => v.ano_fabricacao },
+  { key: "ano_modelo", label: "Ano modelo", formato: "ano", agregacao: "nenhuma", getValor: (v) => v.ano_modelo },
+  { key: "ano", label: "Ano", formato: "texto", agregacao: "nenhuma", getValor: (v) => fmtAno(v.ano_fabricacao, v.ano_modelo) },
+  { key: "km", label: "KM", formato: "km", agregacao: "media", getValor: (v) => v.km },
+  { key: "cor_externa", label: "Cor", formato: "texto", agregacao: "nenhuma", getValor: (v) => v.cor_externa },
+  { key: "combustivel", label: "Combustível", formato: "texto", agregacao: "nenhuma", getValor: (v) => v.combustivel },
+  { key: "dias_patio", label: "Dias parado", formato: "numero", agregacao: "media", getValor: (v) => v.dias_patio },
+  { key: "valor_aquisicao", label: "Custo de entrada", formato: "moeda", agregacao: "soma", getValor: (v) => v.valor_aquisicao },
+  { key: "custo_total", label: "Custo total", formato: "moeda", agregacao: "soma", getValor: (v) => v.custo_total },
+  { key: "preco_venda", label: "Preço de venda", formato: "moeda", agregacao: "soma", getValor: (v) => v.preco_venda },
   {
     key: "margem",
     label: "Margem",
     formato: "moeda",
+    agregacao: "soma",
     getValor: (v) =>
       v.preco_venda != null && v.valor_aquisicao != null ? v.preco_venda - v.valor_aquisicao : null,
   },
-  { key: "descricao_situacao", label: "Status", formato: "texto", getValor: (v) => v.descricao_situacao },
-  { key: "patio", label: "Localização", formato: "texto", getValor: (v) => v.patio.trim() || null },
+  { key: "descricao_situacao", label: "Status", formato: "texto", agregacao: "nenhuma", getValor: (v) => v.descricao_situacao },
+  { key: "patio", label: "Localização", formato: "texto", agregacao: "nenhuma", getValor: (v) => v.patio.trim() || null },
 ];
+
+/**
+ * Catálogo no formato do MOTOR GENÉRICO (key → ColunaDef<VeiculoExportavel>).
+ * Cada `ColunaEstoque` é estruturalmente um `ColunaDef` (formato é subconjunto,
+ * `getValor` de 1 arg é compatível com a assinatura de 2 args). Usado por
+ * `montarRelatorio` na Fatia A.
+ */
+export const CATALOGO_ESTOQUE: ReadonlyMap<string, ColunaDef<VeiculoExportavel>> = new Map(
+  COLUNAS_ESTOQUE.map((c) => [c.key, c]),
+);
 
 /** Colunas marcadas por padrão na primeira vez que o modal abre. */
 export const COLUNAS_DEFAULT: readonly ColunaKey[] = [

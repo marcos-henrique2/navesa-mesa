@@ -17,7 +17,7 @@ import {
   COLUNAS_DEFAULT,
   type ColunaKey,
 } from "@/lib/export/colunas-estoque";
-import { baixarRelatorioEstoqueCustomizado } from "@/lib/export/relatorio-estoque-customizado";
+import { baixarRelatorioEstoque, construirDefEstoque } from "@/lib/export/relatorio/estoque";
 import type { VeiculoExportavel } from "@/lib/export/colunas-estoque";
 import { usePersistedState } from "@/lib/hooks/usePersistedState";
 import { showErrorToast, showSuccessToast } from "@/components/ui/Toast";
@@ -82,12 +82,13 @@ export function ConfigurarRelatorioEstoqueModal({
     if (exportando || nenhumaColuna) return;
     setExportando(true);
     try {
-      await baixarRelatorioEstoqueCustomizado(veiculos, {
+      const def = construirDefEstoque({
         colunas: colunasSel,
         incluirObservacoes: incluirObs,
         incluirAnotacoes,
         filtroLoja,
       });
+      await baixarRelatorioEstoque(def, veiculos);
       showSuccessToast(`relatorio-estoque-customizado-${todayISOLocal()}.xlsx baixado`);
       onClose();
     } catch (err) {
