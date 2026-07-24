@@ -130,6 +130,16 @@ describe("montarRelatorio — agregação TOTAIS/MÉDIA", () => {
     assert.equal(m.media!.celulas[1], 2000);
   });
 
+  it("coluna 'soma' sem NENHUM valor contribuinte → BRANCO (null), não 0/\"R$ 0\"", () => {
+    const semDinheiro: Row[] = [
+      { nome: "a", valor: null, km: 100 },
+      { nome: "b", valor: null, km: 200 },
+    ];
+    const m = montarRelatorio(def([cat("nome"), cat("valor"), cat("km")]), semDinheiro, CATALOGO);
+    assert.equal(m.totais!.celulas[1], null); // 'valor' soma sem valores → branco (não 0)
+    assert.equal(m.media!.celulas[2], 150); // km média segue normal
+  });
+
   it("zero linhas → sem TOTAIS/MÉDIA, sem divisão por zero, sem crash", () => {
     const m = montarRelatorio(def([cat("nome"), cat("valor"), cat("km")]), [], CATALOGO);
     assert.equal(m.linhas.length, 0);
@@ -201,6 +211,26 @@ describe("montarRelatorio — proteção deps→null", () => {
     ];
     const m = montarRelatorio(def([cat("calc")]), linhas, CATALOGO);
     assert.equal(m.linhas[0]![0], -3); // getter rodou (não virou null pela proteção)
+  });
+});
+
+describe("montarRelatorio — serializabilidade (round-trip JSON)", () => {
+  it("def sobrevive a JSON.parse(JSON.stringify(def)) e o motor produz saída idêntica", () => {
+    const original = def([cat("nome"), cat("valor"), cat("km"), { tipo: "branco", label: "Obs" }]);
+    const linhas: Row[] = [
+      { nome: "x", valor: 10.25, km: 1000 },
+      { nome: "y", valor: 20.75, km: 3000 },
+    ];
+    const clone = JSON.parse(JSON.stringify(original)) as RelatorioDef;
+    // Prova que nada relevante virou função/undefined na serialização.
+    assert.deepEqual(clone, original);
+
+    const a = montarRelatorio(original, linhas, CATALOGO);
+    const b = montarRelatorio(clone, linhas, CATALOGO);
+    assert.deepEqual(b.colunas, a.colunas);
+    assert.deepEqual(b.linhas, a.linhas);
+    assert.deepEqual(b.totais, a.totais);
+    assert.deepEqual(b.media, a.media);
   });
 });
 

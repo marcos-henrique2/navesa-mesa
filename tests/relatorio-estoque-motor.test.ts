@@ -55,36 +55,55 @@ describe("colunas-estoque — metadado agregacao", () => {
 // ─── Não-regressão vs gerador atual ──────────────────────────────────────────
 
 const VEICULOS = [
-  veiculo({ placa: "AAA1A11", modelo: "RANGER XLT", km: 84000, preco_venda: 145000.5, valor_aquisicao: 120000.25 }),
-  veiculo({ placa: "BBB2B22", modelo: "HILUX", km: null, preco_venda: null, valor_aquisicao: 90000.1 }),
-  veiculo({ placa: "CCC3C33", modelo: "S10", km: 30000, preco_venda: 130000, valor_aquisicao: 100000 }),
+  veiculo({ placa: "AAA1A11", modelo: "RANGER XLT", chassi: "9BFCHASSI0000001", ano_fabricacao: 2021, km: 84000, preco_venda: 145000.5, valor_aquisicao: 120000.25 }),
+  veiculo({ placa: "BBB2B22", modelo: "HILUX", chassi: "9BFCHASSI0000002", ano_fabricacao: 2022, km: null, preco_venda: null, valor_aquisicao: 90000.1 }),
+  veiculo({ placa: "CCC3C33", modelo: "S10", chassi: "9BFCHASSI0000003", ano_fabricacao: null, km: 30000, preco_venda: 130000, valor_aquisicao: 100000 }),
 ];
 
-const COLS: ColunaKey[] = ["placa", "modelo", "km", "valor_aquisicao", "preco_venda", "margem"];
+// Inclui colunas de largura customizada (modelo 48, chassi 30, placa 15,
+// descricao_situacao 22) e uma de formato `ano` (ano_fabricacao) pra cobrir
+// tanto a largura por key quanto o formato `ano`.
+const COLS: ColunaKey[] = [
+  "placa",
+  "modelo",
+  "chassi",
+  "descricao_situacao",
+  "ano_fabricacao",
+  "km",
+  "valor_aquisicao",
+  "preco_venda",
+  "margem",
+];
 
 describe("não-regressão: novo motor reproduz o export atual (fora TOTAIS/MÉDIA)", () => {
-  it("título, meta, header e dados batem célula a célula com o gerador atual", async () => {
-    const atual = await abrir(
-      await gerarRelatorioEstoqueCustomizado(VEICULOS, {
-        colunas: COLS,
-        incluirObservacoes: true,
-        filtroLoja: "MATRIZ",
-      }),
-    );
-    const novo = await abrir(
-      await gerarRelatorioEstoque(
-        construirDefEstoque({ colunas: COLS, incluirObservacoes: true, filtroLoja: "MATRIZ" }),
-        VEICULOS,
-      ),
-    );
+  it("título, meta, header, dados e LARGURAS batem célula a célula com o gerador atual", async () => {
+    // Observações + Anotações (2 colunas em branco no fim).
+    const opcoes = {
+      colunas: COLS,
+      incluirObservacoes: true,
+      incluirAnotacoes: true,
+      filtroLoja: "MATRIZ",
+    };
+    const atual = await abrir(await gerarRelatorioEstoqueCustomizado(VEICULOS, opcoes));
+    const novo = await abrir(await gerarRelatorioEstoque(construirDefEstoque(opcoes), VEICULOS));
 
     // Título (A1) e meta (A2).
     assert.equal(String(novo.getCell("A1").value), String(atual.getCell("A1").value));
     assert.equal(String(novo.getCell("A2").value), String(atual.getCell("A2").value));
 
-    const nColsAtual = 6 + 1; // 6 colunas + Observações
+    const nCols = COLS.length + 2; // + Observações + Anotações
+
+    // Larguras de coluna idênticas (o ponto cego que deixou passar a regressão).
+    for (let c = 1; c <= nCols; c++) {
+      assert.equal(
+        novo.getColumn(c).width,
+        atual.getColumn(c).width,
+        `largura col ${c} (${String(atual.getRow(3).getCell(c).value ?? "")})`,
+      );
+    }
+
     // Header (linha 3) idêntico.
-    for (let c = 1; c <= nColsAtual; c++) {
+    for (let c = 1; c <= nCols; c++) {
       assert.equal(
         String(novo.getRow(3).getCell(c).value ?? ""),
         String(atual.getRow(3).getCell(c).value ?? ""),
@@ -93,7 +112,7 @@ describe("não-regressão: novo motor reproduz o export atual (fora TOTAIS/MÉDI
     }
     // Dados (linhas 4..6) idênticos, incluindo "—" pra nulos e numFmt.
     for (let r = 4; r <= 3 + VEICULOS.length; r++) {
-      for (let c = 1; c <= nColsAtual; c++) {
+      for (let c = 1; c <= nCols; c++) {
         assert.equal(
           String(novo.getRow(r).getCell(c).value ?? ""),
           String(atual.getRow(r).getCell(c).value ?? ""),
@@ -112,10 +131,14 @@ describe("não-regressão: novo motor reproduz o export atual (fora TOTAIS/MÉDI
 // ─── Novas linhas TOTAIS/MÉDIA no XLSX ───────────────────────────────────────
 
 describe("XLSX: linhas TOTAIS/MÉDIA acrescentadas no fim", () => {
+  // Conjunto local com ordem canônica estável: 1=placa 2=modelo 3=km
+  // 4=valor_aquisicao 5=preco_venda 6=margem.
+  const COLS_AGG: ColunaKey[] = ["placa", "modelo", "km", "valor_aquisicao", "preco_venda", "margem"];
+
   it("TOTAIS soma dinheiro (cru) e MÉDIA calcula km, ambas após os dados", async () => {
     const ws = await abrir(
       await gerarRelatorioEstoque(
-        construirDefEstoque({ colunas: COLS, incluirObservacoes: false }),
+        construirDefEstoque({ colunas: COLS_AGG, incluirObservacoes: false }),
         VEICULOS,
       ),
     );

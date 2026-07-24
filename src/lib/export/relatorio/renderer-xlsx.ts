@@ -52,6 +52,27 @@ const LARGURA_PADRAO: Record<ColunaFormato, number> = {
 };
 const LARGURA_BRANCO = 54;
 
+/**
+ * Largura específica por key do catálogo (sobrepõe o padrão por formato). Portado
+ * do gerador de estoque atual pra preservar exatamente o layout que o Marcos já
+ * conhece — colunas texto largas (modelo/chassi/loja) e a placa estreita.
+ */
+const LARGURA_POR_KEY: Record<string, number> = {
+  modelo: 48,
+  chassi: 30,
+  loja: 30,
+  placa: 15,
+  descricao_situacao: 22,
+  patio: 24,
+};
+
+/** Largura efetiva de uma coluna resolvida. */
+function larguraPara(col: ColunaResolvida): number {
+  if (col.branco) return LARGURA_BRANCO;
+  if (col.key != null && col.key in LARGURA_POR_KEY) return LARGURA_POR_KEY[col.key]!;
+  return LARGURA_PADRAO[col.formato];
+}
+
 function thinBorder(): ExcelJS.Borders {
   const side: Partial<ExcelJS.Border> = { style: "thin", color: { argb: COLOR.borderGray } };
   return { top: side, bottom: side, left: side, right: side, diagonal: { up: false, down: false } } as ExcelJS.Borders;
@@ -130,7 +151,7 @@ export function renderRelatorioXLSX(montado: RelatorioMontado, meta: RenderMetaX
 
   // ─── Larguras ───
   colunas.forEach((c, i) => {
-    ws.getColumn(i + 1).width = c.branco ? LARGURA_BRANCO : LARGURA_PADRAO[c.formato];
+    ws.getColumn(i + 1).width = larguraPara(c);
   });
 
   // ─── Linha 1: título ───

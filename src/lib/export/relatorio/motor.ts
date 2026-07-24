@@ -31,6 +31,8 @@ import {
 export type ColunaResolvida = {
   /** true quando é coluna em branco (sem getter, sempre null nos dados). */
   branco: boolean;
+  /** Key do catálogo (ausente em colunas em branco) — usada p/ largura por key. */
+  key?: string;
   label: string;
   formato: ColunaFormato;
   agregacao: ColunaAgregacao;
@@ -109,6 +111,7 @@ export function montarRelatorio<Row>(
     }
     colunas.push({
       branco: false,
+      key: colDef.key,
       label: saida.labelOverride ?? colDef.label,
       formato: colDef.formato,
       agregacao: colDef.agregacao,
@@ -167,8 +170,8 @@ function montarLinha(
         count += 1;
       }
     }
-    if (modo === "media") return count > 0 ? soma / count : null;
-    return soma; // soma dos não-nulos (0 quando nenhum, é uma soma legítima)
+    if (count === 0) return null; // nenhum valor contribuinte → BRANCO (não "R$ 0")
+    return modo === "media" ? soma / count : soma;
   });
 
   return { rotulo, rotuloColIndex, celulas };
