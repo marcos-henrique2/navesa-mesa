@@ -153,7 +153,7 @@ describe("gerarAnuncioRepasse", () => {
   it("RETIRADA E CONTATO tem WhatsApp e E-mail reais, sem Telefone", () => {
     const txt = gerarAnuncioRepasse(repasse());
     assert.ok(!txt.includes("Telefone"));
-    assert.ok(txt.includes("WhatsApp: (62) 98226-2543"));
+    assert.ok(txt.includes("WhatsApp: (62) 99884-2066"));
     assert.ok(txt.includes("E-mail: marcos.jesus@navesa.com.br"));
   });
 
