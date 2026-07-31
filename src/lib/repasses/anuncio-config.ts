@@ -34,7 +34,7 @@ export const ANUNCIO_CONFIG = {
   localRetirada:
     "Grupo Navesa - Goiânia/GO (endereço completo informado após aprovação da proposta)",
 
-  whatsapp: "(62) 98226-2543",
+  whatsapp: "(62) 99884-2066",
   email: "marcos.jesus@navesa.com.br",
 } as const;
 
