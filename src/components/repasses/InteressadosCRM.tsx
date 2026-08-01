@@ -110,12 +110,19 @@ export function InteressadosCRM({ repasseId }: { repasseId: number }) {
         setInteresses(lista);
         setMargem(dadosMargem);
 
-        const cross = await listOutrosInteressesDeLeads(
-          lista.map((i) => i.lead_id),
-          repasseId,
-        );
-        if (!vivo) return;
-        setCrossSell(cross);
+        // Cross-sell é best-effort: se falhar, só o badge "+N carros" some.
+        // Nunca derruba a tela — não seta `erro` da página.
+        try {
+          const cross = await listOutrosInteressesDeLeads(
+            lista.map((i) => i.lead_id),
+            repasseId,
+          );
+          if (!vivo) return;
+          setCrossSell(cross);
+        } catch {
+          if (!vivo) return;
+          setCrossSell(new Map());
+        }
       } catch (e) {
         if (!vivo) return;
         setErro(e instanceof Error ? e.message : String(e));

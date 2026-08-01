@@ -117,11 +117,15 @@ export type DadosMargemRepasse = {
 
 export async function getDadosMargemRepasse(repasseId: number): Promise<DadosMargemRepasse> {
   const sb = getSupabase();
-  const { data, error } = await sb
-    .from("repasses")
-    .select("valor_minimo, valor_compre_por, valor_compra_repasse, valor_fipe")
-    .eq("id", repasseId)
-    .maybeSingle();
+  // Repasse e gastos são independentes → dispara em paralelo (2 round-trips → 1 rtt).
+  const [{ data, error }, gastos] = await Promise.all([
+    sb
+      .from("repasses")
+      .select("valor_minimo, valor_compre_por, valor_compra_repasse, valor_fipe")
+      .eq("id", repasseId)
+      .maybeSingle(),
+    carregarGastosPorRepasse([repasseId]).then((m) => m.get(repasseId) ?? []),
+  ]);
   if (error) throw new Error(`Falha ao carregar dados de margem: ${error.message}`);
   if (!data) return { custoReal: null, minimo: null, comprePor: null, fipe: null };
 
@@ -131,8 +135,6 @@ export async function getDadosMargemRepasse(repasseId: number): Promise<DadosMar
     valor_compra_repasse: number | string | null;
     valor_fipe: number | string | null;
   };
-
-  const gastos = (await carregarGastosPorRepasse([repasseId])).get(repasseId) ?? [];
 
   return {
     custoReal: calcularCustoReal(num(r.valor_compra_repasse), gastos),
