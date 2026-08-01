@@ -129,8 +129,8 @@ export function RepassesLista() {
   );
   const [carregando, setCarregando] = useState(true);
   const [statusFiltro, setStatusFiltro] = usePersistedState<StatusFiltro>(
-    "repasses:status:v2",
-    "todos",
+    "repasses:status:v3",
+    "subido",
   );
   // Período persistido (consistente com statusFiltro e lojaFiltro).
   const [periodoIni, setPeriodoIni] = usePersistedState<string>("repasses:periodoIni", "");
