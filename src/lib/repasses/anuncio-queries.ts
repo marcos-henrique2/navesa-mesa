@@ -32,6 +32,7 @@ type AnuncioRow = {
   valor_minimo: number | string | null;
   valor_compre_por: number | string | null;
   valor_compra_repasse: number | string | null;
+  valor_fipe: number | string | null;
 };
 
 /** NUMERIC do Supabase (pode vir string) → number finito | null. */
@@ -59,7 +60,7 @@ export async function listCarrosEmAnuncio(): Promise<CarroAnuncioItem[]> {
   const { data: rows, error } = await sb
     .from("repasses")
     .select(
-      "id, placa, modelo, marca, ano_fabricacao, ano_modelo, km, status, data_subiu, data_vendido, valor_minimo, valor_compre_por, valor_compra_repasse",
+      "id, placa, modelo, marca, ano_fabricacao, ano_modelo, km, status, data_subiu, data_vendido, valor_minimo, valor_compre_por, valor_compra_repasse, valor_fipe",
     )
     .eq("status", "subido")
     .order("id", { ascending: false });
@@ -87,8 +88,8 @@ export async function listCarrosEmAnuncio(): Promise<CarroAnuncioItem[]> {
     valor_minimo: num(r.valor_minimo),
     valor_compre_por: num(r.valor_compre_por),
     valor_compra_repasse: num(r.valor_compra_repasse),
-    // FIPE/Web não tem fonte confiável por carro aqui hoje → "—". Ver Story futura.
-    fipe: null,
+    // FIPE real gravada pelo importador Auto Avaliar (Fatia 2 / Story 2.4).
+    fipe: num(r.valor_fipe),
     gastos: gastosPorId.get(r.id) ?? [],
     interessados: interessadosPorId.get(r.id) ?? 0,
   }));
