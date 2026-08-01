@@ -129,8 +129,8 @@ export function RepassesLista() {
   );
   const [carregando, setCarregando] = useState(true);
   const [statusFiltro, setStatusFiltro] = usePersistedState<StatusFiltro>(
-    "repasses:status:v2",
-    "todos",
+    "repasses:status:v3",
+    "subido",
   );
   // Período persistido (consistente com statusFiltro e lojaFiltro).
   const [periodoIni, setPeriodoIni] = usePersistedState<string>("repasses:periodoIni", "");
@@ -231,7 +231,7 @@ export function RepassesLista() {
   }, [repasses]);
 
   const filtrosAtivos =
-    (statusFiltro !== "todos" ? 1 : 0) +
+    (statusFiltro !== "subido" ? 1 : 0) +
     (lojaFiltro !== "all" ? 1 : 0) +
     (periodoIni ? 1 : 0) +
     (periodoFim ? 1 : 0) +
@@ -239,7 +239,7 @@ export function RepassesLista() {
 
   function limparFiltrosRepasses() {
     if (filtrosAtivos === 0) return;
-    setStatusFiltro("todos");
+    setStatusFiltro("subido");
     setLojaFiltro("all");
     setPeriodoIni("");
     setPeriodoFim("");
