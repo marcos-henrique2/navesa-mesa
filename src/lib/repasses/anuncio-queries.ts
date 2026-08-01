@@ -11,6 +11,7 @@
  */
 
 import { getSupabase } from "@/lib/data/supabase";
+import { calcularCustoReal } from "./margem-repasse";
 import {
   montarRelatorioAnuncio,
   type CarroAnuncioInput,
@@ -95,6 +96,50 @@ export async function listCarrosEmAnuncio(): Promise<CarroAnuncioItem[]> {
   }));
 
   return montarRelatorioAnuncio(inputs, hojeISO());
+}
+
+// ─── Dados de margem de UM repasse (painel de negociação) ────────────────────
+
+/**
+ * custo/mínimo/compre-por/FIPE de um único repasse — alimenta o painel de
+ * negociação na tela de interessados. Mesma regra de ouro do relatório:
+ * custo_real = valor_compra_repasse + Σ gastos (NUNCA valor_aquisicao).
+ *
+ * Todos os campos podem ser null (carro "incompleto") — a UI mostra estado
+ * neutro "sem dados de margem", nunca erro.
+ */
+export type DadosMargemRepasse = {
+  custoReal: number | null;
+  minimo: number | null;
+  comprePor: number | null;
+  fipe: number | null;
+};
+
+export async function getDadosMargemRepasse(repasseId: number): Promise<DadosMargemRepasse> {
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("repasses")
+    .select("valor_minimo, valor_compre_por, valor_compra_repasse, valor_fipe")
+    .eq("id", repasseId)
+    .maybeSingle();
+  if (error) throw new Error(`Falha ao carregar dados de margem: ${error.message}`);
+  if (!data) return { custoReal: null, minimo: null, comprePor: null, fipe: null };
+
+  const r = data as {
+    valor_minimo: number | string | null;
+    valor_compre_por: number | string | null;
+    valor_compra_repasse: number | string | null;
+    valor_fipe: number | string | null;
+  };
+
+  const gastos = (await carregarGastosPorRepasse([repasseId])).get(repasseId) ?? [];
+
+  return {
+    custoReal: calcularCustoReal(num(r.valor_compra_repasse), gastos),
+    minimo: num(r.valor_minimo),
+    comprePor: num(r.valor_compre_por),
+    fipe: num(r.valor_fipe),
+  };
 }
 
 /** Map repasse_id → lista de valores de gastos. */
