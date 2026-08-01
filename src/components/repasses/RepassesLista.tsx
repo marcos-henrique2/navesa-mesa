@@ -39,6 +39,7 @@ import {
   FileText,
   Search,
   Users,
+  BarChart3,
 } from "lucide-react";
 import {
   deleteRepasse,
@@ -658,6 +659,12 @@ export function RepassesLista() {
         </button>
 
         <div className="ml-auto flex items-center gap-2">
+          <Link
+            href="/repasses/anuncio"
+            className="inline-flex items-center gap-1.5 rounded-md border border-[var(--brand-300)] bg-[var(--brand-50)] px-3 py-1.5 text-xs font-medium text-[var(--brand-800)] hover:bg-[var(--brand-100)] dark:border-[var(--brand-800)] dark:bg-[var(--brand-900)]/20 dark:text-[var(--brand-200)]"
+          >
+            <BarChart3 className="h-3.5 w-3.5" /> Carros em anúncio (inteligência)
+          </Link>
           <button
             type="button"
             onClick={() => exportarLista(filtrados)}
