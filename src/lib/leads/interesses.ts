@@ -206,6 +206,52 @@ export async function listInteressesPorRepasse(
   });
 }
 
+// ─── CROSS-SELL (outros carros de repasse que o lead também quer) ────────────
+
+/** Um outro carro de repasse que o lead demonstrou interesse. */
+export type OutroInteresseRepasse = {
+  repasse_id: number;
+  modelo: string;
+};
+
+/**
+ * Pra um conjunto de leads, lista os OUTROS carros de repasse que cada um também
+ * tem interesse — exceto o repasse atual. Alimenta o badge de cross-sell na tela
+ * de interessados ("também quer +N carros").
+ *
+ * Só interesses de repasse (repasse_id não-nulo); estoque não entra. Retorna
+ * Map<lead_id, OutroInteresseRepasse[]>. Leads sem outros interesses não aparecem.
+ */
+export async function listOutrosInteressesDeLeads(
+  leadIds: ReadonlyArray<number>,
+  repasseIdExcluir: number,
+): Promise<Map<number, OutroInteresseRepasse[]>> {
+  const m = new Map<number, OutroInteresseRepasse[]>();
+  if (leadIds.length === 0) return m;
+
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("lead_interesses")
+    .select("lead_id, repasse_id, modelo_snapshot")
+    .in("lead_id", [...leadIds])
+    .not("repasse_id", "is", null)
+    .neq("repasse_id", repasseIdExcluir);
+  if (error) throw new Error(`Falha ao carregar cross-sell: ${error.message}`);
+
+  for (const row of (data ?? []) as Array<{
+    lead_id: number;
+    repasse_id: number | string | null;
+    modelo_snapshot: string;
+  }>) {
+    const repasseId = normalizarBigint(row.repasse_id);
+    if (repasseId == null) continue;
+    const arr = m.get(row.lead_id) ?? [];
+    arr.push({ repasse_id: repasseId, modelo: row.modelo_snapshot });
+    m.set(row.lead_id, arr);
+  }
+  return m;
+}
+
 /** Dados pra criar um interesse a partir de uma oferta (Marcos oferece um carro). */
 export type CriarInteresseOfertaInput = {
   leadId: number;

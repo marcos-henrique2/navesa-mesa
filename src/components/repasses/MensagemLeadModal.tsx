@@ -28,6 +28,11 @@ export type MensagemLeadModalProps = {
   telefoneWhatsapp: string | null;
   contexto: ContextoMensagem;
   titulo?: string;
+  /**
+   * Texto inicial pronto (sobrepõe a geração padrão). Usado pela tela de
+   * interessados pra injetar a mensagem de negociação (com compre-por + FIPE).
+   */
+  mensagemInicial?: string;
   open: boolean;
   onClose: () => void;
 };
@@ -38,11 +43,14 @@ export function MensagemLeadModal({
   telefoneWhatsapp,
   contexto,
   titulo,
+  mensagemInicial,
   open,
   onClose,
 }: MensagemLeadModalProps) {
   // Texto inicial derivado uma vez por montagem (pai remonta com key).
-  const [texto, setTexto] = useState(() => gerarMensagemLead(carro, { nome }, contexto));
+  const [texto, setTexto] = useState(
+    () => mensagemInicial ?? gerarMensagemLead(carro, { nome }, contexto),
+  );
 
   useEffect(() => {
     if (!open) return;

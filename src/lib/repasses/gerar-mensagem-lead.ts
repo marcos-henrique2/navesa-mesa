@@ -15,7 +15,7 @@
  * que mapeia pra contexto='visualizou' (página de interessados por carro).
  */
 
-import { formatInt } from "@/lib/utils";
+import { formatBRL, formatInt } from "@/lib/utils";
 import type { Repasse } from "@/lib/repasses/types";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 
@@ -114,4 +114,69 @@ export function gerarMensagemLead(
   const nome = primeiroNome(lead.nome);
 
   return ctx === "oferta" ? mensagemOferta(nome, carro) : mensagemVisualizou(nome, carro);
+}
+
+// ─── Variante de NEGOCIAÇÃO (compre-por + gancho FIPE) ───────────────────────
+//
+// Diferente do 'visualizou' puro (que NÃO cita preço), esta variante é o argumento
+// de venda pro interessado que já viu o anúncio: inclui o compre-por (preço do
+// anúncio) e, se o compre-por estiver abaixo da FIPE, o gancho "abaixo da tabela
+// FIPE". Degrada sem "undefined" quando falta dado. Continua PURA e testável.
+
+/** Argumentos de venda opcionais (dados do carro). Nulos degradam a mensagem. */
+export type ArgumentosVenda = {
+  /** Preço do anúncio (valor_compre_por). null → sem linha de preço. */
+  comprePor: number | null;
+  /** Tabela FIPE. Gancho só aparece se comprePor < fipe. */
+  fipe: number | null;
+};
+
+function isNumFinito(v: number | null | undefined): v is number {
+  return typeof v === "number" && Number.isFinite(v);
+}
+
+/**
+ * Monta o parágrafo com o argumento de venda. Retorna "" (sem linha) quando não
+ * há compre-por — nunca vaza "undefined"/"NaN". O gancho FIPE só entra quando a
+ * FIPE existe E o compre-por está abaixo dela.
+ */
+export function montarGanchoVenda(args: ArgumentosVenda): string {
+  if (!isNumFinito(args.comprePor)) return "";
+  let s = `Ela está anunciada por ${formatBRL(args.comprePor)}`;
+  if (isNumFinito(args.fipe) && args.comprePor < args.fipe) {
+    s += ` — abaixo da tabela FIPE (${formatBRL(args.fipe)})`;
+  }
+  return `${s}.`;
+}
+
+/**
+ * Mensagem de reaquecimento COM argumento de venda. Base 'visualizou' + gancho
+ * de preço/FIPE (quando houver). Sem gancho, cai numa mensagem equivalente à
+ * 'visualizou'.
+ */
+export function gerarMensagemNegociacao(
+  carro: CarroOfertavel,
+  lead: LeadMinimo,
+  args: ArgumentosVenda,
+): string {
+  const nome = primeiroNome(lead.nome);
+  const linhas: string[] = [
+    `Olá, ${nome}! Aqui é o Marcos, da Mesa de Repasse do Grupo Navesa.`,
+    ``,
+    `Vi que você se interessou pela ${descricaoCarro(carro)} que anunciei no Auto Avaliar.`,
+    ``,
+  ];
+
+  const gancho = montarGanchoVenda(args);
+  if (gancho) {
+    linhas.push(gancho, ``);
+  }
+
+  linhas.push(
+    `Ela ainda está disponível! Rolou interesse de fechar negócio? Ficou alguma dúvida sobre o carro ou a documentação?`,
+    ``,
+    `Me diz o que falta que eu vejo o que dá pra fazer pra gente fechar. 🤝`,
+  );
+
+  return linhas.join("\n");
 }

@@ -9,6 +9,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   gerarMensagemLead,
+  gerarMensagemNegociacao,
+  montarGanchoVenda,
   repasseParaCarro,
   veiculoParaCarro,
 } from "@/lib/repasses/gerar-mensagem-lead";
@@ -120,6 +122,64 @@ describe("gerarMensagemLead — nova API (carro, lead, contexto)", () => {
   it("ano null omite o ano mas mantém o modelo", () => {
     const msg = gerarMensagemLead({ modelo: "S10 LTZ", ano: null, km: 98000 }, { nome: "João" }, "oferta");
     assert.match(msg, /S10 LTZ \(98\.000 km\)/);
+  });
+});
+
+describe("montarGanchoVenda (argumento de venda)", () => {
+  it("compre-por presente vira a linha de preço anunciado", () => {
+    const s = montarGanchoVenda({ comprePor: 95000, fipe: null });
+    assert.match(s, /anunciada por/);
+    assert.match(s, /R\$/);
+    assert.match(s, /95\.000/);
+    assert.ok(!/FIPE/.test(s), "sem FIPE não menciona a tabela");
+  });
+
+  it("gancho FIPE só aparece quando compre-por < fipe", () => {
+    const comHook = montarGanchoVenda({ comprePor: 95000, fipe: 105000 });
+    assert.match(comHook, /abaixo da tabela FIPE/);
+    assert.match(comHook, /105\.000/);
+
+    const semHook = montarGanchoVenda({ comprePor: 105000, fipe: 100000 });
+    assert.ok(!/FIPE/.test(semHook), "compre-por acima da FIPE não gera gancho");
+    assert.match(semHook, /105\.000/);
+  });
+
+  it("sem compre-por retorna string vazia (degrada, sem 'undefined')", () => {
+    const s = montarGanchoVenda({ comprePor: null, fipe: 100000 });
+    assert.equal(s, "");
+    assert.ok(!/undefined|NaN/.test(s));
+  });
+});
+
+describe("gerarMensagemNegociacao (compre-por + gancho FIPE)", () => {
+  const carro = { modelo: "ONIX LT", ano: 2021, km: 50000 };
+
+  it("inclui compre-por e o gancho FIPE quando abaixo da tabela", () => {
+    const msg = gerarMensagemNegociacao(
+      carro,
+      { nome: "João Silva" },
+      { comprePor: 95000, fipe: 105000 },
+    );
+    assert.match(msg, /João/);
+    assert.ok(!/Silva/.test(msg), "só o primeiro nome");
+    assert.match(msg, /ONIX LT 2021/);
+    assert.match(msg, /Auto Avaliar/);
+    assert.match(msg, /95\.000/); // compre-por
+    assert.match(msg, /abaixo da tabela FIPE/);
+    assert.match(msg, /105\.000/); // fipe
+  });
+
+  it("sem FIPE: cita o preço mas não menciona a tabela", () => {
+    const msg = gerarMensagemNegociacao(carro, { nome: "Maria" }, { comprePor: 95000, fipe: null });
+    assert.match(msg, /95\.000/);
+    assert.ok(!/FIPE/.test(msg), "sem FIPE não cita a tabela");
+  });
+
+  it("sem dados de margem: degrada pra reaquecimento sem vazar 'undefined'", () => {
+    const msg = gerarMensagemNegociacao(carro, { nome: "Ana" }, { comprePor: null, fipe: null });
+    assert.match(msg, /ONIX LT 2021/);
+    assert.match(msg, /Auto Avaliar/);
+    assert.ok(!/undefined|NaN|R\$/.test(msg), "sem preço não vaza R$/undefined");
   });
 });
 
