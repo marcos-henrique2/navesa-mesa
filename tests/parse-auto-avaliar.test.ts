@@ -16,6 +16,7 @@ import { parseAutoAvaliar, type RegistroAA } from "@/lib/repasses/parse-auto-ava
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURE = readFileSync(join(__dirname, "fixtures", "auto-avaliar-sample.txt"), "utf8");
+const FIXTURE_REAL = readFileSync(join(__dirname, "fixtures", "aa_real_validacao.txt"), "utf8");
 
 function porPlaca(regs: RegistroAA[], norm: string): RegistroAA {
   const r = regs.find((x) => x.placa_norm === norm);
@@ -78,6 +79,49 @@ describe("parseAutoAvaliar — fixture real (6 carros multi-linha)", () => {
 
   it("fixture bem-formada não gera avisos", () => {
     assert.equal(avisos.length, 0);
+  });
+});
+
+describe("parseAutoAvaliar — export REAL (25 carros, header multi-linha)", () => {
+  const { registros, avisos } = parseAutoAvaliar(FIXTURE_REAL);
+
+  it("parseia os 25 registros mesmo com header quebrado em 3 linhas físicas", () => {
+    assert.equal(registros.length, 25);
+  });
+
+  it("não gera aviso FATAL de header não reconhecido", () => {
+    assert.ok(!avisos.some((a) => a.codigo === "header_nao_reconhecido"));
+  });
+
+  it("RBU6F30 — compra/mínimo/compre + médias AA/F/W centavo-perfect", () => {
+    const r = porPlaca(registros, "RBU6F30");
+    assert.equal(r.valor_compra, 93000);
+    assert.equal(r.minimo, 104000);
+    assert.equal(r.compre_por, 109000);
+    assert.equal(r.media_aa, 112112.88);
+    assert.equal(r.media_fipe, 137945);
+    assert.equal(r.media_web, 139990);
+  });
+
+  it("QTQ5E00 — Média Web 'R$ 0,00' → 0", () => {
+    assert.equal(porPlaca(registros, "QTQ5E00").media_web, 0);
+  });
+
+  it("TIU1F38 — Média AA 'R$ 0,00' → 0", () => {
+    assert.equal(porPlaca(registros, "TIU1F38").media_aa, 0);
+  });
+
+  it("PMK6A00 — caso prejuízo (compre_por < compra)", () => {
+    const r = porPlaca(registros, "PMK6A00");
+    assert.equal(r.valor_compra, 86100);
+    assert.equal(r.minimo, 79990);
+    assert.equal(r.compre_por, 85990);
+  });
+
+  it("todas as placas normalizadas são válidas", () => {
+    for (const r of registros) {
+      assert.match(r.placa_norm, /^[A-Z]{3}\d[A-Z0-9]\d{2}$/);
+    }
   });
 });
 

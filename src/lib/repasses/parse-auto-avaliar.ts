@@ -299,7 +299,21 @@ export function parseAutoAvaliar(texto: string): ParseResultAA {
     return { registros, avisos };
   }
 
-  const colMap = montarColMap(splitCelulas(linhas[headerIdx]));
+  // O CABEÇALHO real do Auto Avaliar ENVELOPA em várias linhas físicas (igual as
+  // linhas de dado): "R$ Mínimo /" ⏎ "Compre por", "Comprador /" ⏎ "Ult.Avaliacao",
+  // e "Média_Fipe/Web" cai só na 2ª linha física. Reassembla o header juntando as
+  // células de todas as linhas físicas ATÉ a fronteira do 1º registro (Anunciante).
+  // Mapear por rótulo (não posição) já tolera as células quebradas.
+  let headerEnd = headerIdx + 1;
+  const headerCelulas: string[] = [...splitCelulas(linhas[headerIdx])];
+  while (headerEnd < linhas.length && !ehFronteiraAnunciante(linhas[headerEnd])) {
+    if (linhas[headerEnd].trim() !== "") {
+      headerCelulas.push(...splitCelulas(linhas[headerEnd]));
+    }
+    headerEnd++;
+  }
+
+  const colMap = montarColMap(headerCelulas);
   const faltando = COLUNAS_ESSENCIAIS.filter((k) => colMap[k] === undefined);
   if (faltando.length > 0) {
     for (const k of faltando) {
@@ -308,18 +322,20 @@ export function parseAutoAvaliar(texto: string): ParseResultAA {
     avisos.push({
       linha: headerIdx + 1,
       campo: "header",
-      valor_raw: linhas[headerIdx].slice(0, 80),
+      valor_raw: headerCelulas.join(" | ").slice(0, 120),
       codigo: "header_nao_reconhecido",
     });
     return { registros, avisos };
   }
 
   // ── 2. Segmentação por fronteira de Anunciante ──────────────────────────────
+  // Começa em headerEnd (1ª linha do 1º registro) — as linhas de continuação do
+  // header já foram consumidas acima, não viram "linha_ignorada".
   type Bloco = { linha: number; celulas: string[] };
   const blocos: Bloco[] = [];
   let atual: Bloco | null = null;
 
-  for (let i = headerIdx + 1; i < linhas.length; i++) {
+  for (let i = headerEnd; i < linhas.length; i++) {
     const raw = linhas[i];
     if (raw.trim() === "") continue;
 
