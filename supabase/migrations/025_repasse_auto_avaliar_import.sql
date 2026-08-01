@@ -79,12 +79,14 @@ CREATE INDEX IF NOT EXISTS idx_veiculos_placa_norm
 --
 -- Comportamento (tudo em UMA transação):
 --   - atualizar: UPDATE dos 6 valores + atualizado_em WHERE id=repasse_id. NÃO toca
---     valor_aquisicao. Gasto auto_avaliar via DELETE+INSERT (só se gastos>0; idempotente,
---     preserva gastos de outros tipos).
+--     valor_aquisicao. Gasto auto_avaliar: DELETE INCONDICIONAL do tipo 'auto_avaliar'
+--     desse repasse (fica em sync com a planilha — se gastos caiu pra 0, o gasto some) +
+--     INSERT só quando gastos>0. Preserva gastos de OUTROS tipos.
 --   - criar: match defensivo por placa_norm em repasse ATIVO (marcado|subido); se achou,
 --     cai em UPDATE (idempotência de re-run). Senão, se o chassi já tem repasse ativo
 --     (placa divergente) => pula e conta conflito (não estoura 23505). Senão INSERT novo
---     (canal='auto_avaliar', status='subido', data_subiu=current_date) + gasto se gastos>0.
+--     (canal='auto_avaliar', status='subido', data_subiu=data_subido=current_date — veio
+--     do Auto Avaliar, está efetivamente no ar) + gasto se gastos>0.
 --   - reconciliacao: UPDATE status (e data/valor vendido quando 'vendido') com GUARDA no
 --     WHERE: canal='auto_avaliar' AND status='subido' — nunca mexe em quem não é AA/subido.
 --
@@ -188,10 +190,12 @@ BEGIN
 
         IF v_cnt > 0 THEN
           v_atualizados := v_atualizados + 1;
-          -- Gasto Auto Avaliar: DELETE+INSERT (idempotente, preserva outros tipos).
+          -- Gasto Auto Avaliar em sync com a planilha: DELETE INCONDICIONAL do tipo
+          -- 'auto_avaliar' (se gastos caiu pra 0, o gasto some) + INSERT só quando
+          -- gastos>0. Escopo tipo='auto_avaliar' => preserva gastos de OUTROS tipos.
+          DELETE FROM repasse_gastos
+          WHERE repasse_id = v_target AND tipo = 'auto_avaliar';
           IF v_gastos > 0 THEN
-            DELETE FROM repasse_gastos
-            WHERE repasse_id = v_target AND tipo = 'auto_avaliar';
             INSERT INTO repasse_gastos (repasse_id, tipo, descricao, valor, data)
             VALUES (v_target, 'auto_avaliar', 'Gastos Auto Avaliar', v_gastos, current_date);
           END IF;
@@ -203,7 +207,7 @@ BEGIN
         BEGIN
           INSERT INTO repasses (
             chassi, placa, modelo, cor, ano_modelo, km,
-            canal, status, data_subiu,
+            canal, status, data_subiu, data_subido,
             valor_compra_repasse, valor_minimo, valor_compre_por,
             valor_auto_avaliar, valor_fipe, valor_web
           )
@@ -214,7 +218,8 @@ BEGIN
             NULLIF(v_reg->>'cor', ''),
             NULLIF(v_reg->>'ano_modelo', '')::integer,
             NULLIF(v_reg->>'km', '')::integer,
-            'auto_avaliar', 'subido', current_date,
+            -- veio do Auto Avaliar => efetivamente no ar: data_subido = current_date
+            'auto_avaliar', 'subido', current_date, current_date,
             NULLIF(v_reg->>'valor_compra', '')::numeric,
             NULLIF(v_reg->>'minimo', '')::numeric,
             NULLIF(v_reg->>'compre_por', '')::numeric,
