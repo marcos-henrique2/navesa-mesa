@@ -85,8 +85,24 @@ describe("resumirMargemReal — completo", () => {
     assert.equal(r.total, 0);
   });
 
+  // Conjunto escolhido porque a soma NATIVA drifta: 0.1 + 0.2 dá
+  // 0.30000000000000004, não 0.3. Se `somarCentavos` virar soma crua, este teste
+  // FALHA — é essa a garantia que ele existe pra dar.
   it("centavo-perfect: soma de margens fracionadas não drifta", () => {
-    const r = resumirMargemReal([0.1, 0.2, 3_699.45], true);
-    assert.equal(r.total, 3_699.75);
+    const margens = [0.1, 0.2];
+    const somaCrua = margens.reduce((a, b) => a + b, 0);
+    assert.notEqual(somaCrua, 0.3, "conjunto precisa driftar em float nativo pra o teste discriminar");
+
+    const r = resumirMargemReal(margens, true);
+    assert.equal(r.total, 0.3);
+  });
+
+  it("centavo-perfect: drift acumulado em muitas margens de centavo", () => {
+    const margens = Array<number>(10).fill(0.1);
+    const somaCrua = margens.reduce((a, b) => a + b, 0);
+    assert.notEqual(somaCrua, 1, "0.1 somado 10x dá 0.9999999999999999 em float nativo");
+
+    const r = resumirMargemReal(margens, true);
+    assert.equal(r.total, 1);
   });
 });

@@ -49,31 +49,48 @@ export function calcularMargemVenda(r: RepasseVenda, gastos: GastosRepasse = [])
 }
 
 /**
- * Cor canônica do resultado da venda: o mesmo semáforo do resto do módulo
- * (vermelho abaixo do custo, verde no compre-por, amarelo acima do mínimo,
- * laranja no resto). Neutro quando não vendido ou com dados incompletos.
+ * Semáforo da venda a partir dos VALORES crus — a exceção do prejuízo mora aqui,
+ * numa função só, pra coluna "Resultado" e a prévia ao vivo do modal de venda
+ * jamais divergirem no mesmo carro.
  *
- * EXCEÇÃO ao neutro: `classificarMargem` exige o trio (custo/mínimo/compre-por)
- * pra escolher entre verde/amarelo/laranja, mas PREJUÍZO não depende de limiar
- * nenhum — basta custo_real e valor_vendido. Um vendido com custo de repasse mas
+ * O núcleo `classificarMargem` fica intocado: ele exige o trio (custo/mínimo/
+ * compre-por) pra escolher entre verde/amarelo/laranja, e é isso que o badge, o
+ * simulador e o relatório de anúncio esperam. Mas PREJUÍZO não depende de limiar
+ * nenhum — basta custo_real e valor de venda. Um carro com custo de repasse mas
  * sem mínimo/compre-por vinha em cinza neutro mostrando −R$ 5.000,00, que lê como
  * "não sei" em vez de "perdeu dinheiro". Aqui o vermelho ganha do neutro; o
  * `completo: false` continua sinalizando que o semáforo é parcial.
+ *
+ * Margem zero NÃO é prejuízo — segue neutro sem os limiares.
+ */
+export function classificarMargemVendaValores(
+  valorVenda: number | null | undefined,
+  custoReal: number | null | undefined,
+  minimo: number | null | undefined,
+  comprePor: number | null | undefined,
+): ClassificacaoMargem {
+  const classificacao = classificarMargem(valorVenda, custoReal, minimo, comprePor);
+  if (classificacao.cor !== "neutro") return classificacao;
+  const margem = calcularMargemValor(valorVenda, custoReal);
+  if (margem != null && margem < 0) return { cor: "vermelho", completo: false };
+  return classificacao;
+}
+
+/**
+ * Cor canônica do resultado da venda já registrada: o mesmo semáforo do resto do
+ * módulo (vermelho abaixo do custo, verde no compre-por, amarelo acima do mínimo,
+ * laranja no resto). Neutro quando não vendido ou com dados incompletos —
+ * exceto no prejuízo, conforme `classificarMargemVendaValores`.
  */
 export function classificarMargemVenda(
   r: RepasseVenda,
   gastos: GastosRepasse = [],
 ): ClassificacaoMargem {
   if (r.status !== "vendido") return { cor: "neutro", completo: false };
-  const custoReal = calcularCustoRealRepasse(r, gastos);
-  const classificacao = classificarMargem(
+  return classificarMargemVendaValores(
     r.valor_vendido,
-    custoReal,
+    calcularCustoRealRepasse(r, gastos),
     r.valor_minimo,
     r.valor_compre_por,
   );
-  if (classificacao.cor !== "neutro") return classificacao;
-  const margem = calcularMargemValor(r.valor_vendido, custoReal);
-  if (margem != null && margem < 0) return { cor: "vermelho", completo: false };
-  return classificacao;
 }

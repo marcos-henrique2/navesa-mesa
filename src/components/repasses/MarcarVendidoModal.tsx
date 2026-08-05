@@ -16,10 +16,10 @@ import type { MarcarVendidoInput } from "@/lib/repasses/queries";
 import {
   calcularCustoReal,
   calcularMargemValor,
-  classificarMargem,
   COR_MARGEM_LABEL,
   type CorMargem,
 } from "@/lib/repasses/margem-repasse";
+import { classificarMargemVendaValores } from "@/lib/repasses/margem-venda";
 import { parseValorBR } from "@/lib/utils/parse-br";
 import { formatBRL } from "@/lib/utils";
 
@@ -74,10 +74,16 @@ export function MarcarVendidoModal({
     [valorVendido, custoReal],
   );
 
+  // Camada de VENDA (não o núcleo): inclui a exceção do prejuízo, então a prévia
+  // pinta de vermelho exatamente o que a coluna "Resultado" vai pintar depois.
   const cor = useMemo(
     () =>
-      classificarMargem(valorVendido, custoReal, repasse.valor_minimo, repasse.valor_compre_por)
-        .cor,
+      classificarMargemVendaValores(
+        valorVendido,
+        custoReal,
+        repasse.valor_minimo,
+        repasse.valor_compre_por,
+      ).cor,
     [valorVendido, custoReal, repasse.valor_minimo, repasse.valor_compre_por],
   );
 

@@ -11,6 +11,7 @@ import {
   calcularCustoRealRepasse,
   calcularMargemVenda,
   classificarMargemVenda,
+  classificarMargemVendaValores,
 } from "@/lib/repasses/margem-venda";
 import { repasse } from "./_mocks";
 
@@ -212,5 +213,87 @@ describe("classificarMargemVenda", () => {
       valor_compre_por: null,
     });
     assert.deepEqual(classificarMargemVenda(r), { cor: "neutro", completo: false });
+  });
+});
+
+// A prévia ao vivo do MarcarVendidoModal classifica VALORES crus (o valor ainda
+// está sendo digitado, o repasse ainda não é "vendido"), então ela chama esta
+// função direto. Antes chamava o núcleo `classificarMargem` e o mesmo carro saía
+// cinza no modal e vermelho na coluna "Resultado" logo depois de confirmar.
+describe("classificarMargemVendaValores — prévia ao vivo do modal de venda", () => {
+  /** custo_real = 92.000 + 1.500 + 800 = 94.300; mínimo 95.000; compre-por 99.000. */
+  const CUSTO = 94_300;
+  const MIN = 95_000;
+  const CP = 99_000;
+
+  it("semáforo cheio: as 4 faixas seguem o núcleo canônico", () => {
+    assert.equal(classificarMargemVendaValores(93_000, CUSTO, MIN, CP).cor, "vermelho");
+    assert.equal(classificarMargemVendaValores(94_500, CUSTO, MIN, CP).cor, "laranja");
+    assert.equal(classificarMargemVendaValores(98_000, CUSTO, MIN, CP).cor, "amarelo");
+    assert.equal(classificarMargemVendaValores(99_500, CUSTO, MIN, CP).cor, "verde");
+  });
+
+  it("prejuízo sem mínimo/compre-por → vermelho, nunca cinza neutro", () => {
+    assert.deepEqual(classificarMargemVendaValores(87_000, 92_000, null, null), {
+      cor: "vermelho",
+      completo: false,
+    });
+  });
+
+  it("lucro sem mínimo/compre-por continua neutro (não dá pra dizer se é bom)", () => {
+    assert.deepEqual(classificarMargemVendaValores(98_000, 92_000, null, null), {
+      cor: "neutro",
+      completo: false,
+    });
+  });
+
+  it("margem exatamente zero sem limiares → neutro (não é prejuízo)", () => {
+    assert.deepEqual(classificarMargemVendaValores(92_000, 92_000, null, null), {
+      cor: "neutro",
+      completo: false,
+    });
+  });
+
+  it("valor ainda não digitado (null) → neutro", () => {
+    assert.deepEqual(classificarMargemVendaValores(null, 92_000, MIN, CP), {
+      cor: "neutro",
+      completo: false,
+    });
+  });
+
+  it("sem custo_real → neutro, mesmo com valor bem abaixo (não há custo pra comparar)", () => {
+    assert.deepEqual(classificarMargemVendaValores(50_000, null, null, null), {
+      cor: "neutro",
+      completo: false,
+    });
+  });
+
+  // O bug do MEDIUM-2: modal e coluna "Resultado" tinham que concordar no MESMO
+  // carro. Aqui a prévia do modal (valores crus) e o resultado pós-venda (repasse
+  // salvo) são comparados lado a lado.
+  it("prévia do modal e coluna Resultado dão a MESMA cor no mesmo carro", () => {
+    const semLimiares = {
+      valor_compra_repasse: 92_000,
+      valor_minimo: null,
+      valor_compre_por: null,
+    };
+    const gastos = [1_500];
+    // custo_real = 93.500; venda 88.500 → −5.000 de prejuízo.
+    const custoReal = calcularCustoRealRepasse(semLimiares, gastos);
+    assert.equal(custoReal, 93_500);
+
+    const previaModal = classificarMargemVendaValores(
+      88_500,
+      custoReal,
+      semLimiares.valor_minimo,
+      semLimiares.valor_compre_por,
+    );
+    const colunaResultado = classificarMargemVenda(
+      repasse({ ...semLimiares, status: "vendido", valor_vendido: 88_500 }),
+      gastos,
+    );
+
+    assert.deepEqual(previaModal, { cor: "vermelho", completo: false });
+    assert.deepEqual(previaModal, colunaResultado);
   });
 });
