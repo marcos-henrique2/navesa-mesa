@@ -41,8 +41,17 @@ export type Repasse = {
   loja_origem: number | null;
   patio_origem: string | null;
 
+  /** Custo de VAREJO (NBS). Referência do sistema — NUNCA entra na margem de repasse. */
   valor_aquisicao: number | null;
   preco_atual: number | null;
+
+  // ─── Valores do repasse (Épico Inteligência de Repasse — Story 1.1) ────
+  /** Custo-base do repasse ("R$ Compra" do Auto Avaliar). Base da margem, junto com Σ repasse_gastos. */
+  valor_compra_repasse: number | null;
+  /** Piso de negociação do anúncio. */
+  valor_minimo: number | null;
+  /** Teto/preço de tabela do anúncio ("Compre por"). */
+  valor_compre_por: number | null;
 
   data_marcado: string; // YYYY-MM-DD — alias de data_subiu legacy
   data_subido: string | null; // YYYY-MM-DD | null — quando virou "subido"

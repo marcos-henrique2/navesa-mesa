@@ -44,6 +44,7 @@ import {
 import {
   deleteRepasse,
   deleteRepasses,
+  listGastosPorRepasse,
   listRepasses,
   marcarComoSubido,
   marcarComoVendido,
@@ -55,7 +56,11 @@ import {
   type RepasseCamposManuaisPatch,
 } from "@/lib/repasses/queries";
 import { contarInteressesPorRepasse } from "@/lib/leads/interesses";
-import { calcularMargemReal } from "@/lib/repasses/margem";
+import { calcularMargemVenda, classificarMargemVenda } from "@/lib/repasses/margem-venda";
+import {
+  COR_MARGEM_LABEL,
+  type CorMargem,
+} from "@/lib/repasses/margem-repasse";
 import type {
   CautelarStatus,
   DocStatus,
@@ -127,6 +132,10 @@ export function RepassesLista() {
   const [interessadosPorRepasse, setInteressadosPorRepasse] = useState<Map<number, number>>(
     new Map(),
   );
+  // Map repasse_id → valores de repasse_gastos. Junto com valor_compra_repasse
+  // forma o custo_real da REGRA DE OURO (margem-repasse.ts). Sem ele a margem
+  // sairia subestimada. Falha aqui não derruba a lista — margem fica neutra.
+  const [gastosPorRepasse, setGastosPorRepasse] = useState<Map<number, number[]>>(new Map());
   const [carregando, setCarregando] = useState(true);
   const [statusFiltro, setStatusFiltro] = usePersistedState<StatusFiltro>(
     "repasses:status:v3",
@@ -152,6 +161,12 @@ export function RepassesLista() {
     try {
       const lista = await listRepasses();
       setRepasses(lista);
+      // Gastos alimentam o custo_real da margem — só faz sentido depois da lista.
+      try {
+        setGastosPorRepasse(await listGastosPorRepasse(lista.map((r) => r.id)));
+      } catch {
+        // silencioso — carros ficam sem gasto somado (cor neutra onde faltar dado)
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       showErrorToast(`Erro ao carregar repasses: ${msg}`);
@@ -201,10 +216,17 @@ export function RepassesLista() {
     const naoVendidos = repasses.filter((r) => r.status === "nao_vendido").length;
     let somaVendido = 0;
     let margemReal = 0;
+    // Quantos vendidos têm custo_real conhecido (valor_compra_repasse presente).
+    // Os demais NÃO entram na soma — cair pra valor_aquisicao (custo de varejo)
+    // subestimaria a margem. Melhor mostrar o denominador do que mentir no total.
+    let margemComCusto = 0;
     for (const r of vendidos) {
       if (r.valor_vendido != null) somaVendido += r.valor_vendido;
-      const m = calcularMargemReal(r);
-      if (m != null) margemReal += m;
+      const m = calcularMargemVenda(r, gastosPorRepasse.get(r.id) ?? []);
+      if (m != null) {
+        margemReal += m;
+        margemComCusto += 1;
+      }
     }
     // Conversão = vendidos ÷ (vendidos + não vendidos) — só dos que tiveram
     // desfecho. Sem desfecho → null (UI mostra "—").
@@ -220,9 +242,10 @@ export function RepassesLista() {
       naoVendidos,
       somaVendido,
       margemReal,
+      margemComCusto,
       conversao,
     };
-  }, [repasses]);
+  }, [repasses, gastosPorRepasse]);
 
   const lojaOpcoes = useMemo(() => {
     const set = new Set<number>();
@@ -542,6 +565,7 @@ export function RepassesLista() {
           icon={<TrendingUp className="h-4 w-4" />}
           label="Margem real"
           value={formatBRL(kpis.margemReal)}
+          hint={`${kpis.margemComCusto} de ${kpis.vendidos} com custo de repasse`}
           tone={kpis.margemReal >= 0 ? "good" : "bad"}
         />
         <Kpi
@@ -759,6 +783,7 @@ export function RepassesLista() {
           onPatchCampos={handlePatchCampos}
           onGerarAnuncio={setAnuncioRepasse}
           interessadosPorRepasse={interessadosPorRepasse}
+          gastosPorRepasse={gastosPorRepasse}
           processando={processando}
         />
       )}
@@ -797,6 +822,7 @@ export function RepassesLista() {
         <MarcarVendidoModal
           key={`vendido-${vendidoRepasse.id}`}
           repasse={vendidoRepasse}
+          gastos={gastosPorRepasse.get(vendidoRepasse.id) ?? []}
           open={true}
           onClose={() => setVendidoRepasse(null)}
           onConfirm={(input) => handleMarcarVendido(vendidoRepasse.id, input)}
@@ -830,6 +856,7 @@ function TabelaRepasses({
   onPatchCampos,
   onGerarAnuncio,
   interessadosPorRepasse,
+  gastosPorRepasse,
   processando,
   diasPatioPorChassi,
   reservadoPorChassi,
@@ -849,6 +876,7 @@ function TabelaRepasses({
   onPatchCampos: (id: number, patch: RepasseCamposManuaisPatch) => void | Promise<void>;
   onGerarAnuncio: (repasse: Repasse) => void;
   interessadosPorRepasse: Map<number, number>;
+  gastosPorRepasse: Map<number, number[]>;
   processando: boolean;
 }) {
   const todosSelecionados =
@@ -1029,7 +1057,7 @@ function TabelaRepasses({
                   <StatusBadge status={r.status} />
                 </Td>
                 <Td className="text-right">
-                  <ResultadoCell repasse={r} />
+                  <ResultadoCell repasse={r} gastos={gastosPorRepasse.get(r.id) ?? []} />
                 </Td>
                 <Td className="text-xs text-[var(--text-muted)]">{formatDataBR(r.data_marcado)}</Td>
                 <Td className={cn("sticky right-0 z-10", stickyBg)}>
@@ -1423,26 +1451,40 @@ function StatusBadge({ status }: { status: RepasseStatus }) {
   );
 }
 
+/** Cor do texto da margem por classificação canônica do semáforo. */
+const COR_MARGEM_TEXTO: Record<CorMargem, string> = {
+  verde: "text-emerald-700 dark:text-emerald-400",
+  amarelo: "text-yellow-700 dark:text-yellow-400",
+  laranja: "text-orange-700 dark:text-orange-400",
+  vermelho: "text-red-700 dark:text-red-400",
+  neutro: "text-[var(--text-muted)]",
+};
+
 /** Coluna "Resultado": vendido → valor + margem; nao_vendido → texto; senão "—". */
-function ResultadoCell({ repasse }: { repasse: Repasse }) {
+function ResultadoCell({ repasse, gastos }: { repasse: Repasse; gastos: ReadonlyArray<number> }) {
   if (repasse.status === "nao_vendido") {
     return <span className="text-xs text-red-700 dark:text-red-400">Não vendido</span>;
   }
   if (repasse.status === "vendido") {
-    const margem = calcularMargemReal(repasse);
+    // Margem sobre custo_real (compra de repasse + gastos) — NUNCA valor_aquisicao.
+    const margem = calcularMargemVenda(repasse, gastos);
+    const { cor } = classificarMargemVenda(repasse, gastos);
     return (
       <div className="flex flex-col items-end">
         <span className="text-xs font-medium tabular-nums text-[var(--text-strong)]">
           {formatBRL(repasse.valor_vendido)}
         </span>
-        {margem != null && (
+        {margem == null ? (
           <span
-            className={cn(
-              "text-[10px] font-semibold tabular-nums",
-              margem >= 0
-                ? "text-emerald-700 dark:text-emerald-400"
-                : "text-red-700 dark:text-red-400",
-            )}
+            className="text-[10px] text-[var(--text-muted)]"
+            title="Sem valor de compra do repasse — margem indisponível"
+          >
+            margem —
+          </span>
+        ) : (
+          <span
+            className={cn("text-[10px] font-semibold tabular-nums", COR_MARGEM_TEXTO[cor])}
+            title={COR_MARGEM_LABEL[cor]}
           >
             {formatBRL(margem)}
           </span>

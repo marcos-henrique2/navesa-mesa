@@ -4,19 +4,29 @@
  * Modal pra registrar o desfecho "vendido" de um repasse.
  *
  * Captura valor de venda (parser BR), data da venda (default hoje) e comprador
- * (opcional). Mostra a margem prévia AO VIVO (valor − custo): verde se ≥ 0,
- * vermelha se < 0.
+ * (opcional). Mostra a margem prévia AO VIVO sobre o custo_real do repasse
+ * (valor_compra_repasse + Σ gastos — REGRA DE OURO de `margem-repasse.ts`),
+ * com a cor do semáforo canônico. NUNCA usa valor_aquisicao (custo de varejo).
  */
 
 import { useMemo, useState } from "react";
 import { Loader2, X } from "lucide-react";
 import type { Repasse } from "@/lib/repasses/types";
 import type { MarcarVendidoInput } from "@/lib/repasses/queries";
+import {
+  calcularCustoReal,
+  calcularMargemValor,
+  classificarMargem,
+  COR_MARGEM_LABEL,
+  type CorMargem,
+} from "@/lib/repasses/margem-repasse";
 import { parseValorBR } from "@/lib/utils/parse-br";
 import { formatBRL } from "@/lib/utils";
 
 export type MarcarVendidoModalProps = {
   repasse: Repasse;
+  /** Valores de `repasse_gastos` do carro — entram no custo_real. */
+  gastos: ReadonlyArray<number>;
   open: boolean;
   onClose: () => void;
   onConfirm: (input: MarcarVendidoInput) => void | Promise<void>;
@@ -26,7 +36,22 @@ function hojeYMD(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function MarcarVendidoModal({ repasse, open, onClose, onConfirm }: MarcarVendidoModalProps) {
+/** Cor do texto da margem por classificação canônica do semáforo. */
+const COR_MARGEM_TEXTO: Record<CorMargem, string> = {
+  verde: "text-emerald-700 dark:text-emerald-400",
+  amarelo: "text-yellow-700 dark:text-yellow-400",
+  laranja: "text-orange-700 dark:text-orange-400",
+  vermelho: "text-red-700 dark:text-red-400",
+  neutro: "text-[var(--text-muted)]",
+};
+
+export function MarcarVendidoModal({
+  repasse,
+  gastos,
+  open,
+  onClose,
+  onConfirm,
+}: MarcarVendidoModalProps) {
   const [valorRaw, setValorRaw] = useState("");
   const [data, setData] = useState(hojeYMD());
   const [comprador, setComprador] = useState("");
@@ -34,11 +59,23 @@ export function MarcarVendidoModal({ repasse, open, onClose, onConfirm }: Marcar
 
   const valorVendido = useMemo(() => parseValorBR(valorRaw), [valorRaw]);
 
-  // Margem prévia ao vivo = valor vendido − custo.
-  const margem = useMemo(() => {
-    if (valorVendido == null || repasse.valor_aquisicao == null) return null;
-    return valorVendido - repasse.valor_aquisicao;
-  }, [valorVendido, repasse.valor_aquisicao]);
+  const custoReal = useMemo(
+    () => calcularCustoReal(repasse.valor_compra_repasse, gastos),
+    [repasse.valor_compra_repasse, gastos],
+  );
+
+  // Margem prévia ao vivo = valor vendido − custo_real. null se falta custo.
+  const margem = useMemo(
+    () => calcularMargemValor(valorVendido, custoReal),
+    [valorVendido, custoReal],
+  );
+
+  const cor = useMemo(
+    () =>
+      classificarMargem(valorVendido, custoReal, repasse.valor_minimo, repasse.valor_compre_por)
+        .cor,
+    [valorVendido, custoReal, repasse.valor_minimo, repasse.valor_compre_por],
+  );
 
   if (!open) return null;
 
@@ -129,14 +166,20 @@ export function MarcarVendidoModal({ repasse, open, onClose, onConfirm }: Marcar
           <div className="flex items-center justify-between rounded-md border border-[var(--border-soft)] bg-[var(--bg-muted)] px-3 py-2 text-sm">
             <span className="text-[var(--text-muted)]">Margem prévia</span>
             {margem == null ? (
-              <span className="text-[var(--text-subtle)]">—</span>
+              <span
+                className="text-[var(--text-subtle)]"
+                title={
+                  custoReal == null
+                    ? "Sem valor de compra do repasse — margem indisponível"
+                    : undefined
+                }
+              >
+                —
+              </span>
             ) : (
               <span
-                className={
-                  margem >= 0
-                    ? "font-semibold tabular-nums text-emerald-700 dark:text-emerald-400"
-                    : "font-semibold tabular-nums text-red-700 dark:text-red-400"
-                }
+                className={`font-semibold tabular-nums ${COR_MARGEM_TEXTO[cor]}`}
+                title={COR_MARGEM_LABEL[cor]}
               >
                 {formatBRL(margem)}
               </span>

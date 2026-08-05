@@ -12,6 +12,7 @@
 
 import { getSupabase } from "@/lib/data/supabase";
 import { calcularCustoReal } from "./margem-repasse";
+import { listGastosPorRepasse } from "./queries";
 import {
   montarRelatorioAnuncio,
   type CarroAnuncioInput,
@@ -71,7 +72,7 @@ export async function listCarrosEmAnuncio(): Promise<CarroAnuncioItem[]> {
   const ids = anuncios.map((r) => r.id);
 
   const [gastosPorId, interessadosPorId] = await Promise.all([
-    carregarGastosPorRepasse(ids),
+    listGastosPorRepasse(ids),
     carregarInteressadosPorRepasse(ids),
   ]);
 
@@ -124,7 +125,7 @@ export async function getDadosMargemRepasse(repasseId: number): Promise<DadosMar
       .select("valor_minimo, valor_compre_por, valor_compra_repasse, valor_fipe")
       .eq("id", repasseId)
       .maybeSingle(),
-    carregarGastosPorRepasse([repasseId]).then((m) => m.get(repasseId) ?? []),
+    listGastosPorRepasse([repasseId]).then((m) => m.get(repasseId) ?? []),
   ]);
   if (error) throw new Error(`Falha ao carregar dados de margem: ${error.message}`);
   if (!data) return { custoReal: null, minimo: null, comprePor: null, fipe: null };
@@ -142,26 +143,6 @@ export async function getDadosMargemRepasse(repasseId: number): Promise<DadosMar
     comprePor: num(r.valor_compre_por),
     fipe: num(r.valor_fipe),
   };
-}
-
-/** Map repasse_id → lista de valores de gastos. */
-async function carregarGastosPorRepasse(ids: ReadonlyArray<number>): Promise<Map<number, number[]>> {
-  const m = new Map<number, number[]>();
-  if (ids.length === 0) return m;
-  const sb = getSupabase();
-  const { data, error } = await sb
-    .from("repasse_gastos")
-    .select("repasse_id, valor")
-    .in("repasse_id", [...ids]);
-  if (error) throw new Error(`Falha ao carregar gastos de repasse: ${error.message}`);
-  for (const row of (data ?? []) as Array<{ repasse_id: number; valor: number | string | null }>) {
-    const v = num(row.valor);
-    if (v == null) continue;
-    const arr = m.get(row.repasse_id) ?? [];
-    arr.push(v);
-    m.set(row.repasse_id, arr);
-  }
-  return m;
 }
 
 /** Map repasse_id → COUNT de interessados. */
