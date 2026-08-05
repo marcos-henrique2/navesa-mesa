@@ -148,4 +148,69 @@ describe("classificarMargemVenda", () => {
     const r = repasse({ ...base, status: "subido", valor_vendido: null });
     assert.deepEqual(classificarMargemVenda(r, gastos), { cor: "neutro", completo: false });
   });
+
+  // Regressão: com custo de repasse mas SEM mínimo/compre-por, o semáforo cheio
+  // não é classificável — mas prejuízo não depende de limiar. Antes saía neutro
+  // (cinza) mostrando −R$ 5.000,00 com tooltip "Dados incompletos".
+  it("prejuízo sem mínimo/compre-por → vermelho, mesmo com semáforo parcial", () => {
+    const r = repasse({
+      status: "vendido",
+      valor_vendido: 87_000,
+      valor_compra_repasse: 92_000,
+      valor_minimo: null,
+      valor_compre_por: null,
+    });
+    assert.equal(calcularMargemVenda(r), -5_000);
+    assert.deepEqual(classificarMargemVenda(r), { cor: "vermelho", completo: false });
+  });
+
+  it("prejuízo só por causa dos gastos, sem limiares → vermelho", () => {
+    const r = repasse({
+      status: "vendido",
+      valor_vendido: 92_500,
+      valor_compra_repasse: 92_000,
+      valor_minimo: null,
+      valor_compre_por: null,
+    });
+    // Sem gastos daria +500 (neutro); com 1.500 de gasto vira −1.000 (vermelho).
+    assert.deepEqual(classificarMargemVenda(r), { cor: "neutro", completo: false });
+    assert.equal(calcularMargemVenda(r, [1_500]), -1_000);
+    assert.deepEqual(classificarMargemVenda(r, [1_500]), { cor: "vermelho", completo: false });
+  });
+
+  it("lucro sem mínimo/compre-por continua neutro (não dá pra dizer se é bom)", () => {
+    const r = repasse({
+      status: "vendido",
+      valor_vendido: 98_000,
+      valor_compra_repasse: 92_000,
+      valor_minimo: null,
+      valor_compre_por: null,
+    });
+    assert.equal(calcularMargemVenda(r), 6_000);
+    assert.deepEqual(classificarMargemVenda(r), { cor: "neutro", completo: false });
+  });
+
+  it("margem exatamente zero sem limiares → neutro (não é prejuízo)", () => {
+    const r = repasse({
+      status: "vendido",
+      valor_vendido: 92_000,
+      valor_compra_repasse: 92_000,
+      valor_minimo: null,
+      valor_compre_por: null,
+    });
+    assert.equal(calcularMargemVenda(r), 0);
+    assert.deepEqual(classificarMargemVenda(r), { cor: "neutro", completo: false });
+  });
+
+  it("sem valor_compra_repasse segue neutro (não há custo pra comparar)", () => {
+    const r = repasse({
+      status: "vendido",
+      valor_vendido: 50_000,
+      valor_aquisicao: 120_000,
+      valor_compra_repasse: null,
+      valor_minimo: null,
+      valor_compre_por: null,
+    });
+    assert.deepEqual(classificarMargemVenda(r), { cor: "neutro", completo: false });
+  });
 });

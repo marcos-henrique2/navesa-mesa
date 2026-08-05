@@ -88,7 +88,11 @@ import { estaReservado } from "@/lib/inventory/reservado";
 import { cn, formatBRL, formatBRLCents, formatInt } from "@/lib/utils";
 import { parseValorBR } from "@/lib/utils/parse-br";
 import { placaCasa } from "@/lib/utils/placa";
-import { calcularValorPraSubir } from "@/lib/repasses/kpis";
+import {
+  calcularValorPraSubir,
+  resumirMargemReal,
+  type ResumoMargemReal,
+} from "@/lib/repasses/kpis";
 import { calcularBonus } from "@/lib/repasses/bonus";
 import { showErrorToast, showSuccessToast } from "@/components/ui/Toast";
 import { MarcarRepasseModal } from "./MarcarRepasseModal";
@@ -99,6 +103,26 @@ import { AnuncioModal } from "./AnuncioModal";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 
 type StatusFiltro = "marcado" | "subido" | "vendido" | "nao_vendido" | "todos";
+
+/**
+ * Gastos de um repasse. `null` quando o mapa inteiro é null (a query falhou) —
+ * distinto de `[]`, que é "carregou e o carro não tem gasto nenhum".
+ */
+function gastosDo(mapa: Map<number, number[]> | null, id: number): number[] | null {
+  return mapa == null ? null : (mapa.get(id) ?? []);
+}
+
+/**
+ * Tom do KPI "Margem real". Sem número confiável → neutro (nunca verde em cima
+ * de R$ 0,00, que lê como "não deu lucro"). Prejuízo → vermelho mesmo no estado
+ * parcial: perda é fato, e o "parcial —" do hint já avisa que a soma é do
+ * subconjunto. Parcial no positivo → âmbar, porque o total tende a subir.
+ */
+function tomMargemReal(r: ResumoMargemReal): "neutro" | "good" | "warn" | "bad" {
+  if (r.total == null) return "neutro";
+  if (r.total < 0) return "bad";
+  return r.estado === "parcial" ? "warn" : "good";
+}
 
 const STATUS_FILTROS: ReadonlyArray<{ value: StatusFiltro; label: string }> = [
   { value: "marcado", label: "Marcados" },
@@ -133,9 +157,13 @@ export function RepassesLista() {
     new Map(),
   );
   // Map repasse_id → valores de repasse_gastos. Junto com valor_compra_repasse
-  // forma o custo_real da REGRA DE OURO (margem-repasse.ts). Sem ele a margem
-  // sairia subestimada. Falha aqui não derruba a lista — margem fica neutra.
-  const [gastosPorRepasse, setGastosPorRepasse] = useState<Map<number, number[]>>(new Map());
+  // forma o custo_real da REGRA DE OURO (margem-repasse.ts).
+  //
+  // `null` = a query FALHOU (não é "nenhum gasto"). O tipo nullable é proposital:
+  // sem o Σ gastos o custo_real sai menor do que é e a margem sairia
+  // SUPERESTIMADA. Deixar um Map vazio nesse caso produziria número otimista
+  // pintado de verde — o null obriga cada consumidor a tratar "indisponível".
+  const [gastosPorRepasse, setGastosPorRepasse] = useState<Map<number, number[]> | null>(new Map());
   const [carregando, setCarregando] = useState(true);
   const [statusFiltro, setStatusFiltro] = usePersistedState<StatusFiltro>(
     "repasses:status:v3",
@@ -164,8 +192,13 @@ export function RepassesLista() {
       // Gastos alimentam o custo_real da margem — só faz sentido depois da lista.
       try {
         setGastosPorRepasse(await listGastosPorRepasse(lista.map((r) => r.id)));
-      } catch {
-        // silencioso — carros ficam sem gasto somado (cor neutra onde faltar dado)
+      } catch (err) {
+        // NÃO é silencioso de propósito: sem o Σ gastos a margem sairia maior do
+        // que é. Marca indisponível (traço + neutro em toda a tela) e avisa —
+        // número financeiro errado em silêncio é pior que número ausente.
+        setGastosPorRepasse(null);
+        const msg = err instanceof Error ? err.message : String(err);
+        showErrorToast(`Erro ao carregar gastos dos repasses — margens indisponíveis: ${msg}`);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -215,19 +248,16 @@ export function RepassesLista() {
     const vendidos = repasses.filter((r) => r.status === "vendido");
     const naoVendidos = repasses.filter((r) => r.status === "nao_vendido").length;
     let somaVendido = 0;
-    let margemReal = 0;
-    // Quantos vendidos têm custo_real conhecido (valor_compra_repasse presente).
-    // Os demais NÃO entram na soma — cair pra valor_aquisicao (custo de varejo)
-    // subestimaria a margem. Melhor mostrar o denominador do que mentir no total.
-    let margemComCusto = 0;
+    // Uma entrada por vendido: número = margem computável, null = sem
+    // valor_compra_repasse. Os nulos NÃO entram na soma — cair pra
+    // valor_aquisicao (custo de varejo) subestimaria a margem.
+    const margens: Array<number | null> = [];
     for (const r of vendidos) {
       if (r.valor_vendido != null) somaVendido += r.valor_vendido;
-      const m = calcularMargemVenda(r, gastosPorRepasse.get(r.id) ?? []);
-      if (m != null) {
-        margemReal += m;
-        margemComCusto += 1;
-      }
+      const gastos = gastosDo(gastosPorRepasse, r.id);
+      margens.push(gastos == null ? null : calcularMargemVenda(r, gastos));
     }
+    const margem = resumirMargemReal(margens, gastosPorRepasse != null);
     // Conversão = vendidos ÷ (vendidos + não vendidos) — só dos que tiveram
     // desfecho. Sem desfecho → null (UI mostra "—").
     const comDesfecho = vendidos.length + naoVendidos;
@@ -241,8 +271,7 @@ export function RepassesLista() {
       vendidos: vendidos.length,
       naoVendidos,
       somaVendido,
-      margemReal,
-      margemComCusto,
+      margem,
       conversao,
     };
   }, [repasses, gastosPorRepasse]);
@@ -564,9 +593,9 @@ export function RepassesLista() {
         <Kpi
           icon={<TrendingUp className="h-4 w-4" />}
           label="Margem real"
-          value={formatBRL(kpis.margemReal)}
-          hint={`${kpis.margemComCusto} de ${kpis.vendidos} com custo de repasse`}
-          tone={kpis.margemReal >= 0 ? "good" : "bad"}
+          value={kpis.margem.total == null ? "—" : formatBRL(kpis.margem.total)}
+          hint={kpis.margem.hint}
+          tone={tomMargemReal(kpis.margem)}
         />
         <Kpi
           icon={<Percent className="h-4 w-4" />}
@@ -822,7 +851,7 @@ export function RepassesLista() {
         <MarcarVendidoModal
           key={`vendido-${vendidoRepasse.id}`}
           repasse={vendidoRepasse}
-          gastos={gastosPorRepasse.get(vendidoRepasse.id) ?? []}
+          gastos={gastosDo(gastosPorRepasse, vendidoRepasse.id)}
           open={true}
           onClose={() => setVendidoRepasse(null)}
           onConfirm={(input) => handleMarcarVendido(vendidoRepasse.id, input)}
@@ -876,7 +905,8 @@ function TabelaRepasses({
   onPatchCampos: (id: number, patch: RepasseCamposManuaisPatch) => void | Promise<void>;
   onGerarAnuncio: (repasse: Repasse) => void;
   interessadosPorRepasse: Map<number, number>;
-  gastosPorRepasse: Map<number, number[]>;
+  /** null = a query de gastos falhou → margens indisponíveis (ver `gastosDo`). */
+  gastosPorRepasse: Map<number, number[]> | null;
   processando: boolean;
 }) {
   const todosSelecionados =
@@ -1057,7 +1087,7 @@ function TabelaRepasses({
                   <StatusBadge status={r.status} />
                 </Td>
                 <Td className="text-right">
-                  <ResultadoCell repasse={r} gastos={gastosPorRepasse.get(r.id) ?? []} />
+                  <ResultadoCell repasse={r} gastos={gastosDo(gastosPorRepasse, r.id)} />
                 </Td>
                 <Td className="text-xs text-[var(--text-muted)]">{formatDataBR(r.data_marcado)}</Td>
                 <Td className={cn("sticky right-0 z-10", stickyBg)}>
@@ -1461,14 +1491,24 @@ const COR_MARGEM_TEXTO: Record<CorMargem, string> = {
 };
 
 /** Coluna "Resultado": vendido → valor + margem; nao_vendido → texto; senão "—". */
-function ResultadoCell({ repasse, gastos }: { repasse: Repasse; gastos: ReadonlyArray<number> }) {
+function ResultadoCell({
+  repasse,
+  gastos,
+}: {
+  repasse: Repasse;
+  /** null = a query de gastos falhou → margem indisponível, nunca otimista. */
+  gastos: ReadonlyArray<number> | null;
+}) {
   if (repasse.status === "nao_vendido") {
     return <span className="text-xs text-red-700 dark:text-red-400">Não vendido</span>;
   }
   if (repasse.status === "vendido") {
     // Margem sobre custo_real (compra de repasse + gastos) — NUNCA valor_aquisicao.
-    const margem = calcularMargemVenda(repasse, gastos);
-    const { cor } = classificarMargemVenda(repasse, gastos);
+    // Sem os gastos o custo_real fica incompleto: margem indisponível, não parcial.
+    const margem = gastos == null ? null : calcularMargemVenda(repasse, gastos);
+    const { cor } = gastos == null
+      ? ({ cor: "neutro" } as const)
+      : classificarMargemVenda(repasse, gastos);
     return (
       <div className="flex flex-col items-end">
         <span className="text-xs font-medium tabular-nums text-[var(--text-strong)]">
@@ -1477,7 +1517,11 @@ function ResultadoCell({ repasse, gastos }: { repasse: Repasse; gastos: Readonly
         {margem == null ? (
           <span
             className="text-[10px] text-[var(--text-muted)]"
-            title="Sem valor de compra do repasse — margem indisponível"
+            title={
+              gastos == null
+                ? "Falha ao carregar os gastos do repasse — margem indisponível"
+                : "Sem valor de compra do repasse — margem indisponível"
+            }
           >
             margem —
           </span>

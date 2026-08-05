@@ -25,8 +25,12 @@ import { formatBRL } from "@/lib/utils";
 
 export type MarcarVendidoModalProps = {
   repasse: Repasse;
-  /** Valores de `repasse_gastos` do carro — entram no custo_real. */
-  gastos: ReadonlyArray<number>;
+  /**
+   * Valores de `repasse_gastos` do carro — entram no custo_real.
+   * `null` = a query de gastos falhou: sem o Σ gastos a prévia sairia
+   * SUPERESTIMADA, então o custo_real vira null e a margem fica indisponível.
+   */
+  gastos: ReadonlyArray<number> | null;
   open: boolean;
   onClose: () => void;
   onConfirm: (input: MarcarVendidoInput) => void | Promise<void>;
@@ -60,7 +64,7 @@ export function MarcarVendidoModal({
   const valorVendido = useMemo(() => parseValorBR(valorRaw), [valorRaw]);
 
   const custoReal = useMemo(
-    () => calcularCustoReal(repasse.valor_compra_repasse, gastos),
+    () => (gastos == null ? null : calcularCustoReal(repasse.valor_compra_repasse, gastos)),
     [repasse.valor_compra_repasse, gastos],
   );
 
@@ -169,9 +173,11 @@ export function MarcarVendidoModal({
               <span
                 className="text-[var(--text-subtle)]"
                 title={
-                  custoReal == null
-                    ? "Sem valor de compra do repasse — margem indisponível"
-                    : undefined
+                  gastos == null
+                    ? "Falha ao carregar os gastos do repasse — margem indisponível"
+                    : custoReal == null
+                      ? "Sem valor de compra do repasse — margem indisponível"
+                      : undefined
                 }
               >
                 —

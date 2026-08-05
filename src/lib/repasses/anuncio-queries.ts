@@ -11,13 +11,13 @@
  */
 
 import { getSupabase } from "@/lib/data/supabase";
-import { calcularCustoReal } from "./margem-repasse";
-import { listGastosPorRepasse } from "./queries";
+import { calcularCustoReal } from "@/lib/repasses/margem-repasse";
+import { listGastosPorRepasse } from "@/lib/repasses/queries";
 import {
   montarRelatorioAnuncio,
   type CarroAnuncioInput,
   type CarroAnuncioItem,
-} from "./relatorio-anuncio";
+} from "@/lib/repasses/relatorio-anuncio";
 
 /** Row cru dos campos que o relatório precisa. NUMERIC pode vir como string. */
 type AnuncioRow = {

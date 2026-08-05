@@ -52,16 +52,28 @@ export function calcularMargemVenda(r: RepasseVenda, gastos: GastosRepasse = [])
  * Cor canônica do resultado da venda: o mesmo semáforo do resto do módulo
  * (vermelho abaixo do custo, verde no compre-por, amarelo acima do mínimo,
  * laranja no resto). Neutro quando não vendido ou com dados incompletos.
+ *
+ * EXCEÇÃO ao neutro: `classificarMargem` exige o trio (custo/mínimo/compre-por)
+ * pra escolher entre verde/amarelo/laranja, mas PREJUÍZO não depende de limiar
+ * nenhum — basta custo_real e valor_vendido. Um vendido com custo de repasse mas
+ * sem mínimo/compre-por vinha em cinza neutro mostrando −R$ 5.000,00, que lê como
+ * "não sei" em vez de "perdeu dinheiro". Aqui o vermelho ganha do neutro; o
+ * `completo: false` continua sinalizando que o semáforo é parcial.
  */
 export function classificarMargemVenda(
   r: RepasseVenda,
   gastos: GastosRepasse = [],
 ): ClassificacaoMargem {
   if (r.status !== "vendido") return { cor: "neutro", completo: false };
-  return classificarMargem(
+  const custoReal = calcularCustoRealRepasse(r, gastos);
+  const classificacao = classificarMargem(
     r.valor_vendido,
-    calcularCustoRealRepasse(r, gastos),
+    custoReal,
     r.valor_minimo,
     r.valor_compre_por,
   );
+  if (classificacao.cor !== "neutro") return classificacao;
+  const margem = calcularMargemValor(r.valor_vendido, custoReal);
+  if (margem != null && margem < 0) return { cor: "vermelho", completo: false };
+  return classificacao;
 }
