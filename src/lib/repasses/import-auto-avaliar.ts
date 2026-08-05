@@ -53,6 +53,12 @@ export type ImportPreview = {
   pendencias: Pendencia[];
   reconciliacao: ReconItem[];
   avisos: Aviso[];
+  /**
+   * Tamanho do universo subido (canal auto_avaliar + status subido) que serviu de
+   * base pra reconciliação. É o DENOMINADOR da trava de proporção — sem ele não dá
+   * pra saber se reconciliar N carros é rotina ou é uma colagem pela metade.
+   */
+  subido_total: number;
 };
 
 // ─── Entradas resolvidas do banco (já normalizadas por placa_norm) ────────────
@@ -141,7 +147,63 @@ export function montarPreviewPuro(inp: PreviewInputs): ImportPreview {
     }
   }
 
-  return { itens, pendencias, reconciliacao, avisos: [...inp.avisos] };
+  return {
+    itens,
+    pendencias,
+    reconciliacao,
+    avisos: [...inp.avisos],
+    subido_total: inp.subidoUniverso.length,
+  };
+}
+
+// ─── Trava de proporção da reconciliação ─────────────────────────────────────
+
+/**
+ * Piso absoluto de itens reconciliados. Abaixo disso não pedimos confirmação
+ * extra: mexer em 1–4 carros é revertível a mão e proporção alta em universo
+ * pequeno (2 de 3 subidos = 67%) é rotina, não acidente.
+ */
+export const RECON_PISO_ABSOLUTO = 5;
+
+/**
+ * Fatia do universo subido acima da qual a reconciliação deixa de parecer
+ * "os carros que venderam nesta semana" e passa a parecer "a lista veio cortada".
+ */
+export const RECON_PROPORCAO_LIMITE = 0.3;
+
+export type RiscoReconciliacao = {
+  /** Quantos repasses mudam de status se gravar. */
+  total: number;
+  /** Universo subido considerado (denominador). */
+  universo: number;
+  /** total / universo (0 quando o universo é vazio). */
+  proporcao: number;
+  /** true → a UI exige confirmação explícita antes de liberar a gravação. */
+  exige_confirmacao: boolean;
+};
+
+/**
+ * Mede o risco da reconciliação em massa.
+ *
+ * Reconciliar é a única operação destrutiva em lote do importador e não tem
+ * desfazer. Uma colagem parcial (paginação do Auto Avaliar, seleção incompleta,
+ * linhas descartadas pelo parser) produz exatamente o mesmo preview de uma
+ * colagem completa — a diferença só aparece no TAMANHO da reconciliação.
+ *
+ * Gatilho = piso absoluto E proporção: `total >= 5 && total / universo > 30%`.
+ */
+export function avaliarRiscoReconciliacao(
+  preview: Pick<ImportPreview, "reconciliacao" | "subido_total">,
+): RiscoReconciliacao {
+  const total = preview.reconciliacao.length;
+  const universo = preview.subido_total;
+  const proporcao = universo > 0 ? total / universo : 0;
+  return {
+    total,
+    universo,
+    proporcao,
+    exige_confirmacao: total >= RECON_PISO_ABSOLUTO && proporcao > RECON_PROPORCAO_LIMITE,
+  };
 }
 
 // ─── Payload da RPC (snapshot já decidido) ────────────────────────────────────

@@ -50,6 +50,17 @@ function arredondar2(v: number): number {
   return Math.round((v + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * Soma centavo-perfect de valores já arredondados. Acumular em ponto flutuante
+ * drifta (0.1 + 0.2 = 0.30000000000000004); o arredondamento final garante o
+ * centavo em totais de KPI.
+ */
+export function somarCentavos(valores: ReadonlyArray<number>): number {
+  let soma = 0;
+  for (const v of valores) soma += v;
+  return arredondar2(soma);
+}
+
 // ─── custo_real ──────────────────────────────────────────────────────────────
 
 /**

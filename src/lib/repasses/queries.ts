@@ -6,9 +6,11 @@
  * Tudo client-side via o singleton getSupabase(). Erros são propagados como
  * Error — UI captura via try/catch e exibe toast.
  *
- * Schema: tabela `repasses` ainda tem colunas legacy (valor_subiu, valor_minimo,
- * doc_status, gastos, etc.) — mantemos como zumbis. A UI usa snapshot do veículo
- * + status + datas + desfecho da venda (valor_vendido/data_vendido/comprador).
+ * Schema: tabela `repasses` ainda tem colunas legacy (valor_subiu, doc_status,
+ * gastos, etc.) — mantemos como zumbis. A UI usa snapshot do veículo + status +
+ * datas + desfecho da venda (valor_vendido/data_vendido/comprador) + o trio da
+ * margem de repasse (valor_compra_repasse/valor_minimo/valor_compre_por).
+ * Todos os SELECT de row completa usam `*`, então o trio já vem do banco.
  *
  * Mapeamento legacy → novo:
  *   - `data_subiu` (legacy NOT NULL) → preenchido com hoje no INSERT, exposto
@@ -69,6 +71,9 @@ export type RepasseRow = {
   loja_origem: number | null;
   patio_origem: string | null;
   valor_aquisicao: number | null;
+  valor_compra_repasse: number | string | null;
+  valor_minimo: number | string | null;
+  valor_compre_por: number | string | null;
   valor_subiu: number | null;
   data_subiu: string;
   data_subido: string | null;
@@ -137,6 +142,11 @@ export function rowToRepasse(row: RepasseRow): Repasse {
     loja_origem: row.loja_origem,
     patio_origem: row.patio_origem,
     valor_aquisicao: row.valor_aquisicao,
+    // Trio da margem de repasse (regra de ouro em margem-repasse.ts): custo-base
+    // B2B + piso + teto do anúncio. NUMERIC pode vir como string do Supabase.
+    valor_compra_repasse: normalizarNumeric(row.valor_compra_repasse),
+    valor_minimo: normalizarNumeric(row.valor_minimo),
+    valor_compre_por: normalizarNumeric(row.valor_compre_por),
     preco_atual: row.valor_subiu, // reusa coluna legacy como "preço atual do estoque no momento da marcação"
     data_marcado: row.data_subiu,
     data_subido: row.data_subido,
@@ -255,6 +265,36 @@ export async function marcarVariosComoSubido(ids: ReadonlyArray<number>): Promis
     .select("id");
   if (error) throw new Error(`Falha ao marcar como subidos: ${error.message}`);
   return (data ?? []).length;
+}
+
+// ─── Gastos (base da margem de repasse) ──────────────────────────────────────
+
+/**
+ * Map repasse_id → lista de valores de `repasse_gastos`.
+ *
+ * Alimenta `calcularCustoReal(valor_compra_repasse, gastos)` — a REGRA DE OURO
+ * de `margem-repasse.ts`. Ids sem gasto simplesmente não aparecem no Map (caller
+ * usa `?? []`). Valores não-numéricos são ignorados.
+ */
+export async function listGastosPorRepasse(
+  ids: ReadonlyArray<number>,
+): Promise<Map<number, number[]>> {
+  const m = new Map<number, number[]>();
+  if (ids.length === 0) return m;
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("repasse_gastos")
+    .select("repasse_id, valor")
+    .in("repasse_id", [...ids]);
+  if (error) throw new Error(`Falha ao carregar gastos de repasse: ${error.message}`);
+  for (const row of (data ?? []) as Array<{ repasse_id: number; valor: number | string | null }>) {
+    const v = normalizarNumeric(row.valor);
+    if (v == null) continue;
+    const arr = m.get(row.repasse_id) ?? [];
+    arr.push(v);
+    m.set(row.repasse_id, arr);
+  }
+  return m;
 }
 
 // ─── Desfecho da venda (vendido / não vendido) ───────────────────────────────

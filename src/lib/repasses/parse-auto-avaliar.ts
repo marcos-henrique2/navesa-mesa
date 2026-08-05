@@ -130,6 +130,15 @@ const COLUNAS_ESSENCIAIS: ReadonlyArray<ColKey> = [
   "media",
 ];
 
+/** Rótulo pt-BR das essenciais, pra dizer ao Marcos o que faltou no cabeçalho. */
+const ROTULO_COLUNA_ESSENCIAL: Readonly<Record<string, string>> = {
+  anunciante: "Anunciante",
+  veiculos: "Veículos",
+  compra: "R$ Compra",
+  minimo_compre: "R$ Mínimo / Compre por",
+  media: "Média",
+};
+
 type ColMap = Partial<Record<ColKey, number>>;
 
 // ─── Utilitários de linha ────────────────────────────────────────────────────
@@ -273,6 +282,80 @@ function dataParaISO(cell: string): string | null {
   const m = RE_DATA.exec(cell.trim());
   if (!m) return null;
   return `${m[3]}-${m[2]}-${m[1]}`;
+}
+
+// ─── Diagnóstico de parse sem registro ───────────────────────────────────────
+
+export type MotivoParseVazio =
+  | "texto_vazio"
+  | "header_nao_reconhecido"
+  | "coluna_ausente"
+  | "sem_registro_valido";
+
+export type DiagnosticoParseVazio = {
+  motivo: MotivoParseVazio;
+  /** Mensagem pt-BR: o que houve + o que fazer. */
+  mensagem: string;
+};
+
+/** "A", "A e B", "A, B e C". */
+function listarPt(itens: ReadonlyArray<string>): string {
+  if (itens.length <= 1) return itens[0] ?? "";
+  return `${itens.slice(0, -1).join(", ")} e ${itens[itens.length - 1]}`;
+}
+
+/**
+ * Explica por que o parse não produziu NENHUM registro. Retorna null quando há
+ * registro (nada a diagnosticar).
+ *
+ * Existe porque os dois modos de falha total do parser (header não reconhecido e
+ * coluna essencial ausente) devolvem 0 registros MAS com avisos — uma guarda que
+ * exija `avisos.length === 0` nunca dispara justamente nos casos que importam.
+ */
+export function diagnosticarParseVazio(res: ParseResultAA): DiagnosticoParseVazio | null {
+  if (res.registros.length > 0) return null;
+
+  if (res.avisos.length === 0) {
+    return {
+      motivo: "texto_vazio",
+      mensagem:
+        "Nada pra analisar. Selecione a grade inteira do Auto Avaliar (com a linha de cabeçalho), copie e cole aqui.",
+    };
+  }
+
+  const headerFalhou = res.avisos.some((a) => a.codigo === "header_nao_reconhecido");
+  const faltando = res.avisos
+    .filter((a) => a.codigo === "coluna_ausente" && ROTULO_COLUNA_ESSENCIAL[a.campo] !== undefined)
+    .map((a) => ROTULO_COLUNA_ESSENCIAL[a.campo]);
+
+  if (headerFalhou && faltando.length > 0) {
+    return {
+      motivo: "coluna_ausente",
+      mensagem: `Cabeçalho incompleto: falta ${listarPt(faltando)}. Nada foi lido. Copie a grade INTEIRA do Auto Avaliar, incluindo o cabeçalho, e cole de novo.`,
+    };
+  }
+
+  if (headerFalhou) {
+    return {
+      motivo: "header_nao_reconhecido",
+      mensagem:
+        "Cabeçalho não reconhecido: o texto colado não parece a grade do Auto Avaliar. Nada foi lido. Selecione a grade INTEIRA (com a linha de cabeçalho) e cole de novo.",
+    };
+  }
+
+  const placasInvalidas = res.avisos.filter((a) => a.codigo === "placa_invalida").length;
+  if (placasInvalidas > 0) {
+    return {
+      motivo: "sem_registro_valido",
+      mensagem: `Nenhum carro válido: ${placasInvalidas} linha(s) descartada(s) por placa inválida. Confira se colou a lista completa, sem cortes no meio das linhas.`,
+    };
+  }
+
+  return {
+    motivo: "sem_registro_valido",
+    mensagem:
+      "Nenhum carro reconhecido no texto colado. Confira se colou a lista completa do Auto Avaliar, com cabeçalho.",
+  };
 }
 
 // ─── Parser principal ────────────────────────────────────────────────────────
