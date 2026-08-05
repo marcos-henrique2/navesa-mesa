@@ -20,11 +20,13 @@ import {
   Loader2,
   PlusCircle,
   RefreshCw,
-  Repeat,
+  ShieldAlert,
+  Trash2,
   Ban,
 } from "lucide-react";
-import { parseAutoAvaliar } from "@/lib/repasses/parse-auto-avaliar";
+import { parseAutoAvaliar, diagnosticarParseVazio } from "@/lib/repasses/parse-auto-avaliar";
 import { montarPreviewImport, confirmarImport } from "@/lib/repasses/import-auto-avaliar-queries";
+import { avaliarRiscoReconciliacao } from "@/lib/repasses/import-auto-avaliar";
 import type { ImportPreview, ImportResultado, PreviewItem } from "@/lib/repasses/import-auto-avaliar";
 import { formatBRLCents, formatInt } from "@/lib/utils";
 import { showErrorToast, showSuccessToast } from "@/components/ui/Toast";
@@ -46,6 +48,8 @@ export function ImportarAutoAvaliar() {
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [confirmando, setConfirmando] = useState(false);
   const [resultado, setResultado] = useState<ImportResultado | null>(null);
+  /** Destrava a gravação quando a reconciliação é desproporcional (colagem parcial). */
+  const [listaCompletaConfirmada, setListaCompletaConfirmada] = useState(false);
 
   const criar = useMemo(
     () => preview?.itens.filter((i) => i.acao === "criar") ?? [],
@@ -63,13 +67,19 @@ export function ImportarAutoAvaliar() {
     () => preview?.reconciliacao.filter((r) => r.novo_status === "marcado") ?? [],
     [preview],
   );
+  const risco = useMemo(
+    () => (preview ? avaliarRiscoReconciliacao(preview) : null),
+    [preview],
+  );
 
   async function analisar() {
     setResultado(null);
     setPreview(null);
+    setListaCompletaConfirmada(false);
     const parsed = parseAutoAvaliar(texto);
-    if (parsed.registros.length === 0 && parsed.avisos.length === 0) {
-      showErrorToast("Nenhum registro reconhecido. Confira se colou a lista completa.");
+    const falha = diagnosticarParseVazio(parsed);
+    if (falha) {
+      showErrorToast(falha.mensagem);
       return;
     }
     setAnalisando(true);
@@ -86,13 +96,22 @@ export function ImportarAutoAvaliar() {
     }
   }
 
+  /** Descarta o preview sem gravar nada (o texto colado fica pra reanalisar). */
+  function descartar() {
+    setPreview(null);
+    setResultado(null);
+    setListaCompletaConfirmada(false);
+  }
+
   async function confirmar() {
     if (!preview) return;
+    if (risco?.exige_confirmacao && !listaCompletaConfirmada) return;
     setConfirmando(true);
     try {
       const res = await confirmarImport(preview);
       setResultado(res);
       setPreview(null);
+      setListaCompletaConfirmada(false);
       setTexto("");
       showSuccessToast(
         `Gravado: ${res.criados} criados, ${res.atualizados} atualizados, ${
@@ -108,6 +127,7 @@ export function ImportarAutoAvaliar() {
 
   const totalGravar =
     (preview?.itens.length ?? 0) + (preview?.reconciliacao.length ?? 0);
+  const bloqueado = (risco?.exige_confirmacao ?? false) && !listaCompletaConfirmada;
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -194,13 +214,47 @@ export function ImportarAutoAvaliar() {
               vazio="Nenhum repasse existente pra atualizar."
             />
 
-            {/* Reconciliação */}
-            <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4">
-              <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--text-strong)]">
-                <Repeat className="h-4 w-4 text-violet-600" /> Reconciliação (
-                {preview.reconciliacao.length})
+            {/* Reconciliação — ÚNICA operação destrutiva em massa do fluxo */}
+            <div
+              className={
+                preview.reconciliacao.length === 0
+                  ? "rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4"
+                  : "rounded-xl border-2 border-rose-400 bg-rose-50 p-4 dark:border-rose-700 dark:bg-rose-950/40"
+              }
+            >
+              <h3
+                className={
+                  preview.reconciliacao.length === 0
+                    ? "inline-flex items-center gap-2 text-sm font-semibold text-[var(--text-strong)]"
+                    : "inline-flex items-center gap-2 text-sm font-bold text-rose-800 dark:text-rose-300"
+                }
+              >
+                <ShieldAlert
+                  className={
+                    preview.reconciliacao.length === 0
+                      ? "h-4 w-4 text-[var(--text-muted)]"
+                      : "h-4 w-4 text-rose-600 dark:text-rose-400"
+                  }
+                />{" "}
+                Reconciliação ({preview.reconciliacao.length})
               </h3>
-              <p className="mt-0.5 text-xs text-[var(--text-muted)]">
+              {preview.reconciliacao.length > 0 && (
+                <p className="mt-1 text-sm font-semibold text-rose-800 dark:text-rose-300">
+                  {preview.reconciliacao.length}{" "}
+                  {preview.reconciliacao.length === 1 ? "carro vai" : "carros vão"} mudar de status
+                  {risco != null && risco.universo > 0
+                    ? ` — ${Math.round(risco.proporcao * 100)}% dos ${risco.universo} subidos`
+                    : ""}
+                  . Não tem desfazer.
+                </p>
+              )}
+              <p
+                className={
+                  preview.reconciliacao.length === 0
+                    ? "mt-0.5 text-xs text-[var(--text-muted)]"
+                    : "mt-1 text-xs text-rose-900/80 dark:text-rose-200/80"
+                }
+              >
                 Subidos que sumiram da lista: cruzam com vendas (vendido) ou voltam pra marcado.
               </p>
               {preview.reconciliacao.length === 0 ? (
@@ -240,7 +294,7 @@ export function ImportarAutoAvaliar() {
             {/* Pendências */}
             <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4">
               <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--text-strong)]">
-                <Ban className="h-4 w-4 text-rose-600" /> Pendências sem chassi (
+                <Ban className="h-4 w-4 text-[var(--text-muted)]" /> Pendências sem chassi (
                 {preview.pendencias.length})
               </h3>
               <p className="mt-0.5 text-xs text-[var(--text-muted)]">
@@ -263,21 +317,62 @@ export function ImportarAutoAvaliar() {
             </div>
           </div>
 
+          {/* Trava de proporção: reconciliação grande demais pro tamanho do universo */}
+          {risco?.exige_confirmacao && (
+            <div className="rounded-xl border-2 border-rose-400 bg-rose-50 p-4 dark:border-rose-700 dark:bg-rose-950/40">
+              <h3 className="inline-flex items-center gap-2 text-sm font-bold text-rose-800 dark:text-rose-300">
+                <AlertTriangle className="h-4 w-4" /> Reconciliação em massa — confirme antes de
+                gravar
+              </h3>
+              <p className="mt-1 text-xs text-rose-900 dark:text-rose-200">
+                {risco.total} de {risco.universo} carros subidos ({Math.round(risco.proporcao * 100)}
+                %) vão mudar de status porque não apareceram no texto colado. Isso é esperado se você
+                colou a lista INTEIRA do Auto Avaliar. Se a lista veio paginada, cortada ou
+                incompleta, cancele e cole de novo — reverter depois é carro por carro.
+              </p>
+              <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm font-medium text-rose-900 dark:text-rose-200">
+                <input
+                  type="checkbox"
+                  checked={listaCompletaConfirmada}
+                  onChange={(e) => setListaCompletaConfirmada(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 shrink-0 accent-rose-600"
+                />
+                Confirmo que colei a lista completa do Auto Avaliar.
+              </label>
+            </div>
+          )}
+
           {/* Confirmar */}
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4">
             <span className="text-sm text-[var(--text-muted)]">
               {criar.length} criar · {atualizar.length} atualizar · {vendidos.length} vendidos ·{" "}
               {marcados.length} marcados · {preview.pendencias.length} pendências
             </span>
-            <button
-              type="button"
-              onClick={() => void confirmar()}
-              disabled={confirmando || totalGravar === 0}
-              className="inline-flex items-center gap-2 rounded-md bg-[var(--brand-700)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--brand-800)] disabled:opacity-50"
-            >
-              {confirmando ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              {confirmando ? "Gravando…" : "Confirmar gravação"}
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={descartar}
+                disabled={confirmando}
+                className="inline-flex items-center gap-2 rounded-md border border-[var(--border-base)] px-4 py-2 text-sm font-medium text-[var(--text-body)] hover:bg-[var(--bg-muted)] disabled:opacity-50"
+              >
+                <Trash2 className="h-4 w-4" />
+                Descartar preview
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmar()}
+                disabled={confirmando || totalGravar === 0 || bloqueado}
+                title={
+                  bloqueado
+                    ? "Marque a confirmação de lista completa pra liberar a gravação."
+                    : undefined
+                }
+                className="inline-flex items-center gap-2 rounded-md bg-[var(--brand-700)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--brand-800)] disabled:opacity-50"
+              >
+                {confirmando ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                {confirmando ? "Gravando…" : "Confirmar gravação"}
+              </button>
+            </div>
           </div>
         </div>
       )}

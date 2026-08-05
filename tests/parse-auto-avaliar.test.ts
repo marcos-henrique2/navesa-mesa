@@ -12,7 +12,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { parseAutoAvaliar, type RegistroAA } from "@/lib/repasses/parse-auto-avaliar";
+import {
+  parseAutoAvaliar,
+  diagnosticarParseVazio,
+  type RegistroAA,
+} from "@/lib/repasses/parse-auto-avaliar";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURE = readFileSync(join(__dirname, "fixtures", "auto-avaliar-sample.txt"), "utf8");
@@ -163,6 +167,65 @@ describe("parseAutoAvaliar — header", () => {
     assert.equal(registros.length, 0);
     assert.ok(avisos.some((a) => a.codigo === "coluna_ausente"));
     assert.ok(avisos.some((a) => a.codigo === "header_nao_reconhecido"));
+  });
+});
+
+describe("diagnosticarParseVazio — guarda de importação vazia", () => {
+  it("header não reconhecido dispara a guarda (0 registros COM avisos)", () => {
+    const parsed = parseAutoAvaliar("linha qualquer\noutra linha\n");
+    // pré-condição do bug antigo: a guarda `registros === 0 && avisos === 0` não pegava
+    assert.equal(parsed.registros.length, 0);
+    assert.ok(parsed.avisos.length > 0);
+
+    const d = diagnosticarParseVazio(parsed);
+    assert.ok(d);
+    assert.equal(d.motivo, "header_nao_reconhecido");
+    assert.match(d.mensagem, /Cabe[çc]alho n[ãa]o reconhecido/i);
+    assert.match(d.mensagem, /cole de novo/i);
+  });
+
+  it("coluna essencial ausente dispara a guarda nomeando o que faltou", () => {
+    const texto = [
+      "Anunciante\tVeículos\tStatus",
+      "NAVESA - GO/MATRIZ (Goiania/GO)\tCarro",
+      "Em oferta\tRBU6F30 RANGER Cinza Ano Mod.2021 km: 100000",
+    ].join("\n");
+    const parsed = parseAutoAvaliar(texto);
+    assert.equal(parsed.registros.length, 0);
+    assert.ok(parsed.avisos.length > 0);
+
+    const d = diagnosticarParseVazio(parsed);
+    assert.ok(d);
+    assert.equal(d.motivo, "coluna_ausente");
+    assert.match(d.mensagem, /R\$ Compra/);
+    assert.match(d.mensagem, /M[íi]nimo/);
+  });
+
+  it("texto vazio → motivo texto_vazio", () => {
+    const d = diagnosticarParseVazio(parseAutoAvaliar("   "));
+    assert.ok(d);
+    assert.equal(d.motivo, "texto_vazio");
+  });
+
+  it("todas as linhas descartadas por placa inválida → sem_registro_valido com a contagem", () => {
+    const texto = [
+      "Anunciante\tStatus\tVeículos\tData Validade\tR$ Compra\tR$ Mínimo / Compre por\tMédia_Fipe/Web",
+      "NAVESA - GO/MATRIZ (Goiania/GO)\tCarro",
+      "Em oferta\tXX RANGER Cinza Ano Mod.2021 km: 100000\t03/08/2026\t90.000,00\t100.000,00 / 105.000,00\tR$ 100.000,00 AA",
+      "R$ 110.000,00 F",
+      "R$ 120.000,00 W",
+    ].join("\n");
+    const parsed = parseAutoAvaliar(texto);
+    assert.equal(parsed.registros.length, 0);
+
+    const d = diagnosticarParseVazio(parsed);
+    assert.ok(d);
+    assert.equal(d.motivo, "sem_registro_valido");
+    assert.match(d.mensagem, /placa inv[áa]lida/i);
+  });
+
+  it("parse com registros → null (não dispara guarda)", () => {
+    assert.equal(diagnosticarParseVazio(parseAutoAvaliar(FIXTURE)), null);
   });
 });
 
