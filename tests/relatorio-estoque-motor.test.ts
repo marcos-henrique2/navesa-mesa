@@ -45,8 +45,10 @@ describe("colunas-estoque — metadado agregacao", () => {
     assert.equal(getColuna("dias_patio")!.agregacao, "media");
   });
 
+  // "ano_fabricacao" e "ano_modelo" saíram do catálogo: viraram uma coluna só,
+  // "ano" (rótulo "Ano/Modelo"), que já rende "2021/2022".
   it("texto/placa/ano são 'nenhuma'", () => {
-    for (const k of ["placa", "modelo", "ano", "ano_fabricacao", "descricao_situacao"] as ColunaKey[]) {
+    for (const k of ["placa", "modelo", "ano", "descricao_situacao"] as ColunaKey[]) {
       assert.equal(getColuna(k)!.agregacao, "nenhuma", `${k} não deveria agregar`);
     }
   });
