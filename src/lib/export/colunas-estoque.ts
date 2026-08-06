@@ -78,9 +78,11 @@ export const COLUNAS_ESTOQUE: readonly ColunaEstoque[] = [
   { key: "chassi", label: "Chassi", formato: "texto", agregacao: "nenhuma", getValor: (v) => v.chassi },
   { key: "marca", label: "Marca", formato: "texto", agregacao: "nenhuma", getValor: (v) => v.marca },
   { key: "modelo", label: "Modelo", formato: "texto", agregacao: "nenhuma", getValor: (v) => v.modelo },
-  { key: "ano_fabricacao", label: "Ano fabricação", formato: "ano", agregacao: "nenhuma", getValor: (v) => v.ano_fabricacao },
-  { key: "ano_modelo", label: "Ano modelo", formato: "ano", agregacao: "nenhuma", getValor: (v) => v.ano_modelo },
-  { key: "ano", label: "Ano", formato: "texto", agregacao: "nenhuma", getValor: (v) => fmtAno(v.ano_fabricacao, v.ano_modelo) },
+  // Ano é UMA opção só, no formato que a concessionária usa: "2021/2022" (fabricação/modelo),
+  // ou "2022" quando os dois coincidem. Antes existiam três checkboxes — "Ano fabricação",
+  // "Ano modelo" e "Ano" —, e o rótulo "Ano" não deixava claro que era o combinado: quem
+  // queria os dois marcava "Ano modelo" e recebia só um. Uma opção, sem ambiguidade.
+  { key: "ano", label: "Ano/Modelo", formato: "texto", agregacao: "nenhuma", getValor: (v) => fmtAno(v.ano_fabricacao, v.ano_modelo) },
   { key: "km", label: "KM", formato: "km", agregacao: "media", getValor: (v) => v.km },
   { key: "cor_externa", label: "Cor", formato: "texto", agregacao: "nenhuma", getValor: (v) => v.cor_externa },
   { key: "combustivel", label: "Combustível", formato: "texto", agregacao: "nenhuma", getValor: (v) => v.combustivel },
