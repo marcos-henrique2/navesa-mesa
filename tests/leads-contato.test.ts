@@ -3,9 +3,14 @@
  *
  * O que importa aqui e por quê:
  *   - ISOLAMENTO: há um lojista com interesse em 8 carros. Contatar sobre 1 não
- *     pode encostar nos outros 7. O teste prova isso pela IDENTIDADE dos objetos
- *     (as outras linhas voltam por referência), que é mais forte que comparar
- *     valores campo a campo.
+ *     pode encostar nos outros 7. Duas provas complementares:
+ *       a) no patch em memória, as outras linhas voltam pela MESMA referência —
+ *          conclusão mais forte que "os valores continuam iguais", porque também
+ *          descarta cópia desnecessária e prova que nada foi reconstruído; note que
+ *          ela NÃO substitui a comparação de valores (mutação in-place preservaria a
+ *          referência), então os testes de valor abaixo continuam necessários;
+ *       b) no banco, quem isola é o `WHERE repasse_id` da RPC — garantido pelo
+ *          `p_repasse_id` que `paramsMarcarContatado` sempre envia.
  *   - RETRY/ROLLBACK: a RPC pode falhar. Uma retentativa automática; persistindo,
  *     o erro precisa chegar em quem chamou pra a UI reverter o patch otimista.
  *   - RETORNO DA RPC: JSONB do Postgres chega com números como string e pode vir
@@ -13,7 +18,11 @@
  *   - DESFAZER COMPLETO: a RPC promove `leads.status_relacionamento` de 'novo' pra
  *     'contatado'. Desfazer só o interesse deixava o lead contatado SEM contato
  *     registrado — inconsistente e invisível. O desfazer precisa reverter os dois,
- *     e só quando a promoção foi dele (`status_promovido`).
+ *     e só quando a promoção foi dele (`status_promovido`) E nenhum outro carro do
+ *     mesmo lead foi contatado na janela dos 8s (`podeRebaixarLead`).
+ *   - ESCOPO INESPERADO: a RPC tem um fallback que alarga o UPDATE pra todos os
+ *     interesses pendentes do lead. Quando ele dispara, o "Desfazer" reverteria 1 de
+ *     N — a tela precisa saber (`escopoInesperado`) pra avisar e não oferecê-lo.
  *
  * As funções que tocam o Supabase (`registrarContatoLead`, `desfazerContatoLead`)
  * ficam pra e2e — aqui testamos as partes puras e o combinador de retry.
@@ -26,6 +35,9 @@ import {
   aplicarPromocaoLead,
   comRetryUnico,
   interpretarRetornoContato,
+  mensagemEscopoInesperado,
+  paramsMarcarContatado,
+  podeRebaixarLead,
   reverterContatoOtimista,
   reverterPromocaoLead,
   type InteresseContatavel,
@@ -288,6 +300,7 @@ describe("interpretarRetornoContato", () => {
       interessesMarcados: 1,
       statusPromovido: true,
       dataContato: "2026-08-06",
+      escopoInesperado: false,
     });
   });
 
@@ -323,5 +336,117 @@ describe("interpretarRetornoContato", () => {
     assert.equal(r.statusPromovido, false);
     assert.equal(r.dataContato, HOJE);
     assert.equal(Number.isNaN(r.interessesMarcados), false);
+  });
+});
+
+describe("escopo inesperado — o fallback da RPC atingindo mais (ou menos) que 1 carro", () => {
+  // A RPC marca o interesse do carro pedido (WHERE lead_id AND repasse_id). Se ele
+  // sumiu entre o carregamento da tela e o clique, ROW_COUNT = 0 e ela cai num
+  // fallback que marca TODOS os interesses do lead sem data_contato — os outros 7
+  // carros do lojista junto. O "Desfazer" é escopado num interesse só: ofertá-lo aqui
+  // reverteria 1 de N e deixaria o resto marcado, em silêncio.
+  const comEscopo = (interesses_marcados: number) =>
+    interpretarRetornoContato({ interesses_marcados, status_promovido: true }, 7, HOJE, true);
+
+  it("1 interesse marcado é o caminho normal — nada de anomalia", () => {
+    assert.equal(comEscopo(1).escopoInesperado, false);
+  });
+
+  it("O CASO: fallback pegou 5 carros do mesmo lojista", () => {
+    assert.equal(comEscopo(5).escopoInesperado, true);
+  });
+
+  it("0 marcados também é anomalia (o carro sumiu e não sobrou pendente nenhum)", () => {
+    assert.equal(comEscopo(0).escopoInesperado, true);
+  });
+
+  it("sem escopo isolado (estoque/sondagem) o contador não é anomalia nenhuma", () => {
+    // Sem `p_repasse_id` a RPC marca todos os pendentes DE PROPÓSITO.
+    for (const n of [0, 1, 5]) {
+      const r = interpretarRetornoContato({ interesses_marcados: n }, 7, HOJE);
+      assert.equal(r.escopoInesperado, false, `${n} marcados não deveria acusar anomalia`);
+    }
+  });
+
+  it("bigint como string do Postgres também é avaliado", () => {
+    const r = interpretarRetornoContato({ interesses_marcados: "3" }, 7, HOJE, true);
+    assert.equal(r.escopoInesperado, true);
+  });
+
+  it("retorno lixo (0 por degradação) acusa anomalia — silêncio seria pior", () => {
+    assert.equal(interpretarRetornoContato(null, 7, HOJE, true).escopoInesperado, true);
+  });
+
+  it("o aviso diz o que houve e por que o Desfazer sumiu", () => {
+    const zero = mensagemEscopoInesperado(0);
+    assert.match(zero, /nenhum interesse foi marcado/);
+    assert.match(zero, /Desfazer/);
+    assert.match(zero, /Recarregue/);
+
+    const muitos = mensagemEscopoInesperado(5);
+    assert.match(muitos, /5 interesses/);
+    assert.match(muitos, /Desfazer/);
+  });
+});
+
+describe("podeRebaixarLead — a corrida dos dois carros do mesmo lojista", () => {
+  it("O CASO: outro carro contatado na janela dos 8s trava o rebaixamento", () => {
+    // 1. contata carro A → RPC promove o lead, status_promovido = true
+    // 2. contata carro B em seguida → contato válido, registrado, lead já 'contatado'
+    // 3. clica em Desfazer no toast do A
+    // Rebaixar aqui deixaria o lead 'novo' COM o contato do B valendo.
+    assert.equal(podeRebaixarLead(true, true), false);
+  });
+
+  it("sem outro contato na janela, a promoção é nossa e o rebaixamento vale", () => {
+    assert.equal(podeRebaixarLead(true, false), true);
+  });
+
+  it("promoção que não foi nossa nunca rebaixa, com ou sem outro contato", () => {
+    assert.equal(podeRebaixarLead(false, false), false);
+    assert.equal(podeRebaixarLead(false, true), false);
+  });
+
+  it("as duas guardas são independentes — nenhuma sozinha autoriza", () => {
+    const combinacoes: Array<[boolean, boolean, boolean]> = [
+      [true, false, true],
+      [true, true, false],
+      [false, false, false],
+      [false, true, false],
+    ];
+    for (const [promovido, outro, esperado] of combinacoes) {
+      assert.equal(
+        podeRebaixarLead(promovido, outro),
+        esperado,
+        `promovido=${promovido} outroContato=${outro}`,
+      );
+    }
+  });
+});
+
+describe("paramsMarcarContatado — o isolamento que vive no WHERE da RPC", () => {
+  it("sempre envia p_repasse_id — é ele que vira WHERE repasse_id", () => {
+    // Sem esse parâmetro a RPC cai no ramo que marca TODOS os interesses pendentes
+    // do lead: contatar sobre 1 carro encostaria nos outros 7 do lojista.
+    const p = paramsMarcarContatado(7, 42);
+    assert.equal(p.p_repasse_id, 42);
+    assert.equal(p.p_lead_id, 7);
+    assert.equal(p.p_tipo, "carro_visto");
+  });
+
+  it("o payload é exatamente a assinatura (BIGINT, TEXT, BIGINT) da migration 020/028", () => {
+    assert.deepEqual(Object.keys(paramsMarcarContatado(7, 42)).sort(), [
+      "p_lead_id",
+      "p_repasse_id",
+      "p_tipo",
+    ]);
+  });
+
+  it("cada carro do lojista gera um payload distinto (nada compartilhado)", () => {
+    const carros = [101, 102, 103].map((r) => paramsMarcarContatado(7, r));
+    assert.deepEqual(
+      carros.map((p) => p.p_repasse_id),
+      [101, 102, 103],
+    );
   });
 });

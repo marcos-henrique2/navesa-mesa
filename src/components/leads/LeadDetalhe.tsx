@@ -47,6 +47,7 @@ import {
   aplicarContatoOtimista,
   aplicarPromocaoLead,
   desfazerContatoLead,
+  mensagemEscopoInesperado,
   registrarContatoLead,
   reverterContatoOtimista,
   reverterPromocaoLead,
@@ -183,6 +184,17 @@ export function LeadDetalhe({ leadId }: { leadId: number }) {
           const promovido = resultado.statusPromovido;
           if (promovido) setLead((prev) => aplicarPromocaoLead(prev, true));
 
+          // Escopo inesperado: a RPC caiu no fallback e marcou 0 ou N interesses em vez
+          // do carro pedido. A promoção do lead acima vale (o banco fez), mas o
+          // "Desfazer" não pode ser oferecido — ele é escopado num interesse só e
+          // reverteria 1 de N. O aviso pede recarga porque a lista em memória divergiu.
+          if (resultado.escopoInesperado) {
+            showErrorToast(mensagemEscopoInesperado(resultado.interessesMarcados), {
+              duracaoMs: 12000,
+            });
+            return;
+          }
+
           const base = `Contato sobre ${interesse.modelo_snapshot} registrado hoje.`;
           const msg =
             anterior.data_contato != null
@@ -203,13 +215,32 @@ export function LeadDetalhe({ leadId }: { leadId: number }) {
                   interesseId: interesse.id,
                   anterior,
                   statusPromovido: promovido,
-                }).catch((e: unknown) => {
-                  setInteresses((prev) => aplicarContatoOtimista(prev, interesse.id, hoje));
-                  setLead((prev) => aplicarPromocaoLead(prev, promovido));
-                  showErrorToast(
-                    `Não consegui desfazer: ${e instanceof Error ? e.message : String(e)}`,
-                  );
-                });
+                  dataContato: resultado.dataContato,
+                })
+                  .then((r) => {
+                    // O banco pode ter barrado o rebaixamento: outro carro DESTE lead
+                    // foi contatado dentro dos 8s e esse contato continua valendo.
+                    // Desfaz o próprio otimismo do badge — mas só se ele ainda estiver
+                    // no 'novo' que nós colocamos (o usuário pode ter mexido no meio).
+                    if (promovido && !r.leadRebaixado && r.outroContatoNoDia) {
+                      setLead((prev) =>
+                        prev?.status_relacionamento === "novo"
+                          ? aplicarPromocaoLead(prev, true)
+                          : prev,
+                      );
+                      showInfoToast(
+                        "Contato desfeito neste carro. O lead continua como \"contatado\" " +
+                          "porque outro carro dele foi contatado agora há pouco.",
+                      );
+                    }
+                  })
+                  .catch((e: unknown) => {
+                    setInteresses((prev) => aplicarContatoOtimista(prev, interesse.id, hoje));
+                    setLead((prev) => aplicarPromocaoLead(prev, promovido));
+                    showErrorToast(
+                      `Não consegui desfazer: ${e instanceof Error ? e.message : String(e)}`,
+                    );
+                  });
               },
             },
           });

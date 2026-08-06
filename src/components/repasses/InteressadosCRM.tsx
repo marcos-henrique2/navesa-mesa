@@ -52,6 +52,7 @@ import {
 import {
   aplicarContatoOtimista,
   desfazerContatoLead,
+  mensagemEscopoInesperado,
   registrarContatoLead,
   reverterContatoOtimista,
   type ContatoAnterior,
@@ -271,6 +272,16 @@ export function InteressadosCRM({ repasseId }: { repasseId: number }) {
             statusAtual: anterior.status_followup,
           });
 
+          // Escopo inesperado: a RPC caiu no fallback e marcou 0 ou N interesses em
+          // vez do carro pedido. O "Desfazer" é escopado num interesse só — ofertá-lo
+          // reverteria 1 de N e deixaria o resto marcado silenciosamente.
+          if (resultado.escopoInesperado) {
+            showErrorToast(mensagemEscopoInesperado(resultado.interessesMarcados), {
+              duracaoMs: 12000,
+            });
+            return;
+          }
+
           // Já havia contato antes? Avisa com a data pra Marcos não repetir
           // abordagem sem saber (mesmo carro ofertado de novo ao mesmo lojista).
           const base = `Contato com ${interesse.lead_nome} registrado hoje.`;
@@ -295,6 +306,7 @@ export function InteressadosCRM({ repasseId }: { repasseId: number }) {
                   interesseId: interesse.id,
                   anterior,
                   statusPromovido: resultado.statusPromovido,
+                  dataContato: resultado.dataContato,
                 }).catch((e: unknown) => {
                   // Falhou o desfazer: a UI volta pro estado contatado (que é o
                   // que o banco tem) pra não mentir pro usuário.
