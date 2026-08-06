@@ -27,6 +27,39 @@
 
 
 -- ─────────────────────────────────────────────────────────────────────────────────────
+-- 0. HELPER hoje_brasilia() — "hoje" no calendário de quem usa o sistema
+-- =====================================================================================
+-- O banco roda com TimeZone = 'UTC' (confirmado em `SHOW TimeZone`). Isso significa que
+-- `current_date` vira o dia SEGUINTE às 21h de Brasília (UTC−3). Toda data que
+-- representa um DIA DO CALENDÁRIO DO USUÁRIO — "o carro subiu hoje", "falei com o
+-- lojista hoje" — fica um dia à frente se for gravada nesse intervalo. É o mesmo bug
+-- que `new Date().toISOString().slice(0,10)` causava no lado do app
+-- (ver src/lib/utils/data-local.ts).
+--
+-- Decisão: NÃO mexer no TimeZone do banco (afetaria toda query e comparação existente
+-- de uma vez). Correção pontual, só onde o valor é dia de calendário.
+--
+-- Vive aqui porque a 027 é a primeira migration que precisa dele; a 028 reutiliza.
+-- STABLE (não IMMUTABLE): depende de now(), que é fixo dentro da transação mas varia
+-- entre transações. STABLE é o suficiente pra uso em DEFAULT, trigger e WHERE.
+-- ─────────────────────────────────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION public.hoje_brasilia()
+RETURNS date
+LANGUAGE sql
+STABLE
+SET search_path = public
+AS $$
+  SELECT (now() AT TIME ZONE 'America/Sao_Paulo')::date
+$$;
+
+COMMENT ON FUNCTION public.hoje_brasilia() IS
+  'Data de HOJE no fuso America/Sao_Paulo. O banco roda em UTC, então current_date '
+  'adianta um dia entre 21h e a meia-noite de Brasília. Use esta função sempre que a '
+  'data representar um DIA DO CALENDÁRIO DO USUÁRIO (contato feito, carro subido, data '
+  'de um gasto). Para instante técnico continue usando now()/current_date. Migration 027.';
+
+
+-- ─────────────────────────────────────────────────────────────────────────────────────
 -- 1. COLUNA data_subido_aproximada
 -- =====================================================================================
 -- NOT NULL DEFAULT false: todo registro escrito pelos caminhos normais nasce com a
@@ -44,9 +77,13 @@ COMMENT ON COLUMN repasses.data_subido_aproximada IS
 -- ─────────────────────────────────────────────────────────────────────────────────────
 -- 2. BACKFILL dos legados
 -- =====================================================================================
--- `least(data_subiu, current_date)` protege contra data futura: data_subiu tem default
--- current_date mas é editável, e uma data no futuro produziria "dias em repasse"
--- NEGATIVO (ou zerado pelo clamp da UI, escondendo o problema).
+-- `least(data_subiu, hoje_brasilia())` protege contra data futura: data_subiu é
+-- editável e uma data no futuro produziria "dias em repasse" NEGATIVO (ou zerado pelo
+-- clamp da UI, escondendo o problema).
+--
+-- hoje_brasilia() e não current_date: o teto é o dia de HOJE no calendário de quem usa
+-- o sistema. Com current_date (UTC), rodar o backfill depois das 21h de Brasília
+-- elevaria o teto pro dia seguinte e deixaria passar uma data_subiu de amanhã.
 --
 -- Guarda dupla no WHERE:
 --   - status='subido'    → só quem está de fato no ar. 'marcado' NÃO tem data_subido
@@ -54,7 +91,7 @@ COMMENT ON COLUMN repasses.data_subido_aproximada IS
 --   - data_subido IS NULL→ nunca sobrescreve data observada. Torna o UPDATE idempotente.
 -- ─────────────────────────────────────────────────────────────────────────────────────
 UPDATE repasses
-   SET data_subido            = least(data_subiu, current_date),
+   SET data_subido            = least(data_subiu, public.hoje_brasilia()),
        data_subido_aproximada = true
  WHERE status = 'subido'
    AND data_subido IS NULL;
@@ -69,10 +106,14 @@ UPDATE repasses
 -- 'marcado'/'cancelado'/'vendido' sem data_subido continua sem data_subido.
 --
 -- NÃO marca data_subido_aproximada: o trigger observa a transição no momento em que
--- ela acontece, então current_date é a data REAL, não uma estimativa.
+-- ela acontece, então a data é a REAL, não uma estimativa.
+--
+-- hoje_brasilia() e não current_date: "o carro subiu hoje" é o dia do calendário do
+-- usuário. Marcar como subido às 21h30 de uma terça gravaria quarta com current_date —
+-- e "dias em repasse" nasceria com −1 dia de erro, invisível.
 --
 -- Interação com a RPC importar_repasse_auto_avaliar (025): o INSERT de lá já passa
--- data_subido = current_date, então o WHEN dá false e o trigger não interfere; o
+-- data_subido preenchida, então o WHEN dá false e o trigger não interfere; o
 -- UPDATE de lá não toca em data_subido nem na flag — reimportar NÃO zera a flag
 -- dos registros backfillados (AC 4).
 -- ─────────────────────────────────────────────────────────────────────────────────────
@@ -83,13 +124,13 @@ SET search_path = public
 AS $$
 BEGIN
   -- A condição vive no WHEN do trigger; aqui só a atribuição.
-  NEW.data_subido := current_date;
+  NEW.data_subido := public.hoje_brasilia();
   RETURN NEW;
 END;
 $$;
 
 COMMENT ON FUNCTION repasses_preenche_data_subido() IS
-  'Trigger BEFORE INSERT OR UPDATE de repasses: preenche data_subido com current_date '
+  'Trigger BEFORE INSERT OR UPDATE de repasses: preenche data_subido com hoje_brasilia() '
   'quando o registro entra/está em status=subido sem data. Migration 027.';
 
 DROP TRIGGER IF EXISTS trg_repasses_preenche_data_subido ON repasses;
@@ -110,7 +151,11 @@ CREATE TRIGGER trg_repasses_preenche_data_subido
 --      SELECT count(*) FROM repasses WHERE data_subido_aproximada;
 --
 -- 3) Nenhuma data no futuro (o least deve ter protegido):
---      SELECT count(*) FROM repasses WHERE data_subido > current_date;
+--      SELECT count(*) FROM repasses WHERE data_subido > public.hoje_brasilia();
+--
+-- 3b) O helper devolve o dia de Brasília, não o de UTC (rodar depois das 21h pra ver
+--     a diferença; antes disso os dois batem):
+--      SELECT current_date AS utc, public.hoje_brasilia() AS brasilia;
 --
 -- 4) O trigger existe e está com a condição certa:
 --      SELECT tgname, pg_get_triggerdef(oid)
