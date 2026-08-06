@@ -3,8 +3,20 @@
 -- PROBLEMA (auditoria de 06/08/2026):
 --   18 dos 64 repasses com status='subido' estão com `data_subido` NULL. Eles são
 --   registros LEGADOS: entraram no fluxo antes da coluna existir (migration 010) ou
---   por caminhos que não a preenchiam. Resultado: 28% da carteira fica de fora de
---   qualquer métrica que dependa de "desde quando esse carro está no ar".
+--   por caminhos que não a preenchiam.
+--
+--   ATENÇÃO — a premissa inicial desta migration estava ERRADA e foi corrigida antes
+--   de aplicar. Chegamos a afirmar que "28% da carteira fica de fora das métricas".
+--   Não fica: `montarItemAnuncio` (src/lib/repasses/relatorio-anuncio.ts) calcula
+--   `diasNoRepasse` a partir de `data_subiu`, que é NOT NULL — nenhuma linha era
+--   excluída. O efeito real é outro e mais sutil: nesses 18, os dias eram contados
+--   desde a MARCAÇÃO e não desde a SUBIDA, inflando o número em carros que ficaram
+--   parados entre um estado e outro.
+--
+--   Ou seja, o valor desta migration NÃO é recuperar carteira perdida — é consolidar
+--   duas datas concorrentes (`data_subiu` legado x `data_subido`) numa fonte canônica
+--   e única. Trocar a fonte da métrica de data_subiu para data_subido é decisão de
+--   produto e ficou de fora daqui de propósito: mudaria número na tela sem aviso.
 --
 --   Os caminhos de escrita ATUAIS já preenchem o campo:
 --     - marcarComoSubido / marcarVariosComoSubido (src/lib/repasses/queries.ts)
