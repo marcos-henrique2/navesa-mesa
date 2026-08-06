@@ -35,6 +35,12 @@ export type CarroAnuncioInput = {
   status: string;
   data_subiu: string | null;
   data_vendido: string | null;
+  /**
+   * true = a data de origem dos dias em repasse veio do backfill da migration
+   * 027 (inferida de um registro legado), não observada. Opcional: entradas
+   * antigas sem o campo contam como data observada.
+   */
+  data_subido_aproximada?: boolean;
   valor_minimo: number | null;
   valor_compre_por: number | null;
   valor_compra_repasse: number | null;
@@ -63,6 +69,8 @@ export type CarroAnuncioItem = {
   valorComprePor: number | null;
   fipe: number | null;
   diasNoRepasse: number | null;
+  /** true = `diasNoRepasse` é estimativa (registro legado). UI mostra "~34d". */
+  diasAproximados: boolean;
   interessados: number;
   /** true = falta custo_real, mínimo ou compre-por → margens/cor indisponíveis. */
   incompleto: boolean;
@@ -107,6 +115,7 @@ export function montarItemAnuncio(input: CarroAnuncioInput, hoje: string): Carro
     valorComprePor: comprePor,
     fipe: input.fipe,
     diasNoRepasse: calcularDiasNoRepasse(input.data_subiu, input.data_vendido, hoje),
+    diasAproximados: input.data_subido_aproximada === true,
     interessados: input.interessados,
     incompleto,
     margemMinimoValor: incompleto ? null : calcularMargemValor(minimo, custoReal),

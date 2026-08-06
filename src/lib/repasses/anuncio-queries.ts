@@ -11,6 +11,7 @@
  */
 
 import { getSupabase } from "@/lib/data/supabase";
+import { hojeLocal } from "@/lib/utils/data-local";
 import { calcularCustoReal } from "@/lib/repasses/margem-repasse";
 import { listGastosPorRepasse } from "@/lib/repasses/queries";
 import {
@@ -31,6 +32,8 @@ type AnuncioRow = {
   status: string;
   data_subiu: string | null;
   data_vendido: string | null;
+  /** Coluna da migration 027 — ausente enquanto a migration não for aplicada. */
+  data_subido_aproximada?: boolean | null;
   valor_minimo: number | string | null;
   valor_compre_por: number | string | null;
   valor_compra_repasse: number | string | null;
@@ -44,14 +47,6 @@ function num(v: number | string | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-/** Data em YYYY-MM-DD no fuso local (pra `hoje` do cálculo de dias). */
-function hojeISO(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate(),
-  ).padStart(2, "0")}`;
-}
-
 /**
  * Carrega e monta o relatório dos carros em anúncio (status='subido').
  * Gastos e interessados vêm em queries paralelas e são agrupados por repasse_id.
@@ -62,7 +57,7 @@ export async function listCarrosEmAnuncio(): Promise<CarroAnuncioItem[]> {
   const { data: rows, error } = await sb
     .from("repasses")
     .select(
-      "id, placa, modelo, marca, ano_fabricacao, ano_modelo, km, status, data_subiu, data_vendido, valor_minimo, valor_compre_por, valor_compra_repasse, valor_fipe",
+      "id, placa, modelo, marca, ano_fabricacao, ano_modelo, km, status, data_subiu, data_subido_aproximada, data_vendido, valor_minimo, valor_compre_por, valor_compra_repasse, valor_fipe",
     )
     .eq("status", "subido")
     .order("id", { ascending: false });
@@ -86,6 +81,7 @@ export async function listCarrosEmAnuncio(): Promise<CarroAnuncioItem[]> {
     km: r.km,
     status: r.status,
     data_subiu: r.data_subiu,
+    data_subido_aproximada: r.data_subido_aproximada === true,
     data_vendido: r.data_vendido,
     valor_minimo: num(r.valor_minimo),
     valor_compre_por: num(r.valor_compre_por),
@@ -96,7 +92,8 @@ export async function listCarrosEmAnuncio(): Promise<CarroAnuncioItem[]> {
     interessados: interessadosPorId.get(r.id) ?? 0,
   }));
 
-  return montarRelatorioAnuncio(inputs, hojeISO());
+  // `hoje` LOCAL — o cálculo de dias é sobre o calendário do usuário.
+  return montarRelatorioAnuncio(inputs, hojeLocal());
 }
 
 // ─── Dados de margem de UM repasse (painel de negociação) ────────────────────

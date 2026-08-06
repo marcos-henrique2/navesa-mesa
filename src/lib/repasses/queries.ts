@@ -19,6 +19,7 @@
  */
 
 import { getSupabase } from "@/lib/data/supabase";
+import { hojeLocal } from "@/lib/utils/data-local";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import { buildChassisEmRepasseMap, type RepasseAtivoRow } from "./chassis-em-repasse";
 import { criarErroRepasse } from "./erros";
@@ -77,6 +78,8 @@ export type RepasseRow = {
   valor_subiu: number | null;
   data_subiu: string;
   data_subido: string | null;
+  /** Coluna da migration 027 — pode vir ausente até a migration ser aplicada. */
+  data_subido_aproximada?: boolean | null;
   canal: RepasseCanal;
   status: string;
   valor_vendido: number | string | null;
@@ -150,6 +153,9 @@ export function rowToRepasse(row: RepasseRow): Repasse {
     preco_atual: row.valor_subiu, // reusa coluna legacy como "preço atual do estoque no momento da marcação"
     data_marcado: row.data_subiu,
     data_subido: row.data_subido,
+    // `=== true` porque a coluna só existe a partir da 027: antes disso vem
+    // undefined, e undefined não pode virar "data aproximada".
+    data_subido_aproximada: row.data_subido_aproximada === true,
     canal: row.canal,
     status,
     valor_vendido: normalizarNumeric(row.valor_vendido),
@@ -235,7 +241,9 @@ export async function createRepasse(input: RepasseInput): Promise<Repasse> {
 /** Marca como "subido" (já foi enviado pro Auto Avaliar). */
 export async function marcarComoSubido(id: number): Promise<Repasse> {
   const sb = getSupabase();
-  const hoje = new Date().toISOString().slice(0, 10);
+  // Data LOCAL: `data_subido` é um dia do calendário do Marcos, não um instante
+  // UTC. Marcar às 22h de Brasília gravava amanhã com toISOString().
+  const hoje = hojeLocal();
   const { data, error } = await sb
     .from("repasses")
     .update({ status: "subido", data_subido: hoje })
@@ -256,7 +264,7 @@ export async function marcarComoSubido(id: number): Promise<Repasse> {
 export async function marcarVariosComoSubido(ids: ReadonlyArray<number>): Promise<number> {
   if (ids.length === 0) return 0;
   const sb = getSupabase();
-  const hoje = new Date().toISOString().slice(0, 10);
+  const hoje = hojeLocal();
   const { data, error } = await sb
     .from("repasses")
     .update({ status: "subido", data_subido: hoje })
@@ -350,7 +358,7 @@ export async function marcarComoVendido(
   input: MarcarVendidoInput,
 ): Promise<Repasse> {
   const valor = validarValorVendido(input.valor_vendido);
-  const data = input.data_vendido ?? new Date().toISOString().slice(0, 10);
+  const data = input.data_vendido ?? hojeLocal();
   const compradorTrim = input.comprador?.trim();
   const comprador = compradorTrim ? compradorTrim : null;
 

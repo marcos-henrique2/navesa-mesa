@@ -15,6 +15,7 @@ import {
   type BatchProgress,
 } from "@/lib/fipe/batch";
 import { useFipeBatch } from "@/lib/fipe/useFipeBatch";
+import { hojeLocal } from "@/lib/utils/data-local";
 import type { SortingState } from "@tanstack/react-table";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 
@@ -68,10 +69,8 @@ export function useVendasAnalise() {
   const [avancadoOpen, setAvancadoOpen] = useState(false);
   const [sorting, setSorting] = useState<SortingState>([{ id: "data_venda", desc: true }]);
 
-  const hojeISO = useMemo(() => {
-    const h = new Date();
-    return `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, "0")}-${String(h.getDate()).padStart(2, "0")}`;
-  }, []);
+  // Data LOCAL (limite dos inputs de período) — nunca UTC.
+  const hojeISO = useMemo(() => hojeLocal(), []);
 
   const clientesIndex = useMemo(() => indexarClientes(vendas), [vendas]);
   const hasAnyTroca = useMemo(() => vendas.some(v => !!v.placa_troca), [vendas]);

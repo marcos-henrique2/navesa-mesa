@@ -15,6 +15,7 @@ import type { CustoDetalhado } from "@/lib/parsers/nbs-custos-xls";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import { sumarioGlobal } from "@/lib/analytics/insights";
 import { classificarPatio } from "@/lib/inventory/status";
+import { hojeLocal } from "@/lib/utils/data-local";
 import {
   listKpiSnapshots,
   upsertKpiSnapshot,
@@ -89,16 +90,11 @@ export function getCachedSnapshots(): readonly Snapshot[] {
 }
 
 /**
- * Gera ID do snapshot no formato YYYY-MM-DD usando a data LOCAL do navegador.
- * NÃO use toISOString().slice(0,10) — isso retorna UTC e quebra o dedup-por-dia
- * pra usuários em fuso negativo (ex.: SP UTC-3 após 21h gera id do dia seguinte).
+ * ID do snapshot no formato YYYY-MM-DD usando a data LOCAL do navegador.
+ * Ver `hojeLocal` — toISOString().slice(0,10) é UTC e quebra o dedup-por-dia
+ * pra fuso negativo (SP UTC−3 depois das 21h gera id do dia seguinte).
  */
-function idDoDiaLocal(d: Date): string {
-  const ano = d.getFullYear();
-  const mes = String(d.getMonth() + 1).padStart(2, "0");
-  const dia = String(d.getDate()).padStart(2, "0");
-  return `${ano}-${mes}-${dia}`;
-}
+const idDoDiaLocal = hojeLocal;
 
 /** Monta um snapshot a partir do estado atual (não salva). */
 export function capturarSnapshot(

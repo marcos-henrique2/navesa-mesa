@@ -87,6 +87,7 @@ import { useInventory, nomeOuCodigo } from "@/lib/store/inventory";
 import { estaReservado } from "@/lib/inventory/reservado";
 import { cn, formatBRL, formatBRLCents, formatInt } from "@/lib/utils";
 import { parseValorBR } from "@/lib/utils/parse-br";
+import { hojeLocal } from "@/lib/utils/data-local";
 import { placaCasa } from "@/lib/utils/placa";
 import {
   calcularValorPraSubir,
@@ -530,7 +531,8 @@ export function RepassesLista() {
       });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      const hoje = new Date().toISOString().slice(0, 10);
+      // Data local: o arquivo leva o dia do usuário, não o dia UTC.
+      const hoje = hojeLocal();
       a.href = url;
       a.download = `navesa-repasses-${hoje}.xlsx`;
       document.body.appendChild(a);
