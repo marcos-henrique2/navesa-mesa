@@ -45,9 +45,11 @@ import {
 } from "@/lib/leads/leads";
 import {
   aplicarContatoOtimista,
+  aplicarPromocaoLead,
   desfazerContatoLead,
   registrarContatoLead,
   reverterContatoOtimista,
+  reverterPromocaoLead,
   type ContatoAnterior,
 } from "@/lib/leads/contato";
 import { gerarMensagemLead } from "@/lib/repasses/gerar-mensagem-lead";
@@ -168,12 +170,18 @@ export function LeadDetalhe({ leadId }: { leadId: number }) {
 
       void (async () => {
         try {
-          await registrarContatoLead({
+          const resultado = await registrarContatoLead({
             leadId,
             interesseId: interesse.id,
             repasseId: interesse.repasse_id,
             statusAtual: anterior.status_followup,
           });
+
+          // A RPC pode ter promovido o lead 'novo' → 'contatado'. Esta tela EXIBE o
+          // status do lead, então ela precisa refletir isso na hora — senão o badge
+          // fica mentindo "novo" até um reload.
+          const promovido = resultado.statusPromovido;
+          if (promovido) setLead((prev) => aplicarPromocaoLead(prev, true));
 
           const base = `Contato sobre ${interesse.modelo_snapshot} registrado hoje.`;
           const msg =
@@ -187,8 +195,17 @@ export function LeadDetalhe({ leadId }: { leadId: number }) {
               label: "Desfazer",
               onClick: () => {
                 setInteresses((prev) => reverterContatoOtimista(prev, interesse.id, anterior));
-                void desfazerContatoLead(interesse.id, anterior).catch((e: unknown) => {
+                // Desfazer COMPLETO: o interesse e a promoção do lead. Sem a segunda
+                // parte o lead ficava 'contatado' sem contato registrado.
+                setLead((prev) => reverterPromocaoLead(prev, promovido));
+                void desfazerContatoLead({
+                  leadId,
+                  interesseId: interesse.id,
+                  anterior,
+                  statusPromovido: promovido,
+                }).catch((e: unknown) => {
                   setInteresses((prev) => aplicarContatoOtimista(prev, interesse.id, hoje));
+                  setLead((prev) => aplicarPromocaoLead(prev, promovido));
                   showErrorToast(
                     `Não consegui desfazer: ${e instanceof Error ? e.message : String(e)}`,
                   );

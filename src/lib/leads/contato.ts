@@ -26,6 +26,12 @@
  * documentada: esse caminho NÃO promove `leads.status_relacionamento` (só a RPC
  * faz isso) e não é atômico.
  *
+ * Desfazer: reverte as DUAS coisas que a RPC fez — o interesse (`data_contato` +
+ * `status_followup`) e, quando ela informou `status_promovido`, o
+ * `leads.status_relacionamento` de volta pra 'novo'. Reverter só o interesse
+ * deixava o lead marcado como contatado sem contato registrado: ele sumia da fila
+ * de disparo e da lista de "novos" sem nada na tela justificando.
+ *
  * Autenticação: o app inteiro roda atrás do proxy de auth (src/proxy.ts) — toda
  * rota não-pública exige usuário logado. O `createBrowserClient` carrega a
  * sessão pelos cookies, então a RPC chega no Postgres com o papel
@@ -35,6 +41,7 @@
 import { getSupabase } from "@/lib/data/supabase";
 import { hojeLocal } from "@/lib/utils/data-local";
 import { updateInteresse, type StatusFollowup } from "./interesses";
+import type { StatusRelacionamento } from "./leads";
 
 // ─── TIPOS ───────────────────────────────────────────────────────────────────
 
@@ -72,6 +79,31 @@ export type InteresseContatavel = {
   id: number;
   status_followup: StatusFollowup;
   data_contato: string | null;
+};
+
+/** Forma mínima de um lead pros helpers de promoção (puros). */
+export type LeadPromovivel = {
+  status_relacionamento: StatusRelacionamento;
+};
+
+/**
+ * Tudo que o "Desfazer" precisa pra reverter o contato POR INTEIRO.
+ *
+ * Antes só existiam `interesseId` + `anterior`, e o desfazer parava no interesse:
+ * `data_contato` voltava, mas `leads.status_relacionamento` ficava em 'contatado',
+ * promovido pela RPC. O lead ficava marcado como contatado sem contato registrado —
+ * some da fila de disparo e da lista de "novos", sem nada na tela explicando por quê.
+ */
+export type ContatoDesfazivel = {
+  leadId: number;
+  interesseId: number;
+  anterior: ContatoAnterior;
+  /**
+   * `status_promovido` da RPC: true = ELA promoveu o lead de 'novo' pra 'contatado'
+   * nesta operação. É a única condição em que o desfazer pode rebaixar — se o lead
+   * já era 'contatado' (ou além) antes, a promoção não é nossa pra desfazer.
+   */
+  statusPromovido: boolean;
 };
 
 // ─── RETRY ───────────────────────────────────────────────────────────────────
@@ -178,14 +210,46 @@ export async function registrarContatoLead(
 }
 
 /**
- * Desfaz o registro: limpa `data_contato` e devolve o `status_followup` que o
- * interesse tinha antes. Escopado no id do interesse — não toca nos outros
- * carros do mesmo lojista.
+ * Rebaixa `leads.status_relacionamento` de 'contatado' de volta pra 'novo'.
+ *
+ * A guarda `.eq("status_relacionamento", "contatado")` é o espelho exato da guarda
+ * da RPC (`WHERE status_relacionamento = 'novo'` na promoção) e resolve a corrida da
+ * janela de 8s do "Desfazer": se nesse meio-tempo o lead avançou pra 'respondeu' ou
+ * 'negociando', o UPDATE casa 0 linhas e o progresso do funil não é destruído.
+ *
+ * Um roundtrip só — o filtro vai no WHERE, sem ler-antes-de-escrever.
  */
-export async function desfazerContatoLead(
-  interesseId: number,
-  anterior: ContatoAnterior,
-): Promise<void> {
+async function rebaixarLeadParaNovo(leadId: number): Promise<void> {
+  const sb = getSupabase();
+  const { error } = await sb
+    .from("leads")
+    .update({ status_relacionamento: "novo" satisfies StatusRelacionamento })
+    .eq("id", leadId)
+    .eq("status_relacionamento", "contatado");
+  if (error) throw new Error(`Falha ao reverter o status do lead: ${error.message}`);
+}
+
+/**
+ * Desfaz o registro POR INTEIRO: o interesse (limpa `data_contato`, devolve o
+ * `status_followup` anterior) e, quando a RPC promoveu, o
+ * `leads.status_relacionamento` de volta pra 'novo'.
+ *
+ * Escopado no id do interesse — não toca nos outros carros do mesmo lojista.
+ *
+ * ORDEM: lead ANTES do interesse, de propósito. São dois writes sem transação, então
+ * o que importa é qual estado parcial dói menos se o segundo falhar:
+ *   - lead 1º: se o interesse falhar, sobra lead='novo' com data_contato preenchida.
+ *     A UI já reexibe "contatado" na linha (que é o que o banco tem) e o toast avisa.
+ *   - interesse 1º: se o lead falhar, sobra exatamente o bug que este código existe
+ *     pra corrigir — contatado sem contato — e de forma silenciosa.
+ */
+export async function desfazerContatoLead(alvo: ContatoDesfazivel): Promise<void> {
+  const { leadId, interesseId, anterior, statusPromovido } = alvo;
+
+  if (statusPromovido) {
+    await rebaixarLeadParaNovo(leadId);
+  }
+
   await updateInteresse(interesseId, {
     data_contato: anterior.data_contato,
     status_followup: anterior.status_followup,
@@ -229,4 +293,39 @@ export function reverterContatoOtimista<T extends InteresseContatavel>(
       ? { ...i, data_contato: anterior.data_contato, status_followup: anterior.status_followup }
       : i,
   );
+}
+
+// ─── HELPERS DE PROMOÇÃO DO LEAD (puros) ─────────────────────────────────────
+// Diferente do patch do interesse, a promoção do lead NÃO é otimista: só se sabe se
+// ela aconteceu depois que a RPC responde `status_promovido`. Estes helpers refletem
+// o que o banco JÁ fez, e o desfazer reverte na mesma régua.
+
+/**
+ * Aplica no lead em memória a promoção que a RPC informou ter feito
+ * ('novo' → 'contatado'). `statusPromovido: false` devolve o MESMO objeto — o
+ * banco não mexeu, a tela também não mexe.
+ */
+export function aplicarPromocaoLead<T extends LeadPromovivel>(
+  lead: T | null,
+  statusPromovido: boolean,
+): T | null {
+  if (lead == null || !statusPromovido) return lead;
+  return { ...lead, status_relacionamento: "contatado" };
+}
+
+/**
+ * Inverso — o "Desfazer". Rebaixa pra 'novo' apenas se a promoção foi nossa
+ * (`statusPromovido`) E o lead ainda está exatamente em 'contatado'.
+ *
+ * A segunda condição é a mesma guarda do UPDATE no banco: nos 8s do toast o usuário
+ * pode ter movido o lead pra 'respondeu'/'negociando'. Desfazer o contato não pode
+ * apagar esse avanço do funil.
+ */
+export function reverterPromocaoLead<T extends LeadPromovivel>(
+  lead: T | null,
+  statusPromovido: boolean,
+): T | null {
+  if (lead == null || !statusPromovido) return lead;
+  if (lead.status_relacionamento !== "contatado") return lead;
+  return { ...lead, status_relacionamento: "novo" };
 }

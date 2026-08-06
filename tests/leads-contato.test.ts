@@ -10,6 +10,10 @@
  *     o erro precisa chegar em quem chamou pra a UI reverter o patch otimista.
  *   - RETORNO DA RPC: JSONB do Postgres chega com números como string e pode vir
  *     embrulhado em array. Nada disso pode virar NaN/undefined na tela.
+ *   - DESFAZER COMPLETO: a RPC promove `leads.status_relacionamento` de 'novo' pra
+ *     'contatado'. Desfazer só o interesse deixava o lead contatado SEM contato
+ *     registrado — inconsistente e invisível. O desfazer precisa reverter os dois,
+ *     e só quando a promoção foi dele (`status_promovido`).
  *
  * As funções que tocam o Supabase (`registrarContatoLead`, `desfazerContatoLead`)
  * ficam pra e2e — aqui testamos as partes puras e o combinador de retry.
@@ -19,10 +23,13 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   aplicarContatoOtimista,
+  aplicarPromocaoLead,
   comRetryUnico,
   interpretarRetornoContato,
   reverterContatoOtimista,
+  reverterPromocaoLead,
   type InteresseContatavel,
+  type LeadPromovivel,
 } from "@/lib/leads/contato";
 
 /** O lojista dos 8 carros: 1 já contatado, 1 negociando, o resto novo. */
@@ -139,6 +146,83 @@ describe("reverterContatoOtimista — rollback e Desfazer", () => {
       data_contato: "2026-07-20",
     });
     assert.equal(revertido.find((i) => i.id === 103)?.data_contato, "2026-07-20");
+  });
+});
+
+describe("promoção do lead — Desfazer completo", () => {
+  /** Lead + um campo extra, pra provar que o resto do objeto sobrevive. */
+  type LeadFake = LeadPromovivel & { id: number; nome: string };
+  const lead = (status: LeadPromovivel["status_relacionamento"]): LeadFake => ({
+    id: 7,
+    nome: "Auto Center Bagé",
+    status_relacionamento: status,
+  });
+
+  it("aplica a promoção que a RPC informou ter feito", () => {
+    assert.equal(aplicarPromocaoLead(lead("novo"), true)?.status_relacionamento, "contatado");
+  });
+
+  it("statusPromovido false devolve o MESMO objeto (banco não mexeu, tela não mexe)", () => {
+    const antes = lead("novo");
+    assert.equal(aplicarPromocaoLead(antes, false), antes);
+    assert.equal(reverterPromocaoLead(antes, false), antes);
+  });
+
+  it("lead null não quebra nenhum dos dois", () => {
+    assert.equal(aplicarPromocaoLead(null, true), null);
+    assert.equal(reverterPromocaoLead(null, true), null);
+  });
+
+  it("O CASO: desfazer rebaixa 'contatado' de volta pra 'novo'", () => {
+    const promovido = aplicarPromocaoLead(lead("novo"), true);
+    const desfeito = reverterPromocaoLead(promovido, true);
+    assert.equal(desfeito?.status_relacionamento, "novo");
+  });
+
+  it("round-trip promover → desfazer devolve o lead idêntico", () => {
+    const antes = lead("novo");
+    assert.deepEqual(reverterPromocaoLead(aplicarPromocaoLead(antes, true), true), antes);
+  });
+
+  it("não rebaixa quem avançou no funil durante os 8s do toast", () => {
+    // Marcos clica em WhatsApp (RPC promove novo→contatado), o lojista responde na
+    // hora, ele move pra 'negociando' e só então clica em Desfazer.
+    for (const avancado of ["respondeu", "negociando", "fechou", "perdido"] as const) {
+      const atual = lead(avancado);
+      assert.equal(
+        reverterPromocaoLead(atual, true),
+        atual,
+        `${avancado} não pode ser rebaixado pra novo`,
+      );
+    }
+  });
+
+  it("não rebaixa lead que já estava 'contatado' antes (promoção não foi nossa)", () => {
+    // Nesse cenário a RPC devolve status_promovido = false — a guarda vem daí.
+    const atual = lead("contatado");
+    assert.equal(reverterPromocaoLead(atual, false), atual);
+  });
+
+  it("preserva os demais campos do lead", () => {
+    const desfeito = reverterPromocaoLead(lead("contatado"), true);
+    assert.equal(desfeito?.id, 7);
+    assert.equal(desfeito?.nome, "Auto Center Bagé");
+  });
+
+  it("não muta o lead de entrada", () => {
+    const antes = lead("novo");
+    aplicarPromocaoLead(antes, true);
+    assert.equal(antes.status_relacionamento, "novo");
+  });
+
+  it("statusPromovido vem do retorno da RPC — o encaixe das duas pontas", () => {
+    // A UI lê status_promovido via interpretarRetornoContato e o repassa pro desfazer.
+    const r = interpretarRetornoContato({ status_promovido: true }, 7, HOJE);
+    assert.equal(reverterPromocaoLead(lead("contatado"), r.statusPromovido)?.status_relacionamento, "novo");
+
+    const sem = interpretarRetornoContato({ status_promovido: false }, 7, HOJE);
+    const atual = lead("contatado");
+    assert.equal(reverterPromocaoLead(atual, sem.statusPromovido), atual);
   });
 });
 

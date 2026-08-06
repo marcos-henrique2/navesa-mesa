@@ -264,7 +264,7 @@ export function InteressadosCRM({ repasseId }: { repasseId: number }) {
       void (async () => {
         try {
           // registrarContatoLead já embute 1 retry automático.
-          await registrarContatoLead({
+          const resultado = await registrarContatoLead({
             leadId: interesse.lead_id,
             interesseId: interesse.id,
             repasseId: interesse.repasse_id,
@@ -287,7 +287,15 @@ export function InteressadosCRM({ repasseId }: { repasseId: number }) {
                 setInteresses((prev) =>
                   reverterContatoOtimista(prev, interesse.id, anterior),
                 );
-                void desfazerContatoLead(interesse.id, anterior).catch((e: unknown) => {
+                // `statusPromovido` leva o desfazer até `leads.status_relacionamento`:
+                // sem ele o lead ficava 'contatado' sem contato registrado. Essa tela
+                // não exibe o status do lead, então aqui só o banco precisa voltar.
+                void desfazerContatoLead({
+                  leadId: interesse.lead_id,
+                  interesseId: interesse.id,
+                  anterior,
+                  statusPromovido: resultado.statusPromovido,
+                }).catch((e: unknown) => {
                   // Falhou o desfazer: a UI volta pro estado contatado (que é o
                   // que o banco tem) pra não mentir pro usuário.
                   setInteresses((prev) => aplicarContatoOtimista(prev, interesse.id, hoje));
