@@ -43,9 +43,17 @@ import {
   STATUS_RELACIONAMENTO_VALUES,
   type StatusRelacionamento,
 } from "@/lib/leads/leads";
+import {
+  aplicarContatoOtimista,
+  desfazerContatoLead,
+  registrarContatoLead,
+  reverterContatoOtimista,
+  type ContatoAnterior,
+} from "@/lib/leads/contato";
 import { gerarMensagemLead } from "@/lib/repasses/gerar-mensagem-lead";
 import { cn } from "@/lib/utils";
-import { showErrorToast, showInfoToast } from "@/components/ui/Toast";
+import { formatarDataBR, hojeLocal } from "@/lib/utils/data-local";
+import { showErrorToast, showInfoToast, showSuccessToast } from "@/components/ui/Toast";
 import { MensagemLeadModal } from "@/components/repasses/MensagemLeadModal";
 import { OferecerCarroModal } from "./OferecerCarroModal";
 
@@ -145,10 +153,67 @@ export function LeadDetalhe({ leadId }: { leadId: number }) {
     [interesses],
   );
 
+  // ─── Registro de contato ─────────────────────────────────────────────────────
+  // Mesmo fluxo do InteressadosCRM, via a lib compartilhada: patch otimista →
+  // RPC (com 1 retry) → toast com "Desfazer", ou rollback + "Tentar de novo".
+  const registrarContato = useCallback((leadId: number, interesse: LeadInteresse) => {
+    const anterior: ContatoAnterior = {
+      status_followup: interesse.status_followup,
+      data_contato: interesse.data_contato,
+    };
+    const hoje = hojeLocal();
+
+    function disparar() {
+      setInteresses((prev) => aplicarContatoOtimista(prev, interesse.id, hoje));
+
+      void (async () => {
+        try {
+          await registrarContatoLead({
+            leadId,
+            interesseId: interesse.id,
+            repasseId: interesse.repasse_id,
+            statusAtual: anterior.status_followup,
+          });
+
+          const base = `Contato sobre ${interesse.modelo_snapshot} registrado hoje.`;
+          const msg =
+            anterior.data_contato != null
+              ? `${base} Já havia contato em ${formatarDataBR(anterior.data_contato)}.`
+              : base;
+
+          showSuccessToast(msg, {
+            duracaoMs: 8000,
+            acao: {
+              label: "Desfazer",
+              onClick: () => {
+                setInteresses((prev) => reverterContatoOtimista(prev, interesse.id, anterior));
+                void desfazerContatoLead(interesse.id, anterior).catch((e: unknown) => {
+                  setInteresses((prev) => aplicarContatoOtimista(prev, interesse.id, hoje));
+                  showErrorToast(
+                    `Não consegui desfazer: ${e instanceof Error ? e.message : String(e)}`,
+                  );
+                });
+              },
+            },
+          });
+        } catch (e) {
+          setInteresses((prev) => reverterContatoOtimista(prev, interesse.id, anterior));
+          showErrorToast(
+            `Não consegui registrar o contato: ${e instanceof Error ? e.message : String(e)}`,
+            { duracaoMs: 8000, acao: { label: "Tentar de novo", onClick: disparar } },
+          );
+        }
+      })();
+    }
+
+    disparar();
+  }, []);
+
   // ─── WhatsApp por interesse ──────────────────────────────────────────────────
   const handleWhatsapp = useCallback(
     (interesse: LeadInteresse) => {
       if (!lead) return;
+      // Sem celular: botão desabilitado; nada é gravado.
       if (!lead.telefone_whatsapp) {
         showInfoToast("Esse lead não tem celular pra WhatsApp.");
         return;
@@ -159,18 +224,13 @@ export function LeadDetalhe({ leadId }: { leadId: number }) {
         { nome: lead.nome },
         interesse.origem,
       );
+      // window.open PRIMEIRO e síncrono (senão o navegador bloqueia o popup).
       const url = `https://wa.me/${lead.telefone_whatsapp}?text=${encodeURIComponent(msg)}`;
       window.open(url, "_blank", "noopener");
 
-      if (interesse.status_followup === "novo") {
-        const hoje = new Date().toISOString().slice(0, 10);
-        void handlePatchInteresse(interesse.id, {
-          status_followup: "contatado",
-          data_contato: hoje,
-        });
-      }
+      registrarContato(lead.id, interesse);
     },
-    [lead, handlePatchInteresse],
+    [lead, registrarContato],
   );
 
   const handleRemover = useCallback(
@@ -362,6 +422,7 @@ export function LeadDetalhe({ leadId }: { leadId: number }) {
           nome={lead.nome}
           telefoneWhatsapp={lead.telefone_whatsapp}
           contexto={verMensagem.origem}
+          aoAbrirWhatsapp={() => registrarContato(lead.id, verMensagem)}
           open={true}
           onClose={() => setVerMensagem(null)}
         />

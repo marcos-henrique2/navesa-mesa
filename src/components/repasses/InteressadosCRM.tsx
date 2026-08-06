@@ -15,6 +15,10 @@
  * observação editáveis na linha; salva em background; rollback se o banco recusa).
  *
  * O WhatsApp abre via link wa.me em nova aba — NÃO dispara nada automático.
+ * O `window.open` acontece SÍNCRONO, antes de qualquer await: se vier depois de
+ * um await o navegador trata como popup não solicitado e bloqueia. O registro do
+ * contato (RPC `marcar_lead_contatado`, via `registrarContatoLead`) vai em
+ * background — não pode depender de o usuário voltar da aba do WhatsApp.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -45,6 +49,13 @@ import {
   type OutroInteresseRepasse,
   type StatusFollowup,
 } from "@/lib/leads/interesses";
+import {
+  aplicarContatoOtimista,
+  desfazerContatoLead,
+  registrarContatoLead,
+  reverterContatoOtimista,
+  type ContatoAnterior,
+} from "@/lib/leads/contato";
 import { contarComStatusRelacionamento } from "@/lib/leads/leads";
 import {
   ehAltaIntencao,
@@ -68,6 +79,7 @@ import {
   type CorMargem,
 } from "@/lib/repasses/margem-repasse";
 import { cn, formatBRLCents, formatInt } from "@/lib/utils";
+import { formatarDataBR, hojeLocal } from "@/lib/utils/data-local";
 import { parseValorBR } from "@/lib/utils/parse-br";
 import { showErrorToast, showInfoToast, showSuccessToast } from "@/components/ui/Toast";
 import { ImportarInteressadosModal } from "./ImportarInteressadosModal";
@@ -231,26 +243,97 @@ export function InteressadosCRM({ repasseId }: { repasseId: number }) {
     [repasse, margem],
   );
 
+  // ─── Registro de contato ─────────────────────────────────────────────────────
+  // Chamado DEPOIS que a aba do WhatsApp já abriu. Nunca dá await no caller:
+  // o registro roda em background e se resolve sozinho (toast de sucesso com
+  // "Desfazer", ou rollback + toast de erro com "Tentar de novo").
+  const registrarContato = useCallback((interesse: LeadInteresseComLead) => {
+    const anterior: ContatoAnterior = {
+      status_followup: interesse.status_followup,
+      data_contato: interesse.data_contato,
+    };
+    const hoje = hojeLocal();
+
+    // Nomeada pra que o "Tentar de novo" reexecute o fluxo inteiro (otimismo +
+    // RPC) sem o callback precisar depender de si mesmo.
+    function disparar() {
+      // Patch otimista escopado no id — os outros carros do mesmo lojista
+      // voltam por referência, intocados.
+      setInteresses((prev) => aplicarContatoOtimista(prev, interesse.id, hoje));
+
+      void (async () => {
+        try {
+          // registrarContatoLead já embute 1 retry automático.
+          await registrarContatoLead({
+            leadId: interesse.lead_id,
+            interesseId: interesse.id,
+            repasseId: interesse.repasse_id,
+            statusAtual: anterior.status_followup,
+          });
+
+          // Já havia contato antes? Avisa com a data pra Marcos não repetir
+          // abordagem sem saber (mesmo carro ofertado de novo ao mesmo lojista).
+          const base = `Contato com ${interesse.lead_nome} registrado hoje.`;
+          const msg =
+            anterior.data_contato != null
+              ? `${base} Já havia contato em ${formatarDataBR(anterior.data_contato)}.`
+              : base;
+
+          showSuccessToast(msg, {
+            duracaoMs: 8000,
+            acao: {
+              label: "Desfazer",
+              onClick: () => {
+                setInteresses((prev) =>
+                  reverterContatoOtimista(prev, interesse.id, anterior),
+                );
+                void desfazerContatoLead(interesse.id, anterior).catch((e: unknown) => {
+                  // Falhou o desfazer: a UI volta pro estado contatado (que é o
+                  // que o banco tem) pra não mentir pro usuário.
+                  setInteresses((prev) => aplicarContatoOtimista(prev, interesse.id, hoje));
+                  showErrorToast(
+                    `Não consegui desfazer: ${e instanceof Error ? e.message : String(e)}`,
+                  );
+                });
+              },
+            },
+          });
+        } catch (e) {
+          // Rollback visual: a linha volta exatamente como estava. A aba do
+          // WhatsApp já aberta NÃO é revertida — o contato aconteceu de fato.
+          setInteresses((prev) => reverterContatoOtimista(prev, interesse.id, anterior));
+          showErrorToast(
+            `Não consegui registrar o contato: ${e instanceof Error ? e.message : String(e)}`,
+            { duracaoMs: 8000, acao: { label: "Tentar de novo", onClick: disparar } },
+          );
+        }
+      })();
+    }
+
+    disparar();
+  }, []);
+
   // ─── WhatsApp ────────────────────────────────────────────────────────────────
   const handleWhatsapp = useCallback(
     (interesse: LeadInteresseComLead) => {
       if (!repasse) return;
+      // Sem celular: botão já vem desabilitado; aqui é defesa em profundidade.
+      // Nada é gravado.
       if (!interesse.lead_telefone_whatsapp) {
         showInfoToast("Esse lead não tem celular pra WhatsApp.");
         return;
       }
       const msg = montarMensagem(interesse.lead_nome);
       if (msg == null) return;
+
+      // 1º e SÍNCRONO — depois de um await o navegador bloqueia o popup.
       const url = `https://wa.me/${interesse.lead_telefone_whatsapp}?text=${encodeURIComponent(msg)}`;
       window.open(url, "_blank", "noopener");
 
-      // Ao primeiro contato: se ainda "novo", avança pra "contatado" + data de hoje.
-      if (interesse.status_followup === "novo") {
-        const hoje = new Date().toISOString().slice(0, 10);
-        void handlePatch(interesse.id, { status_followup: "contatado", data_contato: hoje });
-      }
+      // 2º, sem await: não depende de o usuário voltar da aba do WhatsApp.
+      registrarContato(interesse);
     },
-    [repasse, handlePatch, montarMensagem],
+    [repasse, montarMensagem, registrarContato],
   );
 
   // ─── Remover ─────────────────────────────────────────────────────────────────
@@ -488,6 +571,7 @@ export function InteressadosCRM({ repasseId }: { repasseId: number }) {
           telefoneWhatsapp={verMensagem.lead_telefone_whatsapp}
           contexto="visualizou"
           mensagemInicial={montarMensagem(verMensagem.lead_nome) ?? undefined}
+          aoAbrirWhatsapp={() => registrarContato(verMensagem)}
           open={true}
           onClose={() => setVerMensagem(null)}
         />
