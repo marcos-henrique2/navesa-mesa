@@ -7,7 +7,10 @@
  *
  *   1. `rowToRepasse` traduz a coluna nova sem inventar aproximação onde não há
  *      (inclusive antes da migration ser aplicada, quando a coluna nem vem).
- *   2. `montarItemAnuncio` propaga a flag pro item que a UI renderiza com "~".
+ *   2. `montarItemAnuncio` conta os dias a partir de `data_subido` (carro NO AR),
+ *      com fallback pra `data_subiu` (MARCAÇÃO) — e propaga a flag pro item que a
+ *      UI renderiza com "~". Sem a troca de fonte o backfill seria decorativo: o
+ *      "~" marcaria a linha certa por um motivo que não alimentava a conta.
  *   3. O clamp do `least(data_subiu, current_date)` tem par no cliente: mesmo se
  *      uma data futura escapar pro banco, "dias em repasse" nunca fica negativo.
  */
@@ -65,6 +68,7 @@ function buildInput(over: Partial<CarroAnuncioInput> = {}): CarroAnuncioInput {
     ano_modelo: 2022,
     km: 85000,
     status: "subido",
+    data_subido: "2026-07-01",
     data_subiu: "2026-07-01",
     data_vendido: null,
     valor_minimo: null,
@@ -105,6 +109,42 @@ describe("rowToRepasse — data_subido_aproximada", () => {
   it("não mexe em data_subido: a flag é metadado, não a data", () => {
     const r = rowToRepasse(buildRow({ data_subido: "2026-05-01", data_subido_aproximada: true }));
     assert.equal(r.data_subido, "2026-05-01");
+  });
+});
+
+describe("montarItemAnuncio — fonte dos dias em repasse", () => {
+  it("usa data_subido: conta desde que o carro está NO AR", () => {
+    const it_ = montarItemAnuncio(
+      buildInput({ data_subido: "2026-07-01", data_subiu: "2026-07-01" }),
+      "2026-08-04",
+    );
+    assert.equal(it_.diasNoRepasse, 34);
+  });
+
+  it("sem data_subido cai pra data_subiu (rede pros status que não são 'subido')", () => {
+    const it_ = montarItemAnuncio(
+      buildInput({ data_subido: null, data_subiu: "2026-07-01", status: "marcado" }),
+      "2026-08-04",
+    );
+    assert.equal(it_.diasNoRepasse, 34);
+  });
+
+  it("datas divergentes: data_subido VENCE — marcação não infla os dias", () => {
+    // Marcado em 01/06, só subiu em 01/07: 64 dias desde a marcação, 34 no ar.
+    const it_ = montarItemAnuncio(
+      buildInput({ data_subido: "2026-07-01", data_subiu: "2026-06-01" }),
+      "2026-08-04",
+    );
+    assert.equal(it_.diasNoRepasse, 34);
+    assert.notEqual(it_.diasNoRepasse, 64);
+  });
+
+  it("as duas nulas → null (a linha mostra '—', não 0)", () => {
+    const it_ = montarItemAnuncio(
+      buildInput({ data_subido: null, data_subiu: null }),
+      "2026-08-04",
+    );
+    assert.equal(it_.diasNoRepasse, null);
   });
 });
 

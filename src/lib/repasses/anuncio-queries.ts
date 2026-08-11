@@ -30,6 +30,9 @@ type AnuncioRow = {
   ano_modelo: number | null;
   km: number | null;
   status: string;
+  /** Data em que o carro entrou no ar — fonte dos dias em repasse. */
+  data_subido: string | null;
+  /** Data de marcação (legado). Só serve de fallback pros dias em repasse. */
   data_subiu: string | null;
   data_vendido: string | null;
   /** Coluna da migration 027 — ausente enquanto a migration não for aplicada. */
@@ -57,7 +60,7 @@ export async function listCarrosEmAnuncio(): Promise<CarroAnuncioItem[]> {
   const { data: rows, error } = await sb
     .from("repasses")
     .select(
-      "id, placa, modelo, marca, ano_fabricacao, ano_modelo, km, status, data_subiu, data_subido_aproximada, data_vendido, valor_minimo, valor_compre_por, valor_compra_repasse, valor_fipe",
+      "id, placa, modelo, marca, ano_fabricacao, ano_modelo, km, status, data_subido, data_subiu, data_subido_aproximada, data_vendido, valor_minimo, valor_compre_por, valor_compra_repasse, valor_fipe",
     )
     .eq("status", "subido")
     .order("id", { ascending: false });
@@ -80,6 +83,7 @@ export async function listCarrosEmAnuncio(): Promise<CarroAnuncioItem[]> {
     ano_modelo: r.ano_modelo,
     km: r.km,
     status: r.status,
+    data_subido: r.data_subido,
     data_subiu: r.data_subiu,
     data_subido_aproximada: r.data_subido_aproximada === true,
     data_vendido: r.data_vendido,

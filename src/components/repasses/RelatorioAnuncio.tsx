@@ -43,6 +43,16 @@ import { parseValorBR } from "@/lib/utils/parse-br";
 import { hojeLocal } from "@/lib/utils/data-local";
 import { showErrorToast, showSuccessToast } from "@/components/ui/Toast";
 
+/**
+ * Explicação do "~" nos dias em repasse. Os dias contam desde a data de subida;
+ * nesses carros a data de subida não foi observada — o backfill da migration 027
+ * a inferiu da data de marcação, que é anterior. Daí o número poder estar alto.
+ */
+const TITULO_DIAS_APROXIMADOS =
+  "Estimativa. Esse carro é um registro legado: a data em que ele subiu não foi " +
+  "registrada na época, então foi inferida a partir da data de marcação. O número " +
+  "de dias pode estar alguns dias acima do real.";
+
 export function RelatorioAnuncio() {
   const [itens, setItens] = useState<CarroAnuncioItem[]>([]);
   const [carregando, setCarregando] = useState(true);
@@ -253,9 +263,8 @@ function PainelAlertas({ alertas }: { alertas: ReturnType<typeof calcularAlertas
                 className="rounded bg-amber-200 px-1.5 py-0.5 font-mono text-[11px] text-amber-800 dark:bg-amber-900 dark:text-amber-200"
                 title={
                   it.diasAproximados
-                    ? `~${it.diasNoRepasse} dias — estimativa de registro legado, ` +
-                      "pode variar alguns dias"
-                    : `${it.diasNoRepasse} dias`
+                    ? `~${it.diasNoRepasse} dias no ar. ${TITULO_DIAS_APROXIMADOS}`
+                    : `${it.diasNoRepasse} dias no ar`
                 }
               >
                 {it.placa} · {it.diasAproximados ? "~" : ""}
@@ -342,9 +351,10 @@ function LinhaAnuncio({ it }: { it: CarroAnuncioItem }) {
 }
 
 /**
- * Dias em repasse. Quando a data de origem veio do backfill da migration 027
- * (registro legado), prefixa "~" e explica no title — número estimado não pode
- * se passar por número medido.
+ * Dias em repasse — contados desde a data de subida (`data_subido`), ou seja,
+ * desde que o carro está NO AR. Quando essa data veio do backfill da migration
+ * 027 (registro legado, inferida da data de marcação), prefixa "~" e explica no
+ * title: número estimado não pode se passar por número medido.
  */
 function DiasNoRepasse({ it }: { it: CarroAnuncioItem }) {
   if (it.diasNoRepasse == null) return <>—</>;
@@ -352,10 +362,7 @@ function DiasNoRepasse({ it }: { it: CarroAnuncioItem }) {
   return (
     <span
       className="cursor-help text-[var(--text-muted)]"
-      title={
-        "Estimativa. Esse carro é um registro legado: a data de subida foi inferida " +
-        "do campo antigo, então o número pode variar alguns dias pra mais ou pra menos."
-      }
+      title={TITULO_DIAS_APROXIMADOS}
     >
       ~{it.diasNoRepasse}d
     </span>
