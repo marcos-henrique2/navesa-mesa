@@ -95,7 +95,16 @@ export async function listVendas(): Promise<VendaParsed[]> {
   return rows.map(fromRow);
 }
 
-/** Lista vendas num intervalo [ini, fim] de data_venda. */
+/**
+ * Lista vendas num intervalo [ini, fim] de data_venda.
+ *
+ * ⚠️ `fim` precisa ser o INSTANTE FINAL do dia, não a meia-noite dele. `data_venda` é
+ * `timestamptz` e `toISOString()` de um `new Date("2026-08-06")` vira
+ * `2026-08-06T00:00:00Z` — o `lte` corta tudo que foi vendido durante o dia 06, e ainda
+ * desloca a fronteira em 3h por causa do fuso. Um `<input type="date">` entrega
+ * exatamente esse Date. Hoje ninguém chama estas duas funções; quando alguém chamar,
+ * passe `fim` no fim do dia local (ver `@/lib/utils/data-local`).
+ */
 export async function listVendasPorPeriodo(ini: Date, fim: Date): Promise<VendaParsed[]> {
   const sb = getSupabase();
   const { data, error } = await sb
@@ -142,6 +151,12 @@ export async function upsertVendas(vendas: VendaParsed[]): Promise<{ total: numb
  *   1. Apaga vendas existentes dentro de [ini, fim]
  *   2. Insere as novas
  * Replica o comportamento de lib/store/merge.ts no banco.
+ *
+ * ⚠️ MESMA ARMADILHA de `listVendasPorPeriodo`, e aqui ela DELETA: `data_venda` é
+ * `timestamptz` e `fim.toISOString()` de uma data sem hora aponta pra meia-noite UTC.
+ * O DELETE apagaria menos do que o período pedido e o upsert seguinte reinseriria só o
+ * que veio no payload — sobra venda duplicada/órfã na borda. Passe `fim` no fim do dia
+ * local antes de dar o primeiro chamador a esta função.
  */
 export async function replaceVendasNoPeriodo(
   vendasNovas: VendaParsed[],

@@ -6,6 +6,8 @@
  * entra no backup automaticamente sem precisar atualizar este arquivo.
  */
 
+import { hojeLocal } from "@/lib/utils/data-local";
+
 const PREFIX = "navesa-mesa:";
 const FORMATO_VERSAO = 1;
 
@@ -58,7 +60,9 @@ export function baixarBackup(): BackupMeta {
   const blob = new Blob([json], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  const data = new Date().toISOString().slice(0, 10);
+  // Nome do arquivo leva a data LOCAL do usuário. (`exportadoEm` acima segue
+  // ISO/UTC de propósito: lá é instante técnico, não dia de calendário.)
+  const data = hojeLocal();
   a.href = url;
   a.download = `navesa-mesa-backup-${data}.json`;
   document.body.appendChild(a);

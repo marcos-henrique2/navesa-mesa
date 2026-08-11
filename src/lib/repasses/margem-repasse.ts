@@ -240,18 +240,23 @@ function parseDataUTC(s: string | null | undefined): number | null {
 }
 
 /**
- * dias_no_repasse:
- *   - parado (não vendido): hoje − data_subiu
- *   - vendido:              data_vendido − data_subiu
- *   - data_subiu nula:      null (UI mostra "—")
+ * dias_no_repasse, a partir da data em que o carro entrou NO AR:
+ *   - parado (não vendido): hoje − dataInicio
+ *   - vendido:              data_vendido − dataInicio
+ *   - dataInicio nula:      null (UI mostra "—")
+ *
+ * `dataInicio` é `data_subido` (ver `montarItemAnuncio`, único chamador) — NÃO
+ * `data_subiu`, que é a data de MARCAÇÃO e infla a contagem nos carros que
+ * ficaram parados entre marcar e subir.
+ *
  * `hoje` em YYYY-MM-DD. Retorna dias inteiros ≥ 0.
  */
 export function calcularDiasNoRepasse(
-  dataSubiu: string | null | undefined,
+  dataInicio: string | null | undefined,
   dataVendido: string | null | undefined,
   hoje: string,
 ): number | null {
-  const ini = parseDataUTC(dataSubiu);
+  const ini = parseDataUTC(dataInicio);
   if (ini == null) return null;
   const fim = parseDataUTC(dataVendido ?? hoje);
   if (fim == null) return null;

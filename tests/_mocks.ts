@@ -116,6 +116,7 @@ export function repasse(over: Partial<Repasse> = {}): Repasse {
     valor_compre_por: null,
     data_marcado: "2026-06-01",
     data_subido: null,
+    data_subido_aproximada: false,
     canal: "auto_avaliar",
     status: "marcado",
     valor_vendido: null,

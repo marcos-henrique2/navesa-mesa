@@ -25,7 +25,9 @@ function carro(over: Partial<CarroAnuncioInput> = {}): CarroAnuncioInput {
     ano_modelo: 2021,
     km: 45_000,
     status: "subido",
-    data_subiu: "2026-07-01",
+    // Fonte canônica dos dias em repasse. `data_subiu` (marcação) é só fallback.
+    data_subido: "2026-07-01",
+    data_subiu: "2026-06-01",
     data_vendido: null,
     valor_minimo: 60_000,
     valor_compre_por: 68_000,
@@ -89,8 +91,8 @@ describe("montarItemAnuncio", () => {
     assert.equal(it.cor, "neutro");
   });
 
-  it("data_subiu nula → diasNoRepasse null", () => {
-    const it = montarItemAnuncio(carro({ data_subiu: null }), HOJE);
+  it("sem data_subido nem data_subiu → diasNoRepasse null", () => {
+    const it = montarItemAnuncio(carro({ data_subido: null, data_subiu: null }), HOJE);
     assert.equal(it.diasNoRepasse, null);
   });
 
@@ -102,9 +104,9 @@ describe("montarItemAnuncio", () => {
 describe("filtrarAnuncio", () => {
   const itens = montarRelatorioAnuncio(
     [
-      carro({ id: 1, modelo: "ONIX 1.0", ano_modelo: 2021, ano_fabricacao: 2020, data_subiu: "2026-07-20" }), // 12 dias
-      carro({ id: 2, modelo: "HB20 1.6", ano_modelo: 2019, ano_fabricacao: 2019, data_subiu: "2026-05-01" }), // 92 dias
-      carro({ id: 3, modelo: "ONIX PLUS", ano_modelo: 2022, ano_fabricacao: 2021, data_subiu: null }), // sem dias
+      carro({ id: 1, modelo: "ONIX 1.0", ano_modelo: 2021, ano_fabricacao: 2020, data_subido: "2026-07-20" }), // 12 dias
+      carro({ id: 2, modelo: "HB20 1.6", ano_modelo: 2019, ano_fabricacao: 2019, data_subido: "2026-05-01" }), // 92 dias
+      carro({ id: 3, modelo: "ONIX PLUS", ano_modelo: 2022, ano_fabricacao: 2021, data_subido: null, data_subiu: null }), // sem dias
     ],
     HOJE,
   );
@@ -138,15 +140,15 @@ describe("calcularAlertas", () => {
   const itens = montarRelatorioAnuncio(
     [
       // Saudável
-      carro({ id: 1, valor_compra_repasse: 50_000, gastos: [], valor_minimo: 55_000, valor_compre_por: 60_000, data_subiu: "2026-07-25" }),
+      carro({ id: 1, valor_compra_repasse: 50_000, gastos: [], valor_minimo: 55_000, valor_compre_por: 60_000, data_subido: "2026-07-25" }),
       // Prejuízo latente: minimo < custo (mas compre_por >= custo)
-      carro({ id: 2, valor_compra_repasse: 70_000, gastos: [], valor_minimo: 65_000, valor_compre_por: 75_000, data_subiu: "2026-07-25" }),
+      carro({ id: 2, valor_compra_repasse: 70_000, gastos: [], valor_minimo: 65_000, valor_compre_por: 75_000, data_subido: "2026-07-25" }),
       // Pior: compre_por < custo (anúncio no prejuízo) — tipo PMK6A00/SCM2G20
-      carro({ id: 3, valor_compra_repasse: 80_000, gastos: [], valor_minimo: 70_000, valor_compre_por: 65_000, data_subiu: "2026-07-25" }),
+      carro({ id: 3, valor_compra_repasse: 80_000, gastos: [], valor_minimo: 70_000, valor_compre_por: 65_000, data_subido: "2026-07-25" }),
       // Envelhecido (>60 dias) e completo saudável
-      carro({ id: 4, valor_compra_repasse: 40_000, gastos: [], valor_minimo: 45_000, valor_compre_por: 50_000, data_subiu: "2026-05-01" }),
+      carro({ id: 4, valor_compra_repasse: 40_000, gastos: [], valor_minimo: 45_000, valor_compre_por: 50_000, data_subido: "2026-05-01" }),
       // Incompleto → NÃO entra em prejuízo
-      carro({ id: 5, valor_compra_repasse: null, valor_minimo: 10_000, valor_compre_por: 9_000, data_subiu: "2026-07-25" }),
+      carro({ id: 5, valor_compra_repasse: null, valor_minimo: 10_000, valor_compre_por: 9_000, data_subido: "2026-07-25" }),
     ],
     HOJE,
   );

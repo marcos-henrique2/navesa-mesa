@@ -40,7 +40,18 @@ import { gerarRelatorioAnuncioXlsx } from "@/lib/export/relatorio-anuncio-xlsx";
 import { gerarRelatorioAnuncioPdf } from "@/lib/export/relatorio-anuncio-pdf";
 import { cn, formatBRLCents, formatInt } from "@/lib/utils";
 import { parseValorBR } from "@/lib/utils/parse-br";
+import { hojeLocal } from "@/lib/utils/data-local";
 import { showErrorToast, showSuccessToast } from "@/components/ui/Toast";
+
+/**
+ * Explicação do "~" nos dias em repasse. Os dias contam desde a data de subida;
+ * nesses carros a data de subida não foi observada — o backfill da migration 027
+ * a inferiu da data de marcação, que é anterior. Daí o número poder estar alto.
+ */
+const TITULO_DIAS_APROXIMADOS =
+  "Estimativa. Esse carro é um registro legado: a data em que ele subiu não foi " +
+  "registrada na época, então foi inferida a partir da data de marcação. O número " +
+  "de dias pode estar alguns dias acima do real.";
 
 export function RelatorioAnuncio() {
   const [itens, setItens] = useState<CarroAnuncioItem[]>([]);
@@ -250,9 +261,14 @@ function PainelAlertas({ alertas }: { alertas: ReturnType<typeof calcularAlertas
               <li
                 key={it.id}
                 className="rounded bg-amber-200 px-1.5 py-0.5 font-mono text-[11px] text-amber-800 dark:bg-amber-900 dark:text-amber-200"
-                title={`${it.diasNoRepasse} dias`}
+                title={
+                  it.diasAproximados
+                    ? `~${it.diasNoRepasse} dias no ar. ${TITULO_DIAS_APROXIMADOS}`
+                    : `${it.diasNoRepasse} dias no ar`
+                }
               >
-                {it.placa} · {it.diasNoRepasse}d
+                {it.placa} · {it.diasAproximados ? "~" : ""}
+                {it.diasNoRepasse}d
               </li>
             ))}
           </ul>
@@ -316,7 +332,9 @@ function LinhaAnuncio({ it }: { it: CarroAnuncioItem }) {
       <Td className="text-right tabular-nums">{formatBRLCents(it.custoReal)}</Td>
       <Td className="text-right tabular-nums">{formatBRLCents(it.valorMinimo)}</Td>
       <Td className="text-right tabular-nums">{formatBRLCents(it.valorComprePor)}</Td>
-      <Td className="text-right tabular-nums">{it.diasNoRepasse == null ? "—" : `${it.diasNoRepasse}d`}</Td>
+      <Td className="text-right tabular-nums">
+        <DiasNoRepasse it={it} />
+      </Td>
       <Td className="text-right tabular-nums">{it.fipe == null ? "—" : formatBRLCents(it.fipe)}</Td>
       <Td className="text-right tabular-nums">{it.interessados}</Td>
       <Td className="text-right tabular-nums">
@@ -329,6 +347,25 @@ function LinhaAnuncio({ it }: { it: CarroAnuncioItem }) {
         <SimuladorCell it={it} />
       </Td>
     </tr>
+  );
+}
+
+/**
+ * Dias em repasse — contados desde a data de subida (`data_subido`), ou seja,
+ * desde que o carro está NO AR. Quando essa data veio do backfill da migration
+ * 027 (registro legado, inferida da data de marcação), prefixa "~" e explica no
+ * title: número estimado não pode se passar por número medido.
+ */
+function DiasNoRepasse({ it }: { it: CarroAnuncioItem }) {
+  if (it.diasNoRepasse == null) return <>—</>;
+  if (!it.diasAproximados) return <>{it.diasNoRepasse}d</>;
+  return (
+    <span
+      className="cursor-help text-[var(--text-muted)]"
+      title={TITULO_DIAS_APROXIMADOS}
+    >
+      ~{it.diasNoRepasse}d
+    </span>
   );
 }
 
@@ -468,8 +505,9 @@ function Td({ children, className }: { children: React.ReactNode; className?: st
   return <td className={cn("px-3 py-2", className)}>{children}</td>;
 }
 
+/** Data local pro nome do arquivo exportado — o Marcos espera o dia DELE. */
 function hojeISO(): string {
-  return new Date().toISOString().slice(0, 10);
+  return hojeLocal();
 }
 
 /** Dispara o download de um Blob no navegador. */

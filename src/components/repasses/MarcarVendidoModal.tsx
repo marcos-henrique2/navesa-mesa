@@ -21,6 +21,7 @@ import {
 } from "@/lib/repasses/margem-repasse";
 import { classificarMargemVendaValores } from "@/lib/repasses/margem-venda";
 import { parseValorBR } from "@/lib/utils/parse-br";
+import { hojeLocal } from "@/lib/utils/data-local";
 import { formatBRL } from "@/lib/utils";
 
 export type MarcarVendidoModalProps = {
@@ -36,8 +37,9 @@ export type MarcarVendidoModalProps = {
   onConfirm: (input: MarcarVendidoInput) => void | Promise<void>;
 };
 
+/** Data de hoje pro `<input type="date">` — LOCAL, senão às 22h já mostra amanhã. */
 function hojeYMD(): string {
-  return new Date().toISOString().slice(0, 10);
+  return hojeLocal();
 }
 
 /** Cor do texto da margem por classificação canônica do semáforo. */

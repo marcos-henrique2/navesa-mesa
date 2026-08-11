@@ -33,6 +33,13 @@ export type MensagemLeadModalProps = {
    * interessados pra injetar a mensagem de negociação (com compre-por + FIPE).
    */
   mensagemInicial?: string;
+  /**
+   * Chamado SÍNCRONO logo depois do `window.open` do wa.me. É o gancho de
+   * registro de contato: o modal é genérico e não conhece lead_id/repasse_id,
+   * então quem monta ele injeta o que fazer. Sem callback, o modal só abre o
+   * WhatsApp (comportamento antigo).
+   */
+  aoAbrirWhatsapp?: () => void;
   open: boolean;
   onClose: () => void;
 };
@@ -44,6 +51,7 @@ export function MensagemLeadModal({
   contexto,
   titulo,
   mensagemInicial,
+  aoAbrirWhatsapp,
   open,
   onClose,
 }: MensagemLeadModalProps) {
@@ -76,12 +84,15 @@ export function MensagemLeadModal({
   }
 
   function abrirWhatsapp() {
+    // Sem celular nada é gravado — o botão já está desabilitado.
     if (!telefoneWhatsapp) {
       showInfoToast("Esse lead não tem celular pra WhatsApp.");
       return;
     }
+    // window.open PRIMEIRO e síncrono; o registro vem depois, sem await.
     const url = `https://wa.me/${telefoneWhatsapp}?text=${encodeURIComponent(texto)}`;
     window.open(url, "_blank", "noopener");
+    aoAbrirWhatsapp?.();
   }
 
   return (

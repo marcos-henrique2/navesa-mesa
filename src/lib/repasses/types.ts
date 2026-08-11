@@ -55,6 +55,12 @@ export type Repasse = {
 
   data_marcado: string; // YYYY-MM-DD — alias de data_subiu legacy
   data_subido: string | null; // YYYY-MM-DD | null — quando virou "subido"
+  /**
+   * true = `data_subido` foi INFERIDA de `data_subiu` no backfill da migration
+   * 027 (registro legado), com variação possível de alguns dias. A UI marca os
+   * dias em repasse com "~" nessas linhas. Ver migration 027.
+   */
+  data_subido_aproximada: boolean;
   canal: RepasseCanal;
 
   status: RepasseStatus;

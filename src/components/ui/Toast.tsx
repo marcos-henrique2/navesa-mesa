@@ -6,11 +6,26 @@ import { cn } from "@/lib/utils";
 
 type ToastVariant = "success" | "error" | "info";
 
+/** Botão de ação dentro do toast — "Desfazer", "Tentar de novo". */
+export type ToastAcao = {
+  label: string;
+  onClick: () => void;
+};
+
+export type ToastOpts = {
+  acao?: ToastAcao;
+  /** Sobrescreve o auto-dismiss padrão (4s). Toast com ação precisa de mais tempo. */
+  duracaoMs?: number;
+};
+
 type Toast = {
   id: string;
   message: string;
   variant: ToastVariant;
+  acao?: ToastAcao;
 };
+
+const DURACAO_PADRAO_MS = 4000;
 
 // Store global simples em memória + observers — evita prop drilling e dependência de provider.
 let toasts: Toast[] = [];
@@ -20,27 +35,39 @@ function notify() {
   listeners.forEach((l) => l());
 }
 
-function pushToast(message: string, variant: ToastVariant) {
-  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  toasts = [...toasts, { id, message, variant }];
+function remover(id: string) {
+  toasts = toasts.filter((t) => t.id !== id);
   notify();
-  // auto-dismiss em 4s
-  setTimeout(() => {
-    toasts = toasts.filter((t) => t.id !== id);
-    notify();
-  }, 4000);
 }
 
-export function showSuccessToast(message: string): void {
-  pushToast(message, "success");
+function pushToast(message: string, variant: ToastVariant, opts?: ToastOpts) {
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const acao = opts?.acao
+    ? {
+        label: opts.acao.label,
+        // Clicar na ação também fecha o toast — senão a janela pra clicar de novo
+        // continua aberta e o usuário dispara a mesma ação duas vezes.
+        onClick: () => {
+          remover(id);
+          opts.acao?.onClick();
+        },
+      }
+    : undefined;
+  toasts = [...toasts, { id, message, variant, acao }];
+  notify();
+  setTimeout(() => remover(id), opts?.duracaoMs ?? DURACAO_PADRAO_MS);
 }
 
-export function showErrorToast(message: string): void {
-  pushToast(message, "error");
+export function showSuccessToast(message: string, opts?: ToastOpts): void {
+  pushToast(message, "success", opts);
 }
 
-export function showInfoToast(message: string): void {
-  pushToast(message, "info");
+export function showErrorToast(message: string, opts?: ToastOpts): void {
+  pushToast(message, "error", opts);
+}
+
+export function showInfoToast(message: string, opts?: ToastOpts): void {
+  pushToast(message, "info", opts);
 }
 
 export function ToastContainer() {
@@ -57,8 +84,7 @@ export function ToastContainer() {
   }, []);
 
   const dismiss = useCallback((id: string) => {
-    toasts = toasts.filter((t) => t.id !== id);
-    notify();
+    remover(id);
   }, []);
 
   if (items.length === 0) return null;
@@ -88,6 +114,15 @@ export function ToastContainer() {
           {t.variant === "error" && <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />}
           {t.variant === "info" && <Info className="mt-0.5 h-4 w-4 shrink-0" />}
           <span className="flex-1 break-words">{t.message}</span>
+          {t.acao && (
+            <button
+              type="button"
+              onClick={t.acao.onClick}
+              className="shrink-0 rounded px-1.5 py-0.5 text-xs font-semibold underline underline-offset-2 hover:bg-black/10 dark:hover:bg-white/10"
+            >
+              {t.acao.label}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => dismiss(t.id)}

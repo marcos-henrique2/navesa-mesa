@@ -43,9 +43,20 @@ import {
   STATUS_RELACIONAMENTO_VALUES,
   type StatusRelacionamento,
 } from "@/lib/leads/leads";
+import {
+  aplicarContatoOtimista,
+  aplicarPromocaoLead,
+  desfazerContatoLead,
+  mensagemEscopoInesperado,
+  registrarContatoLead,
+  reverterContatoOtimista,
+  reverterPromocaoLead,
+  type ContatoAnterior,
+} from "@/lib/leads/contato";
 import { gerarMensagemLead } from "@/lib/repasses/gerar-mensagem-lead";
 import { cn } from "@/lib/utils";
-import { showErrorToast, showInfoToast } from "@/components/ui/Toast";
+import { formatarDataBR, hojeLocal } from "@/lib/utils/data-local";
+import { showErrorToast, showInfoToast, showSuccessToast } from "@/components/ui/Toast";
 import { MensagemLeadModal } from "@/components/repasses/MensagemLeadModal";
 import { OferecerCarroModal } from "./OferecerCarroModal";
 
@@ -145,10 +156,112 @@ export function LeadDetalhe({ leadId }: { leadId: number }) {
     [interesses],
   );
 
+  // ─── Registro de contato ─────────────────────────────────────────────────────
+  // Mesmo fluxo do InteressadosCRM, via a lib compartilhada: patch otimista →
+  // RPC (com 1 retry) → toast com "Desfazer", ou rollback + "Tentar de novo".
+  const registrarContato = useCallback((leadId: number, interesse: LeadInteresse) => {
+    const anterior: ContatoAnterior = {
+      status_followup: interesse.status_followup,
+      data_contato: interesse.data_contato,
+    };
+    const hoje = hojeLocal();
+
+    function disparar() {
+      setInteresses((prev) => aplicarContatoOtimista(prev, interesse.id, hoje));
+
+      void (async () => {
+        try {
+          const resultado = await registrarContatoLead({
+            leadId,
+            interesseId: interesse.id,
+            repasseId: interesse.repasse_id,
+            statusAtual: anterior.status_followup,
+          });
+
+          // A RPC pode ter promovido o lead 'novo' → 'contatado'. Esta tela EXIBE o
+          // status do lead, então ela precisa refletir isso na hora — senão o badge
+          // fica mentindo "novo" até um reload.
+          const promovido = resultado.statusPromovido;
+          if (promovido) setLead((prev) => aplicarPromocaoLead(prev, true));
+
+          // Escopo inesperado: a RPC caiu no fallback e marcou 0 ou N interesses em vez
+          // do carro pedido. A promoção do lead acima vale (o banco fez), mas o
+          // "Desfazer" não pode ser oferecido — ele é escopado num interesse só e
+          // reverteria 1 de N. O aviso pede recarga porque a lista em memória divergiu.
+          if (resultado.escopoInesperado) {
+            showErrorToast(mensagemEscopoInesperado(resultado.interessesMarcados), {
+              duracaoMs: 12000,
+            });
+            return;
+          }
+
+          const base = `Contato sobre ${interesse.modelo_snapshot} registrado hoje.`;
+          const msg =
+            anterior.data_contato != null
+              ? `${base} Já havia contato em ${formatarDataBR(anterior.data_contato)}.`
+              : base;
+
+          showSuccessToast(msg, {
+            duracaoMs: 8000,
+            acao: {
+              label: "Desfazer",
+              onClick: () => {
+                setInteresses((prev) => reverterContatoOtimista(prev, interesse.id, anterior));
+                // Desfazer COMPLETO: o interesse e a promoção do lead. Sem a segunda
+                // parte o lead ficava 'contatado' sem contato registrado.
+                setLead((prev) => reverterPromocaoLead(prev, promovido));
+                void desfazerContatoLead({
+                  leadId,
+                  interesseId: interesse.id,
+                  anterior,
+                  statusPromovido: promovido,
+                  dataContato: resultado.dataContato,
+                })
+                  .then((r) => {
+                    // O banco pode ter barrado o rebaixamento: outro carro DESTE lead
+                    // foi contatado dentro dos 8s e esse contato continua valendo.
+                    // Desfaz o próprio otimismo do badge — mas só se ele ainda estiver
+                    // no 'novo' que nós colocamos (o usuário pode ter mexido no meio).
+                    if (promovido && !r.leadRebaixado && r.outroContatoNoDia) {
+                      setLead((prev) =>
+                        prev?.status_relacionamento === "novo"
+                          ? aplicarPromocaoLead(prev, true)
+                          : prev,
+                      );
+                      showInfoToast(
+                        "Contato desfeito neste carro. O lead continua como \"contatado\" " +
+                          "porque outro carro dele foi contatado agora há pouco.",
+                      );
+                    }
+                  })
+                  .catch((e: unknown) => {
+                    setInteresses((prev) => aplicarContatoOtimista(prev, interesse.id, hoje));
+                    setLead((prev) => aplicarPromocaoLead(prev, promovido));
+                    showErrorToast(
+                      `Não consegui desfazer: ${e instanceof Error ? e.message : String(e)}`,
+                    );
+                  });
+              },
+            },
+          });
+        } catch (e) {
+          setInteresses((prev) => reverterContatoOtimista(prev, interesse.id, anterior));
+          showErrorToast(
+            `Não consegui registrar o contato: ${e instanceof Error ? e.message : String(e)}`,
+            { duracaoMs: 8000, acao: { label: "Tentar de novo", onClick: disparar } },
+          );
+        }
+      })();
+    }
+
+    disparar();
+  }, []);
+
   // ─── WhatsApp por interesse ──────────────────────────────────────────────────
   const handleWhatsapp = useCallback(
     (interesse: LeadInteresse) => {
       if (!lead) return;
+      // Sem celular: botão desabilitado; nada é gravado.
       if (!lead.telefone_whatsapp) {
         showInfoToast("Esse lead não tem celular pra WhatsApp.");
         return;
@@ -159,18 +272,13 @@ export function LeadDetalhe({ leadId }: { leadId: number }) {
         { nome: lead.nome },
         interesse.origem,
       );
+      // window.open PRIMEIRO e síncrono (senão o navegador bloqueia o popup).
       const url = `https://wa.me/${lead.telefone_whatsapp}?text=${encodeURIComponent(msg)}`;
       window.open(url, "_blank", "noopener");
 
-      if (interesse.status_followup === "novo") {
-        const hoje = new Date().toISOString().slice(0, 10);
-        void handlePatchInteresse(interesse.id, {
-          status_followup: "contatado",
-          data_contato: hoje,
-        });
-      }
+      registrarContato(lead.id, interesse);
     },
-    [lead, handlePatchInteresse],
+    [lead, registrarContato],
   );
 
   const handleRemover = useCallback(
@@ -362,6 +470,7 @@ export function LeadDetalhe({ leadId }: { leadId: number }) {
           nome={lead.nome}
           telefoneWhatsapp={lead.telefone_whatsapp}
           contexto={verMensagem.origem}
+          aoAbrirWhatsapp={() => registrarContato(lead.id, verMensagem)}
           open={true}
           onClose={() => setVerMensagem(null)}
         />

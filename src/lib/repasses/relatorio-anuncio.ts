@@ -33,8 +33,25 @@ export type CarroAnuncioInput = {
   ano_modelo: number | null;
   km: number | null;
   status: string;
+  /**
+   * Data em que o carro entrou NO AR (status='subido'). Fonte canônica dos dias
+   * em repasse. Depois da migration 027 nenhum carro 'subido' tem esse campo
+   * nulo (trigger + backfill); em outros status pode ser null.
+   */
+  data_subido: string | null;
+  /**
+   * Data de MARCAÇÃO (coluna legada `data_subiu`, NOT NULL no banco, exposta
+   * como `data_marcado` no domínio). Só entra nos dias em repasse como fallback
+   * quando `data_subido` é nula.
+   */
   data_subiu: string | null;
   data_vendido: string | null;
+  /**
+   * true = `data_subido` veio do backfill da migration 027 (inferida de
+   * `data_subiu`), não observada no momento em que o carro subiu. Opcional:
+   * entradas antigas sem o campo contam como data observada.
+   */
+  data_subido_aproximada?: boolean;
   valor_minimo: number | null;
   valor_compre_por: number | null;
   valor_compra_repasse: number | null;
@@ -62,7 +79,13 @@ export type CarroAnuncioItem = {
   valorMinimo: number | null;
   valorComprePor: number | null;
   fipe: number | null;
+  /**
+   * Dias desde que o carro está NO AR (`data_subido`), com fallback pra
+   * `data_subiu` quando a data de subida não existe. null = sem nenhuma das duas.
+   */
   diasNoRepasse: number | null;
+  /** true = `diasNoRepasse` é estimativa (registro legado). UI mostra "~34d". */
+  diasAproximados: boolean;
   interessados: number;
   /** true = falta custo_real, mínimo ou compre-por → margens/cor indisponíveis. */
   incompleto: boolean;
@@ -82,7 +105,15 @@ function anoLabel(fab: number | null, mod: number | null): string {
   return "—";
 }
 
-/** Monta um item do relatório a partir da entrada crua. `hoje` em YYYY-MM-DD. */
+/**
+ * Monta um item do relatório a partir da entrada crua. `hoje` em YYYY-MM-DD.
+ *
+ * Origem dos dias em repasse: `data_subido` (carro NO AR) com fallback pra
+ * `data_subiu` (MARCAÇÃO). Contar da marcação infla o número — o carro que ficou
+ * parado entre "marcado" e "subido" aparecia mais velho do que está anunciado.
+ * Depois da migration 027 todo carro 'subido' tem `data_subido`, então o fallback
+ * só serve de rede pra registro fora do fluxo e pros status que não são 'subido'.
+ */
 export function montarItemAnuncio(input: CarroAnuncioInput, hoje: string): CarroAnuncioItem {
   const custoReal = calcularCustoReal(input.valor_compra_repasse, input.gastos);
   const { valor_minimo: minimo, valor_compre_por: comprePor } = input;
@@ -106,7 +137,12 @@ export function montarItemAnuncio(input: CarroAnuncioInput, hoje: string): Carro
     valorMinimo: minimo,
     valorComprePor: comprePor,
     fipe: input.fipe,
-    diasNoRepasse: calcularDiasNoRepasse(input.data_subiu, input.data_vendido, hoje),
+    diasNoRepasse: calcularDiasNoRepasse(
+      input.data_subido ?? input.data_subiu,
+      input.data_vendido,
+      hoje,
+    ),
+    diasAproximados: input.data_subido_aproximada === true,
     interessados: input.interessados,
     incompleto,
     margemMinimoValor: incompleto ? null : calcularMargemValor(minimo, custoReal),
@@ -128,7 +164,7 @@ export function montarRelatorioAnuncio(
 // ─── Filtros (Story 1.2) ─────────────────────────────────────────────────────
 
 export type FiltroAnuncio = {
-  /** dias_no_repasse mínimo (inclusive). Carros sem data_subiu ("—") são excluídos. */
+  /** dias_no_repasse mínimo (inclusive). Carros sem data de origem ("—") são excluídos. */
   diasMin?: number | null;
   /** substring case-insensitive no modelo. */
   modelo?: string | null;
