@@ -99,6 +99,9 @@ export function SyncOfertasConferencia({
 
   const filtroLojaZerou = meta.total_loja_alvo === 0 && meta.total_outra_loja > 0;
   const nadaPraGravar = rel.resumo.com_alteracao === 0;
+  // Contagem que não fecha significa que alguma linha sumiu entre os grupos. O
+  // aviso não pode depender de o usuário obedecer um texto: trava o botão.
+  const contagemQuebrada = !baldesFecham(rel);
 
   async function aplicar() {
     if (aplicando || aplicado != null) return;
@@ -165,7 +168,7 @@ export function SyncOfertasConferencia({
             </Aviso>
           )}
 
-          {!baldesFecham(rel) && (
+          {contagemQuebrada && (
             <Aviso tom="amber" icone={<AlertTriangle className="h-4 w-4" />} titulo="Contagem inconsistente">
               A soma dos grupos não fecha com o total de linhas enviadas. Não confirme: reporte
               isso antes de gravar.
@@ -405,8 +408,14 @@ export function SyncOfertasConferencia({
               <button
                 type="button"
                 onClick={() => void aplicar()}
-                disabled={aplicando || nadaPraGravar}
-                title={nadaPraGravar ? "Nada mudou — não há o que gravar." : undefined}
+                disabled={aplicando || nadaPraGravar || contagemQuebrada}
+                title={
+                  contagemQuebrada
+                    ? "A soma dos grupos não fecha com o total de linhas — gravação bloqueada."
+                    : nadaPraGravar
+                      ? "Nada mudou — não há o que gravar."
+                      : undefined
+                }
                 className="inline-flex items-center gap-2 rounded-md bg-[var(--brand-700)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--brand-800)] disabled:opacity-50"
               >
                 {aplicando ? (

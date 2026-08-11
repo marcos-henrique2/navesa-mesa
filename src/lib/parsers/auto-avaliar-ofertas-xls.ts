@@ -77,6 +77,11 @@ export type LinhaOfertaAA = {
   ano_modelo: number | null;
   /** Zero é valor REAL aqui ("sem anúncio ativo"), não ausência (AC3). */
   qtde_anuncios: number | null;
+  /**
+   * Custo-base da margem. ÚNICO campo monetário em que `0,00` sobrevive como
+   * número: é o gatilho da guarda `valor_compra_zerado` da RPC (AC13c). Ver
+   * `valorCompraObservado`.
+   */
   valor_compra_repasse: number | null;
   valor_minimo: number | null;
   valor_compre_por: number | null;
@@ -319,6 +324,27 @@ function valorObservado(v: unknown): number | null {
 }
 
 /**
+ * ÚNICA exceção monetária à regra "zero é ausência": `Valor Compra`.
+ *
+ * `valor_compra_repasse` é a base de `custo_real`. Se um `0,00` explícito virar
+ * `null` aqui, a RPC não consegue distingui-lo de célula vazia
+ * (`jsonb_typeof('null') ≠ 'number'`), a guarda `aa_arq_zero_explicito` da 029
+ * nunca dispara, e a linha sincroniza todo o resto EM SILÊNCIO num campo que
+ * decide margem. O `COALESCE` da RPC continua impedindo perda de dado — o que
+ * se perde é o AVISO, que é o ponto inteiro da AC13c.
+ *
+ * Então aqui o zero atravessa como número: é a RPC que decide o que fazer com
+ * ele (mandar a linha pra `ignoradas` com `motivo = "valor_compra_zerado"`).
+ * Célula vazia, `-`, `N/A` e lixo continuam virando `null` normalmente.
+ */
+function valorCompraObservado(v: unknown): number | null {
+  const s = celulaTexto(v);
+  if (s === "") return null;
+  const n = parseValorBR(s);
+  return n === null ? null : arredondar2(n);
+}
+
+/**
  * Contagem observada. Aqui ZERO É VALOR REAL ("está sem anúncio ativo") — a
  * regra de zero-é-ausência vale só para dinheiro (AC3). Negativo e lixo → null.
  */
@@ -481,7 +507,8 @@ export function parseAutoAvaliarOfertasXls(
       ano_fabricacao: anoObservado(at(row, "ano_fab")),
       ano_modelo: anoObservado(at(row, "ano_mod")),
       qtde_anuncios: qtdeObservada(at(row, "qtde_anuncios")),
-      valor_compra_repasse: valorObservado(at(row, "valor_compra")),
+      // Único campo monetário que PRESERVA o zero — ver `valorCompraObservado`.
+      valor_compra_repasse: valorCompraObservado(at(row, "valor_compra")),
       valor_minimo: valorObservado(at(row, "valor_anunciado")),
       valor_compre_por: valorObservado(at(row, "valor_compre_por")),
       valor_maior_oferta: valorObservado(at(row, "vlr_maior_oferta")),

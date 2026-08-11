@@ -322,11 +322,78 @@ describe("semântica do zero (AC3)", () => {
     }
   });
 
-  it("`Valor Compra = 0,00` vira null e a linha CONTINUA no payload (AC13c é da RPC)", () => {
+  /**
+   * AC13c — o gatilho da guarda mora AQUI, no parser, não na RPC.
+   *
+   * `aa_arq_zero_explicito` (029:157-167) só dispara quando a célula chega como
+   * JSON number `0`. Se o parser colapsar `0,00 → null`, `jsonb_typeof('null')`
+   * não é `'number'`, a guarda fica falsa, e a linha sincroniza todo o resto em
+   * silêncio num campo que decide margem. Não se perde dado (o COALESCE
+   * protege) — perde-se o AVISO.
+   *
+   * Verificado contra produção com o preview `STABLE` (nada gravado), mesma
+   * placa nos dois payloads:
+   *   `"valor_compra_repasse": null` → ignoradas 0 · com_alteracao 1 (3 campos)
+   *   `"valor_compra_repasse": 0`    → ignoradas 1 · com_alteracao 0
+   */
+  it("`Valor Compra = 0,00` PRESERVA o zero — é o gatilho da guarda da RPC (AC13c)", () => {
     const l = porPlaca(r.linhas, "CDE3F45");
-    assert.equal(l.valor_compra_repasse, null);
-    const payload = montarPayloadSyncArquivo(r.linhas);
-    assert.ok(payload.linhas.some((x) => x.linha === l.linha));
+    assert.equal(l.valor_compra_repasse, 0);
+    assert.notEqual(l.valor_compra_repasse, null);
+  });
+
+  it("o zero de `Valor Compra` chega à RPC como JSON number 0, não como null", () => {
+    const l = porPlaca(r.linhas, "CDE3F45");
+    const item = montarPayloadSyncArquivo(r.linhas).linhas.find((x) => x.linha === l.linha);
+    assert.ok(item, "a linha tem que continuar no payload");
+    assert.equal(item.valor_compra_repasse, 0);
+    assert.equal(typeof item.valor_compra_repasse, "number");
+    // O que a RPC realmente recebe depois do JSON.stringify do supabase-js:
+    // `null` aqui desarmaria a guarda em silêncio.
+    const round = JSON.parse(JSON.stringify(item)) as Record<string, unknown>;
+    assert.equal(round.valor_compra_repasse, 0);
+    assert.equal(typeof round.valor_compra_repasse, "number");
+  });
+
+  it("a exceção do zero vale SÓ pra `Valor Compra` — os outros valores continuam null", () => {
+    const r2 = ok(
+      tabela(HEADER_COMPLETO, [
+        linhaMatriz("AAA1A11", {
+          [C.compra]: "0,00",
+          [C.anunciado]: "0,00",
+          [C.comprepor]: "0,00",
+          [C.oferta]: "0,00",
+          [C.web]: "R$ 0,00",
+          [C.fipe]: "0,00",
+          14: "0,00", // Vlr Ref. AutoAvaliar
+        }),
+      ]),
+    );
+    const l = porPlaca(r2.linhas, "AAA1A11");
+    assert.equal(l.valor_compra_repasse, 0);
+    for (const campo of [
+      "valor_minimo",
+      "valor_compre_por",
+      "valor_maior_oferta",
+      "valor_web",
+      "valor_fipe",
+      "valor_auto_avaliar",
+    ] as const) {
+      assert.equal(l[campo], null, campo);
+    }
+  });
+
+  it("célula vazia / ilegível em `Valor Compra` continua null (só o 0,00 explícito vira 0)", () => {
+    const r2 = ok(
+      tabela(HEADER_COMPLETO, [
+        linhaMatriz("AAA1A11", { [C.compra]: "" }),
+        linhaMatriz("BBB2B22", { [C.compra]: "-" }),
+        linhaMatriz("CCC3C33", { [C.compra]: "N/A" }),
+      ]),
+    );
+    for (const p of ["AAA1A11", "BBB2B22", "CCC3C33"]) {
+      assert.equal(porPlaca(r2.linhas, p).valor_compra_repasse, null, p);
+    }
   });
 });
 

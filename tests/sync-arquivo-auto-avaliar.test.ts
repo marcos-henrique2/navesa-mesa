@@ -179,6 +179,28 @@ describe("lerRelatorioSync — leitura do contrato §5", () => {
     assert.equal(r.resumo.linhas_gravadas, 54);
   });
 
+  /**
+   * O outro lado da AC13c: o parser emite `0` (ver
+   * `tests/auto-avaliar-ofertas-xls.test.ts`), a RPC devolve a linha em
+   * `ignoradas` com `motivo = "valor_compra_zerado"`, e a tela precisa
+   * renderizar isso de forma que o Marcos entenda por que o carro ficou fora.
+   * Resposta conferida contra produção: ignoradas 1 · com_alteracao 0.
+   */
+  it("lê a linha de valor_compra_zerado e a exibe com motivo legível", () => {
+    const r = lerRelatorioSync({
+      resumo: { linhas_no_arquivo: 1, com_alteracao: 0, ignoradas: 1 },
+      com_alteracao: [],
+      ignoradas: [{ linha: 7, placa_norm: "CDE3F45", motivo: "valor_compra_zerado" }],
+    });
+    assert.equal(r.ignoradas.length, 1);
+    assert.equal(r.ignoradas[0].motivo, "valor_compra_zerado");
+    // Nenhum outro campo daquela linha é gravado: ela não está em com_alteracao.
+    assert.deepEqual(r.com_alteracao, []);
+    assert.equal(r.resumo.com_alteracao, 0);
+    assert.match(rotuloMotivoIgnorada(r.ignoradas[0].motivo), /custo-base[\s\S]*fora do sync/);
+    assert.equal(baldesFecham(r), true);
+  });
+
   it("lê ignoradas com motivo e repasse_ids só quando existem", () => {
     const r = lerRelatorioSync({
       ignoradas: [
