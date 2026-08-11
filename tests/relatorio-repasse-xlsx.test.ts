@@ -49,6 +49,8 @@ function buildRepasse(over: Partial<Repasse> = {}): Repasse {
     valor_compra_repasse: null,
     valor_minimo: null,
     valor_compre_por: null,
+    valor_maior_oferta: null,
+    qtde_anuncios: null,
     data_marcado: "2026-05-01",
     data_subido: null,
     data_subido_aproximada: false,

@@ -53,6 +53,23 @@ export type Repasse = {
   /** Teto/preço de tabela do anúncio ("Compre por"). */
   valor_compre_por: number | null;
 
+  // ─── Sinais de mercado do Auto Avaliar (Story 2.2 / Fatia 3a) ──────────
+  /**
+   * Maior oferta recebida no anúncio do Auto Avaliar ("Vlr Maior Oferta").
+   * Fonte autoritativa ÚNICA: o arquivo `relatorio_VeiculosEmOferta.xls`
+   * (migration 029). É informação de MERCADO — o quanto já ofereceram —, não
+   * custo: NUNCA entra em `custo_real` nem em nenhuma fórmula de margem.
+   * `null` = nenhuma oferta observada, que é diferente de oferta de R$ 0,00.
+   */
+  valor_maior_oferta: number | null;
+  /**
+   * Quantidade de anúncios ativos do mesmo carro no Auto Avaliar
+   * ("Qtde Anuncios") — pressão competitiva. Fonte autoritativa única: o mesmo
+   * arquivo. `null` = não medido (carro que nunca passou pelo arquivo);
+   * `0` é medição real ("está sem anúncio ativo").
+   */
+  qtde_anuncios: number | null;
+
   data_marcado: string; // YYYY-MM-DD — alias de data_subiu legacy
   data_subido: string | null; // YYYY-MM-DD | null — quando virou "subido"
   /**

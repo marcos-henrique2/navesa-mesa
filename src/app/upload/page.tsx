@@ -20,6 +20,7 @@ export default function UploadPage() {
           <UploadDropzone modo="vendas" />
           <UploadDropzone modo="custos" />
           <UploadDropzone modo="custos-estoque" />
+          <UploadDropzone modo="repasse-ofertas" />
         </div>
 
         <div className="mt-8 rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-5 shadow-[var(--shadow-sm)]">
@@ -29,6 +30,7 @@ export default function UploadPage() {
             <li><strong className="text-purple-700 dark:text-purple-400">Vendas</strong> — &quot;Veículos Vendidos&quot;. Histórico de vendas com cliente, vendedor, dias de giro.</li>
             <li><strong className="text-emerald-700 dark:text-emerald-400">Custos</strong> — &quot;Relatório de Custos&quot; (.xls). Tem a margem oficial NBS centavo-a-centavo de carros VENDIDOS: Nota Fábrica, Forplan, Impostos, Comissões, Ganhos Indiretos (bônus de fábrica).</li>
             <li><strong className="text-amber-700 dark:text-amber-400">Custos de Estoque</strong> — &quot;Custos de Veículos em Estoque&quot; (.pdf). Markup detalhado de carros AINDA NO PÁTIO: Nota Fábrica, Revisões, Forplan, ADM, Impostos, Bônus, Ganhos Indiretos, Lucro Bruto projetado. Aparece no detalhe do veículo.</li>
+            <li><strong className="text-rose-700 dark:text-rose-400">Repasse — Veículos em Oferta</strong> — &quot;Veículos em Oferta&quot; (.xls), baixado do <strong>Auto Avaliar</strong>, não do NBS. Sincroniza os valores dos carros que já estão em repasse e traz duas coisas que o texto colado não tem: <strong>maior oferta recebida</strong> e <strong>qtde de anúncios</strong>, que aparecem em /repasses. É o <strong>único upload que grava no sistema</strong> — abre uma conferência mostrando carro a carro o que muda, e nada é gravado sem confirmação. Nunca cria carro (pra isso é a importação por texto), nunca apaga valor que já existe e só sincroniza a Matriz.</li>
           </ul>
         </div>
 

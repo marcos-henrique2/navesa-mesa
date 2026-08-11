@@ -75,6 +75,9 @@ export type RepasseRow = {
   valor_compra_repasse: number | string | null;
   valor_minimo: number | string | null;
   valor_compre_por: number | string | null;
+  /** Colunas da migration 029 — podem vir ausentes se o banco estiver atrás. */
+  valor_maior_oferta?: number | string | null;
+  qtde_anuncios?: number | string | null;
   valor_subiu: number | null;
   data_subiu: string;
   data_subido: string | null;
@@ -115,6 +118,13 @@ function normalizarNumeric(v: number | string | null): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+/** Contagem inteira do banco. Preserva o 0 (medição real) e recusa negativo. */
+function normalizarInteiro(v: number | string | null): number | null {
+  const n = normalizarNumeric(v);
+  if (n == null || n < 0) return null;
+  return Math.trunc(n);
+}
+
 export function rowToRepasse(row: RepasseRow): Repasse {
   // Os 5 status do ciclo são válidos. Fallback mínimo pra "marcado" só se vier
   // algo realmente inesperado (não deve ocorrer — banco tem CHECK constraint).
@@ -150,6 +160,10 @@ export function rowToRepasse(row: RepasseRow): Repasse {
     valor_compra_repasse: normalizarNumeric(row.valor_compra_repasse),
     valor_minimo: normalizarNumeric(row.valor_minimo),
     valor_compre_por: normalizarNumeric(row.valor_compre_por),
+    // Sinais de MERCADO do arquivo do Auto Avaliar (029) — fora de qualquer
+    // fórmula de custo. `qtde_anuncios` é contagem: 0 é medição real, não nulo.
+    valor_maior_oferta: normalizarNumeric(row.valor_maior_oferta ?? null),
+    qtde_anuncios: normalizarInteiro(row.qtde_anuncios ?? null),
     preco_atual: row.valor_subiu, // reusa coluna legacy como "preço atual do estoque no momento da marcação"
     data_marcado: row.data_subiu,
     data_subido: row.data_subido,
