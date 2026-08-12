@@ -268,9 +268,25 @@ describe("calcularAlertas — C16: carro girado sai do prejuízo latente", () =>
     assert.deepEqual(a.prejuizoLatente.map((i) => i.id), [10]);
   });
 
-  it("`prejuizoNoAnuncio` NÃO é filtrado pela C16 — decisão do Marcos", () => {
-    // O gatilho dele é `compre_por < custo_real` (g > 11,97%), caso mais raro, e
-    // ficou de fora desta fatia de propósito. Se um dia entrar, é aqui.
+  it("CAMADA DE DADOS: `prejuizoNoAnuncio` não é filtrado pela C16 (≠ o que a tela mostra)", () => {
+    // ⚠️ ESTE TESTE COBRE O ARRAY, NÃO O RENDER — e a diferença importa.
+    //
+    // `prejuizoNoAnuncio` NUNCA é uma caixa própria na tela: ele vira o `Set`
+    // `piores` e só REALÇA placas dentro da caixa de `prejuizoLatente`
+    // (`RelatorioAnuncio.tsx:222-250`). Antes da C16 o subset se sustentava —
+    // todo carro do `prejuizoNoAnuncio` estava também no `prejuizoLatente`.
+    // Depois da C16 não se sustenta mais: um carro girado com g > 11,97% sai do
+    // `prejuizoLatente` (origem `decisao`) e, por consequência, SOME DO PAINEL,
+    // mesmo continuando neste array.
+    //
+    // DECISÃO DO MARCOS (2026-08-12), opção (b): **some, e está certo que suma.**
+    // Se ele girou sabendo que abre mão dos gastos, o compre-por baixo é
+    // consequência da MESMA decisão — não é surpresa que mereça alerta. O sinal
+    // não sai da tela: a linha do carro na tabela mantém o 🔴 via `it.cor`.
+    // O que sai é a caixa de "não deixe passar".
+    //
+    // Então: este assert protege a camada de dados (o array segue completo, pra
+    // quem precisar dele), NÃO o comportamento de tela descrito acima.
     const anuncioNoPrejuizo = montarRelatorioAnuncio(
       [
         carro({

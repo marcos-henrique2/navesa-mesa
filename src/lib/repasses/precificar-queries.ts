@@ -448,6 +448,13 @@ export async function buscarUltimoSnapshotPrecificacao(
   return toSnapshotRecente(data as SnapshotRow);
 }
 
+/**
+ * Teto de linhas da leitura de lista da 030. Folgado de propósito: ~60 carros
+ * ativos × poucas aplicações por carro. Não é otimização — é o sensor que
+ * transforma truncamento silencioso em erro (ver `buscarUltimosSnapshotsPrecificacao`).
+ */
+const LIMITE_LINHAS_SNAPSHOT = 2_000;
+
 /** Linha crua da 030, no formato que as duas leituras compartilham. */
 type SnapshotRow = {
   repasse_id?: number;
@@ -505,10 +512,34 @@ export async function buscarUltimosSnapshotsPrecificacao(
     .select("repasse_id, modo, minimo_aplicado, custo_real, aplicado_em")
     .in("repasse_id", repasseIds as number[])
     .order("repasse_id", { ascending: true })
-    .order("criado_em", { ascending: false });
+    .order("criado_em", { ascending: false })
+    .limit(LIMITE_LINHAS_SNAPSHOT);
   if (error) throw new Error(`Falha ao ler os registros de decisão de preço: ${error.message}`);
 
-  for (const row of (data ?? []) as SnapshotRow[]) {
+  const linhas = (data ?? []) as SnapshotRow[];
+
+  // ⚠️ TRUNCAMENTO É FALHA DE LEITURA, NÃO LEITURA PARCIAL.
+  //
+  // A ordenação é `repasse_id ASC`, então um corte no meio descarta sempre os
+  // ids MAIS ALTOS — os carros mais recentes, que são justamente os mais
+  // prováveis de terem sido girados. O resultado seria um mapa ENVIESADO e
+  // silencioso: uns carros desambiguados, outros não, sem nada na tela dizendo
+  // qual é qual.
+  //
+  // Estourar aqui cai no `.catch` do chamador ⇒ mapa vazio ⇒ o painel volta ao
+  // comportamento de antes da C16 (todo mundo vermelho). Perder a
+  // desambiguação inteira é honesto; perdê-la pela metade não é.
+  //
+  // Hoje isto não morde: ~60 carros e poucas aplicações por carro. O limite
+  // existe pro dia em que morder, e é NOSSO (não o `db-max-rows` do PostgREST,
+  // que é config de servidor e pode mudar sem ninguém aqui saber).
+  if (linhas.length >= LIMITE_LINHAS_SNAPSHOT) {
+    throw new Error(
+      `Registros de decisão de preço truncados em ${LIMITE_LINHAS_SNAPSHOT} linhas — o resultado seria enviesado pros carros mais antigos. Leitura descartada.`,
+    );
+  }
+
+  for (const row of linhas) {
     const id = row.repasse_id;
     if (id == null || mapa.has(id)) continue; // já pegamos a mais recente deste repasse
     const snap = toSnapshotRecente(row);

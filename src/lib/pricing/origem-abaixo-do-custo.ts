@@ -64,7 +64,13 @@ function cent(v: number): number {
  * **Só faz sentido chamar quando o predicado já é verdadeiro** — esta função não
  * decide SE alerta, decide QUAL alerta.
  *
- * A ordem dos testes é a da tabela da §12.8, e ela importa:
+ * ⚠️ **A ordem abaixo NÃO é a de leitura da §12.8** (que lista Decisão → Deriva →
+ * Fora do sistema). A tabela da ADR **não é mutuamente exclusiva**: um carro
+ * girado que recebeu gasto tardio satisfaz DUAS linhas ao mesmo tempo. É esta
+ * ordem que desempata, e o desempate é a decisão de desenho — não um detalhe de
+ * implementação.
+ *
+ * Os quatro passos, na ordem em que rodam:
  *
  * 1. **Sem snapshot, ou o aplicado não bate com o preço de hoje** ⇒
  *    `fora_do_sistema`. O preço que está no ar não veio desta aba, então nenhuma
