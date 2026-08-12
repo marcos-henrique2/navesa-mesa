@@ -51,7 +51,7 @@ const NOME_ARQUIVO = "relatorio_VeiculosEmOferta.xls";
 const CAMINHO_FIXTURE = join(__dirname, "fixtures", "veiculos-em-oferta-sample.html");
 const FIXTURE_TEXTO = readFileSync(CAMINHO_FIXTURE, "utf8");
 
-/** Bytes UTF-8, como o `UploadDropzone` entrega via `file.arrayBuffer()`. */
+/** Bytes UTF-8, como o `ImportarPorArquivo` entrega via `file.arrayBuffer()`. */
 function fixtureBytes(): ArrayBuffer {
   const buf = readFileSync(CAMINHO_FIXTURE);
   return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;

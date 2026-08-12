@@ -6,7 +6,7 @@ export default function ImportarAutoAvaliarPage() {
     <>
       <PageHeader
         title="Importar do Auto Avaliar"
-        subtitle="Cole a lista do Auto Avaliar → confira o preview → grave. Cria, atualiza e reconcilia repasses."
+        subtitle="Colar texto cria os carros novos; subir o .xls só atualiza os valores de quem já existe. Nos dois casos você confere antes de gravar."
       />
       <div className="px-6 py-8">
         <ImportarAutoAvaliar />

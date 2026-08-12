@@ -1,422 +1,189 @@
 "use client";
 
 /**
- * Importador Auto Avaliar (Story 2.2 / Fatia 2) — tela de cola + PREVIEW + gravação.
+ * Casca de `/repasses/importar`: as DUAS formas de trazer o Auto Avaliar pro
+ * sistema, lado a lado.
  *
- * Fluxo:
- *   1. Marcos cola a lista do Auto Avaliar e clica "Analisar".
- *   2. Preview OBRIGATÓRIO em 4 blocos (Criar / Atualizar / Reconciliação /
- *      Pendências sem chassi) + painel de Avisos.
- *   3. "Confirmar gravação" → 1 RPC atômica → mostra as contagens.
+ * Elas NÃO são intercambiáveis, e a tela existe pra deixar isso explícito:
+ *   • Colar texto  → CRIA carro novo (km, cor, gastos). Único caminho que cria
+ *                    repasse e único que reconcilia quem sumiu da lista.
+ *   • Arquivo .xls → SÓ ATUALIZA valores de quem já existe. Único que traz
+ *                    maior oferta recebida e qtde de anúncios. Nunca cria carro.
  *
- * Regra (parser + preview) é PURA nos módulos `parse-auto-avaliar` /
- * `import-auto-avaliar`; aqui é só orquestração de UI + as 2 chamadas de I/O.
+ * Toda a lógica mora nas duas abas; aqui é só a escolha e o texto que explica.
+ *
+ * Duas decisões de implementação que não são cosméticas:
+ *
+ * 1. Só a aba ativa fica MONTADA (não é `hidden`), pra `ImportarPorArquivo`
+ *    poder ser lazy de verdade. O preço é que trocar de aba mata o estado da
+ *    outra — por isso a troca é guardada quando há colagem/preview em pé.
+ * 2. `ImportarPorArquivo` entra por `next/dynamic`: ele puxa o SheetJS (~460 KB
+ *    minificado), e sem isso todo carregamento de /repasses/importar pagaria
+ *    esse chunk mesmo pra quem só vai colar texto.
  */
 
-import { useMemo, useState } from "react";
-import {
-  AlertTriangle,
-  CheckCircle2,
-  Loader2,
-  PlusCircle,
-  RefreshCw,
-  ShieldAlert,
-  Trash2,
-  Ban,
-} from "lucide-react";
-import { parseAutoAvaliar, diagnosticarParseVazio } from "@/lib/repasses/parse-auto-avaliar";
-import { montarPreviewImport, confirmarImport } from "@/lib/repasses/import-auto-avaliar-queries";
-import { avaliarRiscoReconciliacao } from "@/lib/repasses/import-auto-avaliar";
-import type { ImportPreview, ImportResultado, PreviewItem } from "@/lib/repasses/import-auto-avaliar";
-import { formatBRLCents, formatInt } from "@/lib/utils";
-import { showErrorToast, showSuccessToast } from "@/components/ui/Toast";
+import { useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { ClipboardPaste, FileUp, Loader2 } from "lucide-react";
+import { ImportarPorTexto } from "@/components/repasses/ImportarPorTexto";
+import { cn } from "@/lib/utils";
 
-const ROTULO_AVISO: Record<string, string> = {
-  header_nao_reconhecido: "Cabeçalho não reconhecido",
-  coluna_ausente: "Coluna ausente",
-  placa_invalida: "Placa inválida (linha descartada)",
-  valor_ilegivel: "Valor ilegível",
-  ano_ausente: "Ano ausente",
-  km_ausente: "KM ausente",
-  bloco_medias_incompleto: "Bloco de médias incompleto",
-  linha_ignorada: "Linha ignorada",
+const ImportarPorArquivo = dynamic(
+  () =>
+    import("@/components/repasses/ImportarPorArquivo").then((m) => m.ImportarPorArquivo),
+  {
+    ssr: false,
+    loading: () => (
+      <p className="flex items-center gap-2 rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-5 text-sm text-[var(--text-muted)]">
+        <Loader2 className="h-4 w-4 animate-spin" /> Carregando o leitor de planilha…
+      </p>
+    ),
+  },
+);
+
+type Aba = "texto" | "arquivo";
+
+type InfoAba = {
+  rotulo: string;
+  resumo: string;
+  icone: React.ReactNode;
+  detalhe: React.ReactNode;
+};
+
+/** Ordem de exibição das abas — "texto" primeiro porque é o que cria carro. */
+const ORDEM: ReadonlyArray<Aba> = ["texto", "arquivo"];
+
+const ABAS: Record<Aba, InfoAba> = {
+  texto: {
+    rotulo: "Colar texto",
+    resumo: "cria carro novo",
+    icone: <ClipboardPaste className="h-4 w-4" />,
+    detalhe: (
+      <>
+        <strong>Use quando tem carro novo pra entrar em repasse.</strong> É o único
+        caminho que <strong>cria</strong> carro no sistema — traz km, cor e gastos, e
+        é o único que reconcilia quem sumiu da lista (vendido / volta pra marcado).
+        Não traz maior oferta nem qtde de anúncios: pra isso é a aba do arquivo.
+      </>
+    ),
+  },
+  arquivo: {
+    rotulo: "Subir arquivo .xls",
+    resumo: "só atualiza valores",
+    icone: <FileUp className="h-4 w-4" />,
+    detalhe: (
+      <>
+        <strong>Use pra atualizar os valores de quem já está em repasse.</strong>{" "}
+        <strong>Nunca cria</strong> carro — quem não existe no sistema é só listado e
+        ignorado. É o único que traz <strong>maior oferta recebida</strong> e{" "}
+        <strong>qtde de anúncios</strong>, que aparecem em /repasses. Se o carro ainda
+        não existe, importe antes pela aba de colar texto.
+      </>
+    ),
+  },
 };
 
 export function ImportarAutoAvaliar() {
-  const [texto, setTexto] = useState("");
-  const [analisando, setAnalisando] = useState(false);
-  const [preview, setPreview] = useState<ImportPreview | null>(null);
-  const [confirmando, setConfirmando] = useState(false);
-  const [resultado, setResultado] = useState<ImportResultado | null>(null);
-  /** Destrava a gravação quando a reconciliação é desproporcional (colagem parcial). */
-  const [listaCompletaConfirmada, setListaCompletaConfirmada] = useState(false);
+  const [aba, setAba] = useState<Aba>("texto");
+  /** Espelha o estado interno da aba de texto (colagem/preview em pé). */
+  const [textoComTrabalhoVivo, setTextoComTrabalhoVivo] = useState(false);
+  const refsAbas = useRef<Partial<Record<Aba, HTMLButtonElement | null>>>({});
+  const ativa = ABAS[aba];
 
-  const criar = useMemo(
-    () => preview?.itens.filter((i) => i.acao === "criar") ?? [],
-    [preview],
-  );
-  const atualizar = useMemo(
-    () => preview?.itens.filter((i) => i.acao === "atualizar") ?? [],
-    [preview],
-  );
-  const vendidos = useMemo(
-    () => preview?.reconciliacao.filter((r) => r.novo_status === "vendido") ?? [],
-    [preview],
-  );
-  const marcados = useMemo(
-    () => preview?.reconciliacao.filter((r) => r.novo_status === "marcado") ?? [],
-    [preview],
-  );
-  const risco = useMemo(
-    () => (preview ? avaliarRiscoReconciliacao(preview) : null),
-    [preview],
-  );
-
-  async function analisar() {
-    setResultado(null);
-    setPreview(null);
-    setListaCompletaConfirmada(false);
-    const parsed = parseAutoAvaliar(texto);
-    const falha = diagnosticarParseVazio(parsed);
-    if (falha) {
-      showErrorToast(falha.mensagem);
-      return;
+  /** Devolve `true` se a troca aconteceu. Sair do texto com trabalho vivo pede aval. */
+  function trocarAba(destino: Aba): boolean {
+    if (destino === aba) return false;
+    if (
+      aba === "texto" &&
+      textoComTrabalhoVivo &&
+      !confirm("Trocar de aba descarta a colagem e o preview. Continuar?")
+    ) {
+      return false;
     }
-    setAnalisando(true);
-    try {
-      const pv = await montarPreviewImport(parsed);
-      setPreview(pv);
-      if (pv.itens.length === 0 && pv.reconciliacao.length === 0) {
-        showErrorToast("Nada a gravar: nenhum item nem reconciliação reconhecidos.");
-      }
-    } catch (err: unknown) {
-      showErrorToast(err instanceof Error ? err.message : String(err));
-    } finally {
-      setAnalisando(false);
-    }
+    setTextoComTrabalhoVivo(false);
+    setAba(destino);
+    return true;
   }
 
-  /** Descarta o preview sem gravar nada (o texto colado fica pra reanalisar). */
-  function descartar() {
-    setPreview(null);
-    setResultado(null);
-    setListaCompletaConfirmada(false);
+  /** Padrão ARIA de tablist: setas circulam, Home/End vão às pontas. */
+  function navegarPorTeclado(e: React.KeyboardEvent<HTMLDivElement>) {
+    const atual = ORDEM.indexOf(aba);
+    const destino =
+      e.key === "ArrowRight" ? ORDEM[(atual + 1) % ORDEM.length]
+      : e.key === "ArrowLeft" ? ORDEM[(atual - 1 + ORDEM.length) % ORDEM.length]
+      : e.key === "Home" ? ORDEM[0]
+      : e.key === "End" ? ORDEM[ORDEM.length - 1]
+      : undefined;
+    if (destino === undefined) return;
+    e.preventDefault();
+    if (trocarAba(destino)) refsAbas.current[destino]?.focus();
   }
-
-  async function confirmar() {
-    if (!preview) return;
-    if (risco?.exige_confirmacao && !listaCompletaConfirmada) return;
-    setConfirmando(true);
-    try {
-      const res = await confirmarImport(preview);
-      setResultado(res);
-      setPreview(null);
-      setListaCompletaConfirmada(false);
-      setTexto("");
-      showSuccessToast(
-        `Gravado: ${res.criados} criados, ${res.atualizados} atualizados, ${
-          res.reconciliados_vendidos + res.reconciliados_marcados
-        } reconciliados.`,
-      );
-    } catch (err: unknown) {
-      showErrorToast(err instanceof Error ? err.message : String(err));
-    } finally {
-      setConfirmando(false);
-    }
-  }
-
-  const totalGravar =
-    (preview?.itens.length ?? 0) + (preview?.reconciliacao.length ?? 0);
-  const bloqueado = (risco?.exige_confirmacao ?? false) && !listaCompletaConfirmada;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      {/* ── Entrada ─────────────────────────────────────────────────────────── */}
-      <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-5">
-        <label
-          htmlFor="aa-textarea"
-          className="mb-2 block text-sm font-medium text-[var(--text-strong)]"
-        >
-          Cole a lista do Auto Avaliar
-        </label>
-        <textarea
-          id="aa-textarea"
-          value={texto}
-          onChange={(e) => setTexto(e.target.value)}
-          spellCheck={false}
-          placeholder="Selecione a grade de carros no Auto Avaliar, copie e cole aqui (com o cabeçalho)…"
-          className="h-[28vh] w-full resize-none rounded-md border border-[var(--border-base)] bg-[var(--bg-muted)] p-3 font-mono text-xs leading-relaxed text-[var(--text-body)] focus:border-[var(--brand-500)] focus:outline-none"
-        />
-        <div className="mt-4 flex items-center justify-end">
-          <button
-            type="button"
-            onClick={() => void analisar()}
-            disabled={analisando || texto.trim() === ""}
-            className="inline-flex items-center gap-2 rounded-md bg-[var(--brand-700)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--brand-800)] disabled:opacity-50"
-          >
-            {analisando ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            {analisando ? "Analisando…" : "Analisar"}
-          </button>
-        </div>
+    <div className="mx-auto max-w-5xl space-y-5">
+      <div
+        role="tablist"
+        aria-label="Forma de importar"
+        onKeyDown={navegarPorTeclado}
+        className="grid gap-3 sm:grid-cols-2"
+      >
+        {ORDEM.map((id) => {
+          const a = ABAS[id];
+          const selecionada = id === aba;
+          return (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              id={`aba-${id}`}
+              ref={(el) => {
+                refsAbas.current[id] = el;
+              }}
+              aria-selected={selecionada}
+              // Só o painel ATIVO existe no DOM — apontar pro outro seria um
+              // aria-controls órfão.
+              aria-controls={selecionada ? `painel-${id}` : undefined}
+              tabIndex={selecionada ? 0 : -1}
+              onClick={() => trocarAba(id)}
+              className={cn(
+                "rounded-xl border-2 px-4 py-3 text-left transition",
+                selecionada
+                  ? "border-[var(--brand-700)] bg-[var(--bg-surface)] shadow-[var(--shadow-sm)]"
+                  : "border-[var(--border-soft)] bg-[var(--bg-muted)] hover:border-[var(--border-base)]",
+              )}
+            >
+              <span
+                className={cn(
+                  "inline-flex items-center gap-2 text-sm font-semibold",
+                  selecionada ? "text-[var(--brand-700)]" : "text-[var(--text-body)]",
+                )}
+              >
+                {a.icone} {a.rotulo}
+              </span>
+              <span className="mt-0.5 block text-xs text-[var(--text-muted)]">
+                {a.resumo}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
-      {/* ── Resultado final ─────────────────────────────────────────────────── */}
-      {resultado && (
-        <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-5 dark:border-emerald-800 dark:bg-emerald-950/40">
-          <h2 className="inline-flex items-center gap-2 text-base font-bold text-emerald-800 dark:text-emerald-300">
-            <CheckCircle2 className="h-5 w-5" /> Importação concluída
-          </h2>
-          <ul className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm text-emerald-900 sm:grid-cols-3 dark:text-emerald-200">
-            <li>Criados: <strong>{resultado.criados}</strong></li>
-            <li>Atualizados: <strong>{resultado.atualizados}</strong></li>
-            <li>Vendidos: <strong>{resultado.reconciliados_vendidos}</strong></li>
-            <li>Marcados: <strong>{resultado.reconciliados_marcados}</strong></li>
-            <li>Conflitos: <strong>{resultado.conflitos}</strong></li>
-          </ul>
-        </div>
-      )}
+      <div
+        role="tabpanel"
+        id={`painel-${aba}`}
+        aria-labelledby={`aba-${aba}`}
+        className="space-y-5"
+      >
+        <p className="rounded-xl border border-[var(--border-soft)] bg-[var(--bg-muted)] px-4 py-3 text-xs leading-relaxed text-[var(--text-body)]">
+          {ativa.detalhe}
+        </p>
 
-      {/* ── Preview ─────────────────────────────────────────────────────────── */}
-      {preview && (
-        <div className="space-y-5">
-          {/* Avisos */}
-          {preview.avisos.length > 0 && (
-            <div className="rounded-xl border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950/40">
-              <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-amber-800 dark:text-amber-300">
-                <AlertTriangle className="h-4 w-4" /> Avisos ({preview.avisos.length})
-              </h3>
-              <ul className="mt-2 space-y-1 text-xs text-amber-900 dark:text-amber-200">
-                {preview.avisos.map((a, idx) => (
-                  <li key={idx}>
-                    <span className="font-medium">
-                      {ROTULO_AVISO[a.codigo] ?? a.codigo}
-                    </span>{" "}
-                    — linha {a.linha}, campo <code>{a.campo}</code>
-                    {a.valor_raw ? `: "${a.valor_raw}"` : ""}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Blocos */}
-          <div className="grid gap-4 lg:grid-cols-2">
-            <BlocoItens
-              titulo="Criar"
-              icone={<PlusCircle className="h-4 w-4 text-emerald-600" />}
-              itens={criar}
-              vazio="Nenhum carro novo pra criar."
-            />
-            <BlocoItens
-              titulo="Atualizar"
-              icone={<RefreshCw className="h-4 w-4 text-sky-600" />}
-              itens={atualizar}
-              vazio="Nenhum repasse existente pra atualizar."
-            />
-
-            {/* Reconciliação — ÚNICA operação destrutiva em massa do fluxo */}
-            <div
-              className={
-                preview.reconciliacao.length === 0
-                  ? "rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4"
-                  : "rounded-xl border-2 border-rose-400 bg-rose-50 p-4 dark:border-rose-700 dark:bg-rose-950/40"
-              }
-            >
-              <h3
-                className={
-                  preview.reconciliacao.length === 0
-                    ? "inline-flex items-center gap-2 text-sm font-semibold text-[var(--text-strong)]"
-                    : "inline-flex items-center gap-2 text-sm font-bold text-rose-800 dark:text-rose-300"
-                }
-              >
-                <ShieldAlert
-                  className={
-                    preview.reconciliacao.length === 0
-                      ? "h-4 w-4 text-[var(--text-muted)]"
-                      : "h-4 w-4 text-rose-600 dark:text-rose-400"
-                  }
-                />{" "}
-                Reconciliação ({preview.reconciliacao.length})
-              </h3>
-              {preview.reconciliacao.length > 0 && (
-                <p className="mt-1 text-sm font-semibold text-rose-800 dark:text-rose-300">
-                  {preview.reconciliacao.length}{" "}
-                  {preview.reconciliacao.length === 1 ? "carro vai" : "carros vão"} mudar de status
-                  {risco != null && risco.universo > 0
-                    ? ` — ${Math.round(risco.proporcao * 100)}% dos ${risco.universo} subidos`
-                    : ""}
-                  . Não tem desfazer.
-                </p>
-              )}
-              <p
-                className={
-                  preview.reconciliacao.length === 0
-                    ? "mt-0.5 text-xs text-[var(--text-muted)]"
-                    : "mt-1 text-xs text-rose-900/80 dark:text-rose-200/80"
-                }
-              >
-                Subidos que sumiram da lista: cruzam com vendas (vendido) ou voltam pra marcado.
-              </p>
-              {preview.reconciliacao.length === 0 ? (
-                <p className="mt-3 text-xs text-[var(--text-muted)]">Nada a reconciliar.</p>
-              ) : (
-                <ul className="mt-3 space-y-1.5 text-xs">
-                  {vendidos.map((r) => (
-                    <li key={r.repasse_id} className="flex items-center justify-between gap-2">
-                      <span className="truncate">
-                        <span className="font-mono font-medium text-[var(--text-strong)]">
-                          {r.placa_norm}
-                        </span>{" "}
-                        {r.modelo}
-                      </span>
-                      <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-                        vendido {r.valor_vendido != null ? formatBRLCents(r.valor_vendido) : ""}
-                      </span>
-                    </li>
-                  ))}
-                  {marcados.map((r) => (
-                    <li key={r.repasse_id} className="flex items-center justify-between gap-2">
-                      <span className="truncate">
-                        <span className="font-mono font-medium text-[var(--text-strong)]">
-                          {r.placa_norm}
-                        </span>{" "}
-                        {r.modelo}
-                      </span>
-                      <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-                        marcado
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            {/* Pendências */}
-            <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4">
-              <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--text-strong)]">
-                <Ban className="h-4 w-4 text-[var(--text-muted)]" /> Pendências sem chassi (
-                {preview.pendencias.length})
-              </h3>
-              <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-                Consignados sem chassi no estoque — NÃO serão criados.
-              </p>
-              {preview.pendencias.length === 0 ? (
-                <p className="mt-3 text-xs text-[var(--text-muted)]">Nenhuma pendência.</p>
-              ) : (
-                <ul className="mt-3 space-y-1.5 text-xs">
-                  {preview.pendencias.map((p, idx) => (
-                    <li key={idx} className="truncate">
-                      <span className="font-mono font-medium text-[var(--text-strong)]">
-                        {p.registro.placa_norm}
-                      </span>{" "}
-                      {p.registro.modelo ?? "—"}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-
-          {/* Trava de proporção: reconciliação grande demais pro tamanho do universo */}
-          {risco?.exige_confirmacao && (
-            <div className="rounded-xl border-2 border-rose-400 bg-rose-50 p-4 dark:border-rose-700 dark:bg-rose-950/40">
-              <h3 className="inline-flex items-center gap-2 text-sm font-bold text-rose-800 dark:text-rose-300">
-                <AlertTriangle className="h-4 w-4" /> Reconciliação em massa — confirme antes de
-                gravar
-              </h3>
-              <p className="mt-1 text-xs text-rose-900 dark:text-rose-200">
-                {risco.total} de {risco.universo} carros subidos ({Math.round(risco.proporcao * 100)}
-                %) vão mudar de status porque não apareceram no texto colado. Isso é esperado se você
-                colou a lista INTEIRA do Auto Avaliar. Se a lista veio paginada, cortada ou
-                incompleta, cancele e cole de novo — reverter depois é carro por carro.
-              </p>
-              <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm font-medium text-rose-900 dark:text-rose-200">
-                <input
-                  type="checkbox"
-                  checked={listaCompletaConfirmada}
-                  onChange={(e) => setListaCompletaConfirmada(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 shrink-0 accent-rose-600"
-                />
-                Confirmo que colei a lista completa do Auto Avaliar.
-              </label>
-            </div>
-          )}
-
-          {/* Confirmar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4">
-            <span className="text-sm text-[var(--text-muted)]">
-              {criar.length} criar · {atualizar.length} atualizar · {vendidos.length} vendidos ·{" "}
-              {marcados.length} marcados · {preview.pendencias.length} pendências
-            </span>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={descartar}
-                disabled={confirmando}
-                className="inline-flex items-center gap-2 rounded-md border border-[var(--border-base)] px-4 py-2 text-sm font-medium text-[var(--text-body)] hover:bg-[var(--bg-muted)] disabled:opacity-50"
-              >
-                <Trash2 className="h-4 w-4" />
-                Descartar preview
-              </button>
-              <button
-                type="button"
-                onClick={() => void confirmar()}
-                disabled={confirmando || totalGravar === 0 || bloqueado}
-                title={
-                  bloqueado
-                    ? "Marque a confirmação de lista completa pra liberar a gravação."
-                    : undefined
-                }
-                className="inline-flex items-center gap-2 rounded-md bg-[var(--brand-700)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--brand-800)] disabled:opacity-50"
-              >
-                {confirmando ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                {confirmando ? "Gravando…" : "Confirmar gravação"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Bloco de itens Criar/Atualizar (placa, modelo, custo real). */
-function BlocoItens({
-  titulo,
-  icone,
-  itens,
-  vazio,
-}: {
-  titulo: string;
-  icone: React.ReactNode;
-  itens: ReadonlyArray<PreviewItem>;
-  vazio: string;
-}) {
-  return (
-    <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4">
-      <h3 className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--text-strong)]">
-        {icone} {titulo} ({itens.length})
-      </h3>
-      {itens.length === 0 ? (
-        <p className="mt-3 text-xs text-[var(--text-muted)]">{vazio}</p>
-      ) : (
-        <ul className="mt-3 space-y-1.5 text-xs">
-          {itens.map((it, idx) => (
-            <li key={idx} className="flex items-center justify-between gap-2">
-              <span className="truncate">
-                <span className="font-mono font-medium text-[var(--text-strong)]">
-                  {it.registro.placa_norm}
-                </span>{" "}
-                {it.registro.modelo ?? "—"}
-                {it.registro.km != null ? ` · ${formatInt(it.registro.km)} km` : ""}
-              </span>
-              <span className="shrink-0 tabular-nums text-[var(--text-muted)]">
-                {it.custo_real != null ? formatBRLCents(it.custo_real) : "—"}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+        {aba === "texto" ? (
+          <ImportarPorTexto onTrabalhoVivoChange={setTextoComTrabalhoVivo} />
+        ) : (
+          <ImportarPorArquivo />
+        )}
+      </div>
     </div>
   );
 }

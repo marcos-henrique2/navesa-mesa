@@ -65,7 +65,7 @@ As **6** colunas estão confirmadas pelo mesmo método. A única divergência re
 
 | O quê | Caminho | Observação |
 |---|---|---|
-| Tela de import (única) | `src/app/repasses/importar/page.tsx` → `src/components/repasses/ImportarAutoAvaliar.tsx` | `"use client"`. Hoje é um `<textarea id="aa-textarea">`. O preview já é feito de **blocos/cards** (`BlocoItens`), não tabela: Avisos · Criar · Atualizar · Reconciliação · Pendências · trava de risco (checkbox) · barra de ação. **Os 3 grupos novos devem seguir esse mesmo padrão de bloco.** |
+| Tela de import (única) | `src/app/repasses/importar/page.tsx` → `ImportarAutoAvaliar.tsx` (casca de abas) → `ImportarPorTexto.tsx` | `"use client"`. A colagem é um `<textarea id="aa-textarea">`. O preview já é feito de **blocos/cards** (`BlocoItens`), não tabela: Avisos · Criar · Atualizar · Reconciliação · Pendências · trava de risco (checkbox) · barra de ação. **Os 3 grupos novos devem seguir esse mesmo padrão de bloco.** |
 | Parser de texto | `src/lib/repasses/parse-auto-avaliar.ts` | `parseAutoAvaliar(texto: string): ParseResultAA` + `diagnosticarParseVazio`. Tipos `RegistroAA`, `Aviso`, `AvisoCodigo` moram **aqui**, não em `types.ts`. |
 | Núcleo puro do preview | `src/lib/repasses/import-auto-avaliar.ts` | `montarPreviewPuro`, `avaliarRiscoReconciliacao`, **`montarPayloadImport`** (quem monta o payload da RPC). Tipos `ImportPreview`, `PreviewItem`, `Pendencia`, `ReconItem`, `PayloadImport`, `ImportResultado` moram **aqui**. Já usa `calcularCustoReal` de `margem-repasse.ts`. |
 | Camada de I/O | `src/lib/repasses/import-auto-avaliar-queries.ts` | `"use client"`. `montarPreviewImport` (carrega repasses ativos, `veiculos_atual`, `vendas`) e `confirmarImport` — que chama `sb.rpc("importar_repasse_auto_avaliar", { p_payload })` **direto do browser**. **Não existe server action nem route handler de import no projeto.** |
@@ -216,11 +216,11 @@ AND os testes existentes (`tests/import-auto-avaliar.test.ts`, `tests/parse-auto
 
 **AC13 — Três grupos, com diff campo a campo**
 GIVEN uma fixture com pelo menos um caso de cada situação (sem alteração, muda valor, não encontrada, outra loja)
-WHEN o preview é exibido em `ImportarAutoAvaliar.tsx`, **antes** de qualquer escrita
-THEN a tela mostra três grupos, no mesmo padrão de bloco/card já usado por `BlocoItens` (Criar/Atualizar/Reconciliação), com contagem no cabeçalho de cada um:
+WHEN o preview é exibido em `SyncOfertasConferencia.tsx` (aba "Subir arquivo .xls" de `/repasses/importar`), **antes** de qualquer escrita
+THEN a tela mostra três grupos, no mesmo padrão de bloco/card já usado por `BlocoItens` (Criar/Atualizar/Reconciliação, em `ImportarPorTexto.tsx`), com contagem no cabeçalho de cada um:
 1. **Sem alteração** — colapsado por padrão, expansível
 2. **Vão mudar** — para cada carro, **campo a campo**, `campo · valor antes → valor depois` (ex.: `Valor mínimo · R$ 96.900,00 → R$ 94.500,00`), mostrando **apenas** os campos que realmente mudam
-3. **Ignorados / não encontrados** — rotulados com o motivo (padrão do mapa `ROTULO_AVISO` já existente no componente)
+3. **Ignorados / não encontrados** — rotulados com o motivo (padrão do mapa `ROTULO_AVISO` de `ImportarPorTexto.tsx`)
 AND a soma dos três grupos é igual ao total de linhas do arquivo (invariante, não número fixo)
 AND existe um botão **Descartar preview** que limpa tudo sem escrever nada, como já faz o fluxo de texto.
 > _Com o arquivo real de hoje isso dá 57 / 1 / 4 — conferido na verificação manual do DoD, não em teste automatizado._

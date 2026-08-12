@@ -220,7 +220,7 @@ describe("diffPresencaNoArquivo — placa ilegível", () => {
  *
  * A regra do universo pode ser invertida sem encostar em
  * `presenca-arquivo-auto-avaliar.ts`: basta alguém "simplificar" o
- * `UploadDropzone` pra `placasVistasNoArquivo(parse.linhas, [])`. Sem este
+ * `ImportarPorArquivo` pra `placasVistasNoArquivo(parse.linhas, [])`. Sem este
  * teste, a mutação mais provável na vida real passa verde.
  *
  * Roda o parser DE VERDADE contra a fixture e afirma o invariante que o call
