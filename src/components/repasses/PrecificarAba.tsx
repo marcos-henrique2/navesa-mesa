@@ -665,13 +665,20 @@ function BlocoSugestao({ sugestao }: { sugestao: SugestaoPrecoRepasse }) {
         />
       </div>
 
-      {/* AC11 — a banda é DO MÍNIMO entre carros, não a faixa mín↔compre-por. */}
-      <p className="mt-4 text-[11px] text-[var(--text-muted)]">
-        Banda do mínimo entre os carros que venderam (p25–p75, n=16):{" "}
-        <strong className="tabular-nums">{formatBRL(sugestao.bandaMinimo.p25)}</strong> –{" "}
-        <strong className="tabular-nums">{formatBRL(sugestao.bandaMinimo.p75)}</strong>. Não é a
-        faixa entre o mínimo e o compre por.
-      </p>
+      {/* AC11 — a banda é DO MÍNIMO entre carros, não a faixa mín↔compre-por.
+          C7 da 3.1c: `bandaMinimo` vem `null` no modo girar (a supressão é do
+          MOTOR). Enquanto esta tela roda só em `recuperar_tudo`, o `null` não
+          acontece — a guarda existe porque o tipo o admite, e é ela que impede
+          uma tela futura de exibir sobre a compra uma banda calibrada sobre o
+          custo. */}
+      {sugestao.bandaMinimo != null && (
+        <p className="mt-4 text-[11px] text-[var(--text-muted)]">
+          Banda do mínimo entre os carros que venderam (p25–p75, n=16):{" "}
+          <strong className="tabular-nums">{formatBRL(sugestao.bandaMinimo.p25)}</strong> –{" "}
+          <strong className="tabular-nums">{formatBRL(sugestao.bandaMinimo.p75)}</strong>. Não é a
+          faixa entre o mínimo e o compre por.
+        </p>
+      )}
 
       <p className="mt-3 rounded-md bg-[var(--bg-muted)] px-3 py-2 text-xs leading-relaxed text-[var(--text-body)]">
         {sugestao.justificativa}

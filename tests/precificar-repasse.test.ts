@@ -15,15 +15,19 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  MODO_PADRAO,
   REGUA_COMPRE_POR_PCT,
   REGUA_PADRAO,
   VERSAO_REGUA,
   arredondarParaCentena,
+  baseDoModo,
   decomporCusto,
   reguaComprePorPct,
   serializarParametrosRegua,
   sugerirPrecoRepasse,
+  versaoReguaComModo,
   type EntradaSugestaoRepasse,
+  type ModoPreco,
   type SugestaoPrecoRepasse,
 } from "@/lib/pricing/sugerir-preco-repasse";
 import { montarSnapshotPrecificacao } from "@/lib/pricing/snapshot-precificacao";
@@ -54,6 +58,30 @@ function exigirSugestao(r: ReturnType<typeof sugerirPrecoRepasse>): SugestaoPrec
   assert.equal(r.ok, true, `esperava sugestão, veio: ${r.ok ? "" : r.motivo}`);
   return r as SugestaoPrecoRepasse;
 }
+
+/** Atalho pro modo girar sem repetir `REGUA_PADRAO` em toda chamada. */
+function girar(
+  over: Partial<EntradaSugestaoRepasse> = {},
+  params = REGUA_PADRAO,
+): ReturnType<typeof sugerirPrecoRepasse> {
+  return sugerirPrecoRepasse(entrada(over), params, "girar_rapido");
+}
+
+/** Idem pro modo recuperar, quando o teste quer o modo EXPLÍCITO. */
+function recuperar(
+  over: Partial<EntradaSugestaoRepasse> = {},
+  params = REGUA_PADRAO,
+): ReturnType<typeof sugerirPrecoRepasse> {
+  return sugerirPrecoRepasse(entrada(over), params, "recuperar_tudo");
+}
+
+/** Centavo-perfect, mesmo critério do motor. */
+function cent(v: number): number {
+  return Math.round((v + Number.EPSILON) * 100) / 100;
+}
+
+/** Os DOIS modos, e só dois — mesmo domínio do `rep_prec_modo_chk` da 032. */
+const MODOS: readonly ModoPreco[] = ["recuperar_tudo", "girar_rapido"];
 
 // ═════════════════════════════════════════════════════════════════════════════
 // A RÉGUA — mediana no mínimo, compre-por DERIVADO da razão
@@ -139,6 +167,9 @@ describe("régua: mínimo pela mediana, compre-por derivado da razão", () => {
 
   it("a banda p25–p75 é do MÍNIMO entre carros, não a faixa mínimo↔compre-por", () => {
     const s = exigirSugestao(sugerirPrecoRepasse(entrada()));
+    // `bandaMinimo` é `| null` desde a C7 da 3.1c — no modo recuperar (default
+    // aqui) ela SEMPRE existe; o `null` é exclusivo do girar.
+    assert.ok(s.bandaMinimo != null);
     assert.equal(s.bandaMinimo.p25, 104_200);
     assert.equal(s.bandaMinimo.p75, 110_700);
     // O p75 NÃO é o compre-por — se um dia virar, a ADR-003 §4 foi desfeita.
@@ -468,8 +499,14 @@ describe("serializarParametrosRegua (AC10 / migration 030)", () => {
     assert.equal(p.REGUA_COMPRE_POR_PCT, 1.1 / 0.952);
   });
 
-  it("versao_regua cabe no CHECK da 030 (1..60 caracteres, não vazia)", () => {
+  it("versao_regua cabe no CHECK da 030 (1..60 caracteres, não vazia) — COM o sufixo do modo", () => {
     assert.ok(VERSAO_REGUA.trim().length >= 1 && VERSAO_REGUA.trim().length <= 60);
+    // O que vai ao banco é a versão SUFIXADA (C12). 49 e 47 chars hoje; se
+    // alguém alongar `VERSAO_REGUA`, é aqui que estoura, não em produção.
+    for (const modo of ["recuperar_tudo", "girar_rapido"] as ModoPreco[]) {
+      const v = versaoReguaComModo(modo);
+      assert.ok(v.trim().length >= 1 && v.trim().length <= 60, `versao_regua longa demais: ${v}`);
+    }
   });
 });
 
@@ -580,7 +617,12 @@ describe("montarSnapshotPrecificacao (AC21/AC22)", () => {
     assert.equal(insert.dias_no_repasse, 12);
     assert.equal(insert.qtde_anuncios, 1);
     assert.equal(insert.confianca, "alta");
-    assert.equal(insert.versao_regua, VERSAO_REGUA);
+    // ⚠️ Exceção declarada da C1 (3.1c): `versao_regua` passa a carregar o
+    // sufixo do modo NOS DOIS MODOS. Sem ele, a query 6 da migration 032
+    // (`NOT LIKE '%\_\_' || modo`) marcaria 100% das linhas recuperar como
+    // inconsistentes e o detector viraria ruído.
+    assert.equal(insert.versao_regua, `${VERSAO_REGUA}__recuperar_tudo`);
+    assert.equal(insert.modo, "recuperar_tudo");
     assert.equal(insert.bateu_piso, false);
     assert.ok(Array.isArray(insert.alertas));
     assert.ok(insert.justificativa.length > 0);
@@ -612,5 +654,394 @@ describe("montarSnapshotPrecificacao (AC21/AC22)", () => {
         }),
       /minimo aplicado inválido/,
     );
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// STORY 3.1c — DOIS MODOS, UMA CONSTANTE, DUAS BASES
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// ┌─ ⚠️ LEIA ANTES DE "CONSERTAR" QUALQUER COISA AQUI ──────────────────────────┐
+// │ Autoridade: ADR-003 §12.2 (a invariante nova) e a decisão do MARCOS de      │
+// │ 2026-08-12 (D1 = piso na compra; D3 = régua ÚNICA nas duas bases).          │
+// │                                                                             │
+// │ `minimo_sugerido ≥ custo_real` **NÃO é mais invariante do sistema**. É      │
+// │ corolário de I1 no modo `recuperar_tudo` e é **FALSO POR DESENHO** no modo  │
+// │ `girar_rapido` sempre que os gastos passarem de 6,6% da compra. O caso      │
+// │ PRD2189 abaixo EXIGE `minimo < custo_real` — é ele que transforma a decisão │
+// │ do Marcos em regressão detectável.                                          │
+// │                                                                             │
+// │ Os três "consertos" errados, todos mais baratos de escrever que o certo     │
+// │ (ADR-003 §12.3): ❌ afrouxar pra `>= custo_real * 0,9`; ❌ pular a asserção  │
+// │ no girar; ❌ passar `custo_real` como base do girar "só pro teste passar" — │
+// │ que é literalmente a opção que o Marcos recusou.                            │
+// └─────────────────────────────────────────────────────────────────────────────┘
+
+/** PRD2189 — o carro real da story. compra 80.000 · gastos 6.850 · custo 86.850. */
+const PRD2189: Partial<EntradaSugestaoRepasse> = {
+  valorCompraRepasse: 80_000,
+  gastos: [6_850],
+};
+
+describe("3.1c C1 — não-regressão do modo recuperar", () => {
+  it("o default do motor é `recuperar_tudo` e bate com o modo explícito", () => {
+    const implicito = exigirSugestao(sugerirPrecoRepasse(entrada(PRD2189)));
+    const explicito = exigirSugestao(recuperar(PRD2189));
+    assert.equal(MODO_PADRAO, "recuperar_tudo");
+    assert.deepEqual(implicito, explicito);
+  });
+
+  it("os números da 3.1a não se mexeram — mesma base, mesmas constantes, mesmo par", () => {
+    const s = exigirSugestao(recuperar());
+    assert.equal(s.custo.custoReal, 100_000);
+    assert.equal(s.minimoSugerido, 106_600);
+    assert.equal(s.comprePorSugerido, 111_974.79);
+    assert.equal(s.minimoRazaoEfetiva, 1.066);
+    assert.equal(s.comprePorRazaoEfetiva, 1.119748);
+    assert.equal(s.bateuPiso, false);
+    assert.deepEqual(s.bandaMinimo, { p25: 104_200, p75: 110_700 });
+  });
+
+  it("as DUAS únicas diferenças declaradas são `modo` e o sufixo de `versaoRegua`", () => {
+    const s = exigirSugestao(recuperar(PRD2189));
+    assert.equal(s.modo, "recuperar_tudo");
+    assert.equal(s.versaoRegua, `${VERSAO_REGUA}__recuperar_tudo`);
+    // O alerta de piso do modo recuperar continua BYTE A BYTE o da 3.1a.
+    const piso = exigirSugestao(recuperar({}, { ...REGUA_PADRAO, REGUA_MINIMO_PCT: 0.9 }));
+    assert.ok(
+      piso.alertas.includes(
+        "Sugestão bateu no piso de custo — não há espaço pra desconto. O mínimo travou no custo real.",
+      ),
+    );
+  });
+});
+
+describe("3.1c C2/D3 — uma constante só, sobre duas bases", () => {
+  it("o mínimo do girar sai de valor_compra_repasse × REGUA_MINIMO_PCT", () => {
+    const s = exigirSugestao(girar(PRD2189));
+    assert.equal(s.modo, "girar_rapido");
+    assert.equal(s.custo.valorCompraRepasse, 80_000);
+    assert.equal(s.minimoSugerido, 85_280); // 80.000 × 1,066
+    assert.equal(s.comprePorSugerido, 89_579.83); // 85.280 ÷ 0,952
+    assert.equal(s.versaoRegua, `${VERSAO_REGUA}__girar_rapido`);
+  });
+
+  it("`baseDoModo` é a única fonte da base — e ela é a compra no girar", () => {
+    const c = decomporCusto(80_000, [6_850]);
+    assert.ok(c != null);
+    assert.equal(baseDoModo(c, "recuperar_tudo"), 86_850);
+    assert.equal(baseDoModo(c, "girar_rapido"), 80_000);
+  });
+
+  it("NENHUMA constante nova em REGUA_PADRAO — REGUA_GIRAR_PCT não existe", () => {
+    // Trava contra a proposta da v1 da story (1,072 sobre a compra). Sob D3 a
+    // diferença entre os modos é INTEIRAMENTE atribuível à base.
+    assert.deepEqual(Object.keys(REGUA_PADRAO).sort(), [
+      "AJUSTE_DIAS_MAX",
+      "AJUSTE_REANUNCIO_MAX",
+      "AJUSTE_TOTAL_MAX",
+      "BANDA_MINIMO_P25_PCT",
+      "BANDA_MINIMO_P75_PCT",
+      "DIAS_PARADO_LIMIAR",
+      "DIAS_PARADO_POR_PONTO",
+      "FIPE_DESCONTO_MAX",
+      "FIPE_DESCONTO_POR_EXCESSO",
+      "KM_EXCESSO_POR_PONTO",
+      "KM_POR_ANO_REFERENCIA",
+      "PISO_PCT",
+      "RAZAO_MINIMO_SOBRE_COMPRE_POR",
+      "REANUNCIO_PONTOS_POR_EXTRA",
+      "REGUA_MINIMO_PCT",
+      "TETO_REF_AA_PCT",
+    ]);
+    assert.ok(!("REGUA_GIRAR_PCT" in REGUA_PADRAO));
+  });
+
+  it("os dois modos serializam `parametros_regua` BYTE A BYTE idêntico", () => {
+    // É por isso que a coluna `modo` da 032 é a ÚNICA fonte possível do modo:
+    // derivar do conteúdo da linha não é inferência fraca, é IMPOSSÍVEL.
+    const r = exigirSugestao(recuperar(PRD2189));
+    const g = exigirSugestao(girar(PRD2189));
+    assert.deepEqual(
+      serializarParametrosRegua(r.parametros),
+      serializarParametrosRegua(g.parametros),
+    );
+  });
+});
+
+describe("3.1c C18 — a identidade da diferença (a trava contra uma 2ª constante)", () => {
+  // ⚠️ ESTA É A ASSERÇÃO QUE BARRA A REINTRODUÇÃO DE `REGUA_GIRAR_PCT`,
+  // inclusive por engano num merge — a v1 desta story propunha exatamente isso.
+  // Sem ela, uma segunda constante passa em todos os outros testes.
+  it("minimo_recuperar − minimo_girar = REGUA_MINIMO_PCT × Σ gastos, EXATO", () => {
+    const casos: Array<{ compra: number; gastos: number[] }> = [
+      { compra: 100_000, gastos: [] },
+      { compra: 80_000, gastos: [6_850] },
+      { compra: 100_000, gastos: [1_500, 2_500.55] },
+      { compra: 100_000, gastos: [12_345.67] },
+    ];
+    for (const { compra, gastos } of casos) {
+      const r = exigirSugestao(recuperar({ valorCompraRepasse: compra, gastos }));
+      const g = exigirSugestao(girar({ valorCompraRepasse: compra, gastos }));
+      assert.equal(
+        cent(r.minimoSugerido - g.minimoSugerido),
+        cent(REGUA_PADRAO.REGUA_MINIMO_PCT * r.custo.gastosTotal),
+        `identidade quebrada com gastos=${JSON.stringify(gastos)}`,
+      );
+    }
+  });
+
+  it("a diferença é ZERO se e somente se os gastos são zero", () => {
+    const semGasto = { valorCompraRepasse: 100_000, gastos: [] };
+    assert.equal(
+      cent(
+        exigirSugestao(recuperar(semGasto)).minimoSugerido -
+          exigirSugestao(girar(semGasto)).minimoSugerido,
+      ),
+      0,
+    );
+    const comGasto = { valorCompraRepasse: 100_000, gastos: [0.01] };
+    assert.ok(
+      exigirSugestao(recuperar(comGasto)).minimoSugerido >
+        exigirSugestao(girar(comGasto)).minimoSugerido,
+    );
+  });
+});
+
+describe("3.1c C3 — carro SEM GASTO: os dois modos dão o MESMO preço", () => {
+  // 12 dos 16 vendidos e a maioria da frota. `base(girar) == base(recuperar)` e
+  // a constante é a mesma ⇒ não há segunda conta a fazer. Igualdade EXATA, não
+  // proximidade: o "coincidem, e qual está por cima" morreu junto com o
+  // cruzamento C-a (que só existia com duas constantes).
+  const r = exigirSugestao(recuperar({ gastos: [] }));
+  const g = exigirSugestao(girar({ gastos: [] }));
+
+  it("os pares sugerido e arredondado são idênticos até o centavo", () => {
+    assert.equal(r.minimoSugerido, g.minimoSugerido);
+    assert.equal(r.comprePorSugerido, g.comprePorSugerido);
+    assert.equal(r.minimoArredondado, g.minimoArredondado);
+    assert.equal(r.comprePorArredondado, g.comprePorArredondado);
+    assert.equal(r.minimoRazaoEfetiva, g.minimoRazaoEfetiva);
+  });
+
+  it("mesmo idênticos, as linhas continuam distinguíveis pelo `modo`", () => {
+    assert.notEqual(r.modo, g.modo);
+    assert.notEqual(r.versaoRegua, g.versaoRegua);
+  });
+});
+
+describe("3.1c C4/C18 — as invariantes I0–I3 sob as duas bases", () => {
+  it("base(girar) <= base(recuperar) implica preço_girar <= preço_recuperar", () => {
+    // Sob D3 a implicação VALE. Com duas constantes era falsa — era o C-a.
+    for (const gastos of [[], [10], [6_850], [50_000]]) {
+      const r = exigirSugestao(recuperar({ gastos }));
+      const g = exigirSugestao(girar({ gastos }));
+      assert.ok(baseDoModo(g.custo, "girar_rapido") <= baseDoModo(r.custo, "recuperar_tudo"));
+      assert.ok(g.minimoSugerido <= r.minimoSugerido);
+      assert.ok(g.comprePorSugerido <= r.comprePorSugerido);
+    }
+  });
+
+  it("I1 por modo e I2 nos dois, mesmo com a régua adulterada (seam da AC10)", () => {
+    for (const razao of [1.2, 2, 0.5, 0.952]) {
+      for (const minimoPct of [0.5, 1, 1.066, 1.5]) {
+        const params = {
+          ...REGUA_PADRAO,
+          RAZAO_MINIMO_SOBRE_COMPRE_POR: razao,
+          REGUA_MINIMO_PCT: minimoPct,
+        };
+        for (const modo of MODOS) {
+          const s = exigirSugestao(sugerirPrecoRepasse(entrada(PRD2189), params, modo));
+          const base = baseDoModo(s.custo, modo);
+          // I1 — sobre a base DO MODO, nunca sobre o custo_real.
+          assert.ok(
+            s.minimoSugerido >= base * params.PISO_PCT,
+            `I1 quebrada em modo=${modo} razao=${razao} minimoPct=${minimoPct}`,
+          );
+          // I2 — incondicional nos dois modos.
+          assert.ok(s.comprePorSugerido >= s.minimoSugerido, `I2 quebrada em modo=${modo}`);
+          // A garantia global que sobrevive à emenda: "não perco no carro".
+          assert.ok(
+            s.minimoSugerido >= s.custo.valorCompraRepasse,
+            `mínimo abaixo da compra em modo=${modo}`,
+          );
+        }
+      }
+    }
+  });
+
+  it("PRD2189/girar: `minimo < custo_real` é o resultado ESPERADO", () => {
+    // ⚠️ NÃO "CONSERTAR". ADR-003 §12.2 (I-morta) + decisão do Marcos de
+    // 2026-08-12: sob o modo girar o mínimo fica abaixo do custo real sempre que
+    // os gastos passarem de 6,6% da compra (aqui g = 6.850/80.000 = 8,56%).
+    // Este assert é o que torna a decisão dele uma REGRESSÃO DETECTÁVEL.
+    const g = exigirSugestao(girar(PRD2189));
+    assert.equal(g.custo.custoReal, 86_850);
+    assert.equal(g.minimoSugerido, 85_280);
+    assert.ok(g.minimoSugerido < g.custo.custoReal, "o girar DEVE ficar abaixo do custo aqui");
+    // …e mesmo assim nunca abaixo da compra (I1).
+    assert.ok(g.minimoSugerido >= g.custo.valorCompraRepasse);
+    // O compre-por segue ACIMA do custo (g < 11,97%) ⇒ sem badge vermelho na lista.
+    assert.ok(g.comprePorSugerido > g.custo.custoReal);
+    // E o modo recuperar, no MESMO carro, continua acima do custo.
+    assert.ok(exigirSugestao(recuperar(PRD2189)).minimoSugerido >= 86_850);
+  });
+});
+
+describe("3.1c C6 — base(modo) <= 0: a guarda é CONDICIONAL AO MODO", () => {
+  // Bug real da 3.1a: `decomporCusto` aceita compra = 0 (só recusa negativo),
+  // então com compra 0 e gastos > 0 o custo_real > 0 atravessava a guarda antiga
+  // e o girar devolvia mínimo R$ 0,00.
+  const semCompra = { valorCompraRepasse: 0, gastos: [6_850] };
+
+  it("girar RECUSA — a base dele é a compra, e ela é zero", () => {
+    const r = girar(semCompra);
+    assert.equal(r.ok, false);
+    assert.ok(!r.ok && r.motivo.includes("Girar rápido"));
+    assert.ok(!r.ok && r.motivo.includes("COMPRA"));
+    assert.equal(!r.ok && r.custo?.custoReal, 6_850);
+  });
+
+  it("recuperar SUGERE NORMALMENTE — é caso LEGÍTIMO, não bug", () => {
+    // ⚠️ Este ramo é a razão de a guarda NÃO poder virar um
+    // `valor_compra_repasse > 0` global: barraria uma sugestão certa. A Dara
+    // provou no banco que `rep_prec_base_do_modo_positiva_chk` aceita esta linha.
+    const s = exigirSugestao(recuperar(semCompra));
+    assert.equal(s.custo.custoReal, 6_850);
+    assert.equal(s.minimoSugerido, 7_302.1); // 6.850 × 1,066
+    assert.ok(s.minimoSugerido > 0);
+  });
+
+  it("compra 0 SEM gastos não sugere em modo nenhum", () => {
+    for (const modo of MODOS) {
+      const r = sugerirPrecoRepasse(
+        entrada({ valorCompraRepasse: 0, gastos: [] }),
+        REGUA_PADRAO,
+        modo,
+      );
+      assert.equal(r.ok, false, `modo ${modo} não deveria sugerir`);
+    }
+  });
+});
+
+describe("3.1c C7 — a banda p25–p75 é SUPRIMIDA PELO MOTOR no girar", () => {
+  it("`bandaMinimo === null` no girar e preenchida no recuperar", () => {
+    assert.equal(exigirSugestao(girar(PRD2189)).bandaMinimo, null);
+    assert.deepEqual(exigirSugestao(recuperar(PRD2189)).bandaMinimo, {
+      p25: 90_497.7, // 86.850 × 1,042
+      p75: 96_142.95, // 86.850 × 1,107
+    });
+  });
+
+  it("a banda do recuperar continua sobre custo_real — não trocou de base", () => {
+    const s = exigirSugestao(recuperar(PRD2189));
+    assert.ok(s.bandaMinimo != null);
+    assert.equal(s.bandaMinimo.p25, cent(s.custo.custoReal * REGUA_PADRAO.BANDA_MINIMO_P25_PCT));
+  });
+});
+
+describe("3.1c C8 — a referência não entra no preço em NENHUM modo", () => {
+  it("Ref. AA, FIPE e sem-referência produzem pares idênticos nos dois modos", () => {
+    for (const modo of MODOS) {
+      const pares = [
+        { ...PRD2189, valorAutoAvaliar: 105_000 },
+        { ...PRD2189, valorFipe: 130_000 },
+        { ...PRD2189 },
+      ].map((o) => {
+        const s = exigirSugestao(sugerirPrecoRepasse(entrada(o), REGUA_PADRAO, modo));
+        return [s.minimoSugerido, s.comprePorSugerido];
+      });
+      assert.deepEqual(pares[0], pares[1]);
+      assert.deepEqual(pares[1], pares[2]);
+    }
+  });
+
+  it("a confiança NÃO é rebaixada no girar — é o mesmo eixo (qualidade da referência)", () => {
+    const g = exigirSugestao(girar({ ...PRD2189, valorAutoAvaliar: 105_000 }));
+    const r = exigirSugestao(recuperar({ ...PRD2189, valorAutoAvaliar: 105_000 }));
+    assert.equal(g.confianca, "alta");
+    assert.equal(g.confianca, r.confianca);
+  });
+});
+
+describe("3.1c C12/C19 — o snapshot e o modo que o produziu", () => {
+  const AGORA_3_1C = new Date("2026-08-12T15:30:00.000Z");
+
+  function montar(modo: ModoPreco) {
+    const s = exigirSugestao(sugerirPrecoRepasse(entrada(PRD2189), REGUA_PADRAO, modo));
+    return montarSnapshotPrecificacao({
+      repasseId: 42,
+      sugestao: s,
+      aplicado: { minimo: s.minimoArredondado, comprePor: s.comprePorArredondado },
+      agora: AGORA_3_1C,
+    });
+  }
+
+  it("o `modo` gravado vem do RESULTADO DO MOTOR, nos dois modos", () => {
+    assert.equal(montar("girar_rapido").insert.modo, "girar_rapido");
+    assert.equal(montar("recuperar_tudo").insert.modo, "recuperar_tudo");
+  });
+
+  it("C19 — a assinatura NÃO aceita `modo` em separado (fix de TIPO, não de teste)", () => {
+    const s = exigirSugestao(girar(PRD2189));
+    montarSnapshotPrecificacao({
+      repasseId: 42,
+      sugestao: s,
+      // @ts-expect-error C19: "girar com modo recuperar" tem que ser INEXPRIMÍVEL.
+      // Se o tsc passar a acusar este `@ts-expect-error` como "unused", alguém
+      // acrescentou `modo` a `MontarSnapshotArgs` e reabriu a única corrupção da
+      // tabela 030 que o banco NÃO detecta (migration 032 §6).
+      modo: "recuperar_tudo",
+      aplicado: { minimo: s.minimoArredondado, comprePor: s.comprePorArredondado },
+      agora: AGORA_3_1C,
+    });
+  });
+
+  it("`versao_regua` leva o sufixo COERENTE com a coluna `modo` nos dois", () => {
+    // Query 6 da 032 (`versao_regua NOT LIKE ... || modo`) tem que dar 0 linhas.
+    for (const modo of MODOS) {
+      const { insert } = montar(modo);
+      assert.equal(insert.versao_regua, `${VERSAO_REGUA}__${modo}`);
+      assert.ok(insert.versao_regua.endsWith(`__${insert.modo}`));
+      assert.ok(insert.versao_regua.length <= 60);
+    }
+  });
+
+  it("`parametros_regua` NÃO ganha chave nova, e é igual nos dois modos", () => {
+    assert.deepEqual(
+      montar("girar_rapido").insert.parametros_regua,
+      montar("recuperar_tudo").insert.parametros_regua,
+    );
+    assert.ok(!("REGUA_GIRAR_PCT" in montar("girar_rapido").insert.parametros_regua));
+  });
+
+  it("as razões efetivas continuam SOBRE custo_real nos dois modos (§12.5)", () => {
+    const g = montar("girar_rapido").insert;
+    assert.equal(g.custo_real, 86_850);
+    assert.equal(g.minimo_sugerido, 85_280);
+    // 85.280 ÷ 86.850 = 0,9819228… truncado em numeric(9,6).
+    assert.equal(g.minimo_razao_efetiva, 0.981923);
+    // O denominador é UNIFORME entre modos — não é a base do modo.
+    assert.notEqual(g.minimo_razao_efetiva, g.minimo_sugerido / g.valor_compra_repasse);
+  });
+
+  it("o round-trip da razão fecha a ±R$ 0,01 e NÃO exatamente — é por construção", () => {
+    // ⛔ NÃO escrever teste de round-trip EXATO (C18 / Edge case #4 / ADR-003
+    // §12.5). O valor autoritativo é sempre `minimo_sugerido` (numeric(12,2));
+    // a razão é numeric(9,6) e serve pra auditar ordem de grandeza. NÃO é o bug
+    // crítico de centavo da AGENTS.md §4: aqui o centavo não é dinheiro, é
+    // arredondamento de uma grandeza derivada.
+    const g = montar("girar_rapido").insert;
+    const volta = cent(g.minimo_razao_efetiva * g.custo_real);
+    assert.equal(volta, 85_280.01); // ⚠️ um centavo ACIMA — esperado
+    assert.notEqual(volta, g.minimo_sugerido);
+    assert.ok(Math.abs(volta - g.minimo_sugerido) <= 0.01);
+
+    // ⚠️ A ASSIMETRIA ENTRE MODOS É ESPERADA E NÃO INDICA DEFEITO NO GIRAR: no
+    // recuperar a razão é a própria constante (1,066000) e o round-trip fecha
+    // EXATO. Só o girar produz razão não-terminante.
+    const r = montar("recuperar_tudo").insert;
+    assert.equal(r.minimo_razao_efetiva, 1.066);
+    assert.equal(cent(r.minimo_razao_efetiva * r.custo_real), r.minimo_sugerido);
   });
 });

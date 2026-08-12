@@ -1,12 +1,30 @@
 /**
- * MOTOR DE SUGESTÃO DE PREÇO DE REPASSE — Story 3.1a, ADR-003.
+ * MOTOR DE SUGESTÃO DE PREÇO DE REPASSE — Story 3.1a + 3.1c, ADR-003 (§12).
  *
- * Produz os DOIS preços do anúncio do Auto Avaliar sobre o `custo_real` do carro:
+ * Produz os DOIS preços do anúncio do Auto Avaliar sobre a BASE DO MODO:
  *   - `minimoSugerido`    → piso do leilão de 24h;
  *   - `comprePorSugerido` → compra direta, que encerra o anúncio na hora.
  *
+ * ┌─ DOIS MODOS, UMA CONSTANTE (story 3.1c, D1+D3 — Marcos, 2026-08-12) ────────┐
+ * │ base(recuperar_tudo) = custo_real            (compra + gastos)              │
+ * │ base(girar_rapido)   = valor_compra_repasse  (abre mão dos gastos)          │
+ * │                                                                             │
+ * │ `REGUA_MINIMO_PCT` é a MESMA nos dois — **`REGUA_GIRAR_PCT` não existe**.   │
+ * │ A v1 da 3.1c propunha uma segunda constante (1,072 sobre a compra): era     │
+ * │ defeito, porque em carro SEM GASTO as bases coincidem e o modo "girar"      │
+ * │ exibiria o preço MAIOR — em 12 dos 16 vendidos. A diferença entre os modos  │
+ * │ é inteiramente atribuível à BASE:                                           │
+ * │     minimo_recuperar − minimo_girar = REGUA_MINIMO_PCT × Σ gastos           │
+ * │ Zero SSE não há gasto. Há teste que afirma essa identidade justamente pra   │
+ * │ barrar a reintrodução de uma segunda constante (inclusive por merge).       │
+ * │                                                                             │
+ * │ ⚠️ CONSEQUÊNCIA DESEJADA: no modo girar o mínimo fica ABAIXO do custo real  │
+ * │ sempre que os gastos passarem de 6,6% da compra. Isso é DESENHO (ADR-003    │
+ * │ §12.0/§12.2), não anomalia — `minimo ≥ custo_real` deixou de ser invariante.│
+ * └─────────────────────────────────────────────────────────────────────────────┘
+ *
  * ┌─ INVARIANTE CENTRAL (ADR-003 §5 — "Ref. AA informa; custo manda") ──────────┐
- * │ Os dois preços saem EXCLUSIVAMENTE de `custo_real × régua`.                 │
+ * │ Os dois preços saem EXCLUSIVAMENTE de `base(modo) × régua`.                 │
  * │ `valor_auto_avaliar` (Ref. AA) e `valor_fipe` determinam APENAS o nível de  │
  * │ `confianca` e o alerta de teto — NUNCA o valor.                             │
  * │ Se a referência passar a ter efeito NUMÉRICO, o gatilho G1-b da ADR-002     │
@@ -43,6 +61,77 @@ import { calcularCustoReal, somarCentavos } from "@/lib/repasses/margem-repasse"
  * os números não (ADR-003 §11).
  */
 export const VERSAO_REGUA = "repasse_regua_v1_n16_jun_ago_2026";
+
+// ═════════════════════════════════════════════════════════════════════════════
+// MODO — a BASE do preço (story 3.1c, ADR-003 §12)
+// ═════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Qual grandeza a régua multiplica. **Dois valores e só dois** — o mesmo domínio
+ * fechado do `rep_prec_modo_chk` da migration 032. Um terceiro modo mudaria a
+ * BASE do preço e volta como decisão (gatilho T6, ADR-003 §12.11), nunca como
+ * slot vago.
+ */
+export type ModoPreco = "recuperar_tudo" | "girar_rapido";
+
+/**
+ * Default conservador (C15 da 3.1c): é o que a 3.1a já entregava e o que o
+ * Marcos vem usando. Mudar o default em silêncio trocaria a régua de TODOS os
+ * carros — exatamente o que esta fatia recusou fazer.
+ */
+export const MODO_PADRAO: ModoPreco = "recuperar_tudo";
+
+/** Rótulos pt-BR do modo (UI). */
+export const MODO_LABEL: Record<ModoPreco, string> = {
+  recuperar_tudo: "Recuperar tudo",
+  girar_rapido: "Girar rápido",
+};
+
+/**
+ * Nome pt-BR da BASE de cada modo — usado nos alertas e na justificativa.
+ *
+ * Com o artigo junto de propósito: os textos montam `travou n${rotulo}`, e sob
+ * `girar_rapido` dizer "travou no custo real" nomearia a base ERRADA. Foi por
+ * isso que o alerta de `bateuPiso` entrou na lista dos sítios que trocam
+ * (C5 da 3.1c / ADR-003 §12.4).
+ */
+export const MODO_BASE_LABEL: Record<ModoPreco, string> = {
+  recuperar_tudo: "o custo real",
+  girar_rapido: "o valor de compra do repasse",
+};
+
+/** Como o piso do modo se chama num texto curto ("bateu no …"). */
+export const MODO_PISO_LABEL: Record<ModoPreco, string> = {
+  recuperar_tudo: "piso de custo",
+  girar_rapido: "piso da compra",
+};
+
+/**
+ * `base(modo)` — a única fonte de qual número a régua multiplica.
+ *
+ * ⚠️ Exportada de propósito: os seis sítios do motor que trocaram de base
+ * (ADR-003 §12.4) passam por aqui, e o teste da C18 afirma a implicação
+ * `base(girar) ≤ base(recuperar) ⇒ preço_girar ≤ preço_recuperar` sobre ela.
+ */
+export function baseDoModo(custo: CustoDecomposto, modo: ModoPreco): number {
+  return modo === "girar_rapido" ? custo.valorCompraRepasse : custo.custoReal;
+}
+
+/**
+ * `versao_regua` com o sufixo do modo — **nos DOIS modos** (C12 da 3.1c).
+ *
+ * REDUNDÂNCIA LEGÍVEL, nunca a fonte: a fonte do modo é a coluna `modo` da 032.
+ * Obrigatório nos dois porque a query 6 de verificação da 032 procura
+ * inconsistência com `versao_regua NOT LIKE '%\_\_' || modo` e espera ZERO
+ * linhas — sem o sufixo no `recuperar_tudo`, 100% das linhas desse modo
+ * apareceriam como inconsistentes e o detector viraria ruído.
+ *
+ * Comprimento: 33 + 16 = 49 (recuperar) e 33 + 14 = 47 (girar), ambos sob o
+ * limite de 60 do `rep_prec_versao_nao_vazia_chk`.
+ */
+export function versaoReguaComModo(modo: ModoPreco, versaoBase: string = VERSAO_REGUA): string {
+  return `${versaoBase}__${modo}`;
+}
 
 /** Ajuste nomeado que mexeu na razão do mínimo (AC16). `pontos` em razão, não %. */
 export type AjusteRegua = {
@@ -267,6 +356,17 @@ export type EntradaSugestaoRepasse = {
 
 export type SugestaoPrecoRepasse = {
   ok: true;
+  /**
+   * QUAL RÉGUA PRODUZIU ESTES NÚMEROS (C19 da 3.1c).
+   *
+   * ⚠️ É daqui — e só daqui — que sai o `modo` gravado no snapshot. Nunca do
+   * estado do seletor da UI, nunca de um parâmetro à parte de
+   * `montarSnapshotPrecificacao`. "Girar com modo recuperar" não pode ser um
+   * estado representável: é a ÚNICA corrupção da tabela 030 que o banco não
+   * detecta (todos os 7 CHECKs passam numa linha que mente sobre a própria
+   * população, e a recalibração é envenenada em silêncio).
+   */
+  modo: ModoPreco;
   custo: CustoDecomposto;
   contexto: ContextoSugestao;
   /**
@@ -297,11 +397,21 @@ export type SugestaoPrecoRepasse = {
   /** Valor da referência usada no alerta de teto (null = não há referência). */
   referenciaTeto: number | null;
   ajustes: AjusteRegua[];
-  /** Banda do MÍNIMO entre os carros que venderam — NÃO é a faixa mín↔compre-por. */
-  bandaMinimo: { p25: number; p75: number };
+  /**
+   * Banda do MÍNIMO entre os carros que venderam — NÃO é a faixa mín↔compre-por.
+   *
+   * ⚠️ `null` no modo `girar_rapido` (C7 da 3.1c). A supressão é do MOTOR, não da
+   * UI: a banda é dispersão do mínimo SOBRE O CUSTO entre 16 carros, e reaplicá-la
+   * sobre a compra seria o erro de eixo que a ADR-003 §4 registrou no
+   * "compre-por = p75", repetido. Não existe banda calibrada sobre a compra e
+   * inventar uma seria fabricar rigor. Sendo do motor, a regra é testável sobre
+   * função pura e nenhuma tela futura pode exibi-la por engano.
+   */
+  bandaMinimo: { p25: number; p75: number } | null;
   justificativa: string;
   alertas: string[];
   parametros: ReguaPrecoRepasse;
+  /** `VERSAO_REGUA` COM o sufixo do modo (`…__recuperar_tudo` / `…__girar_rapido`). */
   versaoRegua: string;
 };
 
@@ -434,6 +544,16 @@ function fipeAjustadaPorKm(
   return arredondarCentavos(fipe * (1 - desconto));
 }
 
+/**
+ * D2 (C11 da 3.1c) — **chave liga/desliga**, não constante de régua.
+ *
+ * Fica FORA de `ReguaPrecoRepasse` de propósito: a C2 proíbe chave nova em
+ * `REGUA_PADRAO`/`parametros_regua`, e isto não é um parâmetro numérico da
+ * régua — é a resposta binária de uma decisão em aberto. Ver o bloco de
+ * ambiguidade em `calcularAjustes`.
+ */
+export const AJUSTES_APLICAM_NO_MODO_GIRAR = true;
+
 /** Clamp de um ajuste negativo por um teto positivo. */
 function limitarAjuste(pontos: number, teto: number): number {
   if (pontos >= 0) return 0;
@@ -470,7 +590,29 @@ function limitarAjuste(pontos: number, teto: number): number {
 function calcularAjustes(
   entrada: EntradaSugestaoRepasse,
   params: ReguaPrecoRepasse,
+  modo: ModoPreco,
 ): AjusteRegua[] {
+  // ┌─ ⚠️ D2 EM ABERTO — chave LIGA/DESLIGA, jamais uma segunda fórmula ────────┐
+  // │ Pergunta (C11 da 3.1c): o ajuste de DIAS PARADOS deve aplicar no modo     │
+  // │ girar? O Risco #3 é o mesmo double-count que matou o ajuste de km — o     │
+  // │ modo girar JÁ É a resposta pra carro parado ("precisamos vender esse      │
+  // │ carro rápido, porque está parado há muito tempo" — palavras do Marcos), e │
+  // │ o ajuste desconta DE NOVO pelo mesmo motivo.                              │
+  // │                                                                           │
+  // │ NÃO DECIDIDO. É do Marcos, com a medição do @alex-analyst: mediana de     │
+  // │ `minimo_que_vendeu ÷ valor_compra_repasse` quebrada por dias parados      │
+  // │ (≤30 × >30). Se os 2,0 pontos do Risk #14 da 3.1 encolherem ao trocar o   │
+  // │ denominador pra COMPRA, "pedir sobre a compra" já É o desconto de carro   │
+  // │ parado e aplicar o ajuste por cima é double-count.                        │
+  // │                                                                           │
+  // │ Até lá o comportamento fica COMO ESTÁ (ajustes aplicam nos dois modos) —  │
+  // │ mesmo molde do bloco de `qtde_anuncios` abaixo. A ADR-003 §12.10 IMPÕE,   │
+  // │ qualquer que seja a resposta: o ajuste opera em ESPAÇO DE RAZÃO e é       │
+  // │ base-agnóstico por construção. Esta constante é chave liga/desliga —      │
+  // │ quem transformar isto numa segunda fórmula viola a §12.10.                │
+  // └───────────────────────────────────────────────────────────────────────────┘
+  if (modo === "girar_rapido" && !AJUSTES_APLICAM_NO_MODO_GIRAR) return [];
+
   const ajustes: AjusteRegua[] = [];
 
   // 1) Parado há muitos dias
@@ -517,14 +659,19 @@ function calcularAjustes(
 // ═════════════════════════════════════════════════════════════════════════════
 
 /**
- * Sugere `mínimo` e `compre por` sobre o `custo_real`.
+ * Sugere `mínimo` e `compre por` sobre a **base do modo**.
  *
  * `params` é override opcional da régua vigente (AC10) — seam de teste E fonte
  * do `parametros_regua` do snapshot.
+ *
+ * `modo` decide QUAL grandeza a régua multiplica (3.1c). Default
+ * `recuperar_tudo` = comportamento idêntico ao da 3.1a (C1), exceto o campo novo
+ * `modo` e o sufixo de `versaoRegua` — as duas únicas diferenças declaradas.
  */
 export function sugerirPrecoRepasse(
   entrada: EntradaSugestaoRepasse,
   params: ReguaPrecoRepasse = REGUA_PADRAO,
+  modo: ModoPreco = MODO_PADRAO,
 ): ResultadoSugestao {
   const contexto: ContextoSugestao = {
     valorAutoAvaliar: isNumFinito(entrada.valorAutoAvaliar) ? entrada.valorAutoAvaliar : null,
@@ -551,18 +698,35 @@ export function sugerirPrecoRepasse(
     };
   }
 
-  // Risk #6 — compra lançada como zero. A régua daria R$ 0,00: guarda própria.
-  if (custo.custoReal <= 0) {
+  // ── I0: base(modo) > 0 — pré-condição, CONDICIONAL AO MODO (C6 da 3.1c) ──
+  //
+  // ⚠️ NÃO transformar isto num `valor_compra_repasse > 0` global: compra 0 com
+  // gastos lançados é caso LEGÍTIMO no modo recuperar (base = custo_real > 0, e
+  // o `rep_prec_base_do_modo_positiva_chk` da 032 aceita). Uma guarda global
+  // barraria a sugestão certa. A guarda segue a GRANDEZA, não a coluna.
+  //
+  // Bug real da 3.1a que isto fecha: `decomporCusto` aceita compra = 0 (só
+  // recusa negativo), então com compra 0 e gastos > 0 o `custo_real > 0`
+  // atravessava a guarda antiga e o modo girar devolvia mínimo R$ 0,00.
+  //
+  // O CHECK da 032 é o ÚLTIMO ANTEPARO, não a proteção: se ele disparar em
+  // produção o bug é DAQUI. O Marcos nunca deve ver R$ 0,00 na tela.
+  const base = baseDoModo(custo, modo);
+  if (base <= 0) {
     return {
       ok: false,
       motivo:
-        "Custo real igual a zero — confira o R$ Compra do repasse. A régua sobre um custo zerado devolveria R$ 0,00.",
+        modo === "girar_rapido"
+          ? "Girar rápido: o R$ Compra do repasse está zerado, e a base deste modo é a COMPRA (não o custo). A régua sobre uma compra zerada devolveria R$ 0,00 — confira o lançamento da compra. Os gastos sozinhos não formam a base deste modo."
+          : "Custo real igual a zero — confira o R$ Compra do repasse. A régua sobre um custo zerado devolveria R$ 0,00.",
       custo,
     };
   }
 
+  const rotuloBase = MODO_BASE_LABEL[modo];
+
   // ── Régua + ajustes ──────────────────────────────────────────────────────
-  const ajustes = calcularAjustes(entrada, params);
+  const ajustes = calcularAjustes(entrada, params, modo);
   const ajusteBruto = ajustes.reduce((soma, a) => soma + a.pontos, 0);
   const ajusteTotal = limitarAjuste(ajusteBruto, params.AJUSTE_TOTAL_MAX);
 
@@ -570,12 +734,23 @@ export function sugerirPrecoRepasse(
 
   let razaoMinimo = params.REGUA_MINIMO_PCT + ajusteTotal;
 
-  // AC12 — piso de aceite: nunca SUGERIR abaixo do custo.
+  // AC12 (revogada em parte pela C5 da 3.1c) — piso de aceite: nunca SUGERIR
+  // abaixo da BASE DO MODO.
+  //
+  // ⚠️ ESTE CLAMP **NÃO** TROCA DE BASE, e parecer que troca é o caminho pra
+  // estragá-lo (ADR-003 §12.4). Ele vive em ESPAÇO DE RAZÃO, que é adimensional
+  // em relação à base: `PISO_PCT = 1,0` significa "nunca abaixo de 100% da
+  // base", qualquer que ela seja. Com a constante ÚNICA da D3, `razaoMinimo`
+  // parte do mesmo número nos dois modos. Convertê-lo pra dinheiro é regressão.
   const bateuPiso = razaoMinimo < params.PISO_PCT;
   if (bateuPiso) {
     razaoMinimo = params.PISO_PCT;
+    // O TEXTO, sim, troca — sob girar "travou no custo real" nomearia a base
+    // errada. Que a flag seja inalcançável com `REGUA_PADRAO` (teto efetivo dos
+    // ajustes = 5 pt contra 6,6 pt de folga) NÃO dispensa: o AC10 permite editar
+    // constante à mão, e é pro dia em que alguém editar que isto existe.
     alertas.push(
-      "Sugestão bateu no piso de custo — não há espaço pra desconto. O mínimo travou no custo real.",
+      `Sugestão bateu no ${MODO_PISO_LABEL[modo]} — não há espaço pra desconto. O mínimo travou n${rotuloBase}.`,
     );
   }
 
@@ -595,23 +770,41 @@ export function sugerirPrecoRepasse(
     );
   }
 
-  // ── Preços centavo-perfect ───────────────────────────────────────────────
-  let minimoSugerido = arredondarCentavos(custo.custoReal * razaoMinimo);
-  if (minimoSugerido < custo.custoReal) minimoSugerido = custo.custoReal;
-  let comprePorSugerido = arredondarCentavos(custo.custoReal * razaoComprePor);
+  // ── Preços centavo-perfect — SOBRE `base(modo)` (sítios 1–4 da §12.4) ────
+  // I1: minimo_sugerido ≥ base(modo) × PISO_PCT.
+  let minimoSugerido = arredondarCentavos(base * razaoMinimo);
+  if (minimoSugerido < base) minimoSugerido = base;
+  let comprePorSugerido = arredondarCentavos(base * razaoComprePor);
+  // I2: compre_por ≥ mínimo, incondicional nos dois modos.
   if (comprePorSugerido < minimoSugerido) comprePorSugerido = minimoSugerido;
 
   // ── Par ARREDONDADO — é o que preenche os campos de aplicar (AC18) ───────
-  const minimoArredondado = arredondarRespeitandoPiso(minimoSugerido, custo.custoReal);
+  const minimoArredondado = arredondarRespeitandoPiso(minimoSugerido, base);
   const comprePorArredondado = arredondarRespeitandoPiso(comprePorSugerido, minimoArredondado);
   if (minimoArredondado !== arredondarParaCentena(minimoSugerido)) {
+    // Sítio 5: o TEXTO também troca — número errado na tela não é cosmético.
     alertas.push(
-      `Mínimo sugerido não foi arredondado pra centena: R$ 100 pra baixo cruzaria o custo real (${formatBRL(custo.custoReal)}). Vale o valor exato.`,
+      `Mínimo sugerido não foi arredondado pra centena: R$ 100 pra baixo cruzaria ${rotuloBase} (${formatBRL(base)}). Vale o valor exato.`,
     );
   }
 
-  // Razões EFETIVAS derivadas do dinheiro final — o snapshot fica internamente
-  // coerente (razão × custo reproduz o preço gravado).
+  // ── Razões EFETIVAS: SOBRE `custo_real` NOS DOIS MODOS (ADR-003 §12.5) ───
+  //
+  // ⚠️ NÃO trocam de base, e o motivo é mais forte que "senão o COMMENT mente":
+  // a coluna existe pra que `razão × custo_real` reproduza o preço gravado, e
+  // essa identidade só sobrevive com DENOMINADOR UNIFORME entre modos.
+  // `custo_real` é o único candidato uniforme (NOT NULL, verificado pelo
+  // `rep_prec_custo_decomposto_chk`). Se o denominador variasse com o modo,
+  // toda leitura futura precisaria saber o modo ANTES de saber o que a razão
+  // significa.
+  //
+  // ⚠️ O round-trip fecha a ±R$ 0,01, NÃO exatamente, e isso é por construção:
+  // `numeric(9,6)` não guarda o resto de 0,9819228… (PRD2189/girar: a volta dá
+  // R$ 85.280,01 contra 85.280,00 gravados). O valor autoritativo é SEMPRE
+  // `minimoSugerido`. NÃO é o bug crítico de centavo da AGENTS.md §4 — aqui o
+  // centavo não é dinheiro, é arredondamento de grandeza derivada. A assimetria
+  // entre modos é esperada: no recuperar a razão é a própria constante e o
+  // round-trip fecha exato; só o girar produz razão não-terminante.
   const minimoRazaoEfetiva = arredondarRazao(minimoSugerido / custo.custoReal);
   const comprePorRazaoEfetiva = arredondarRazao(comprePorSugerido / custo.custoReal);
 
@@ -666,20 +859,39 @@ export function sugerirPrecoRepasse(
   }
 
   // ── Justificativa (AC17) — é o que faz a aba ser usada, não é enfeite ────
+  //
+  // A decomposição do custo PERMANECE sobre `custo_real` nos dois modos, e não
+  // está em nenhuma das duas listas da §12.4: ela é `custo_real` porque *é* o
+  // custo real — o custo do carro não muda com o modo de precificar. Sob girar,
+  // é justamente ele que o Marcos está abrindo mão de recuperar.
   const partes: string[] = [
     `Custo real ${formatBRL(custo.custoReal)} = compra ${formatBRL(custo.valorCompraRepasse)} + ${custo.gastosQtde === 0 ? "sem gastos lançados" : `${custo.gastosQtde} gasto${custo.gastosQtde > 1 ? "s" : ""} ${formatBRL(custo.gastosTotal)}`}.`,
-    `Mínimo ${formatPct(minimoRazaoEfetiva)} do custo (base ${formatPct(params.REGUA_MINIMO_PCT)} — mediana do mínimo que vendeu em 16 repasses de jun–ago/2026).`,
-    `Compre por ${formatPct(comprePorRazaoEfetiva)}, derivado da razão mínimo÷compre-por de ${formatPct(params.RAZAO_MINIMO_SOBRE_COMPRE_POR)} observada nos mesmos vendidos.`,
   ];
+  if (modo === "girar_rapido") {
+    // A régua é a MESMA — o que muda é sobre o que ela incide. Dizer "a mesma
+    // mediana" é o ponto: não há constante própria do girar (D3).
+    partes.push(
+      `Mínimo ${formatPct(arredondarRazao(minimoSugerido / base))} da compra ${formatBRL(custo.valorCompraRepasse)} — a MESMA base de ${formatPct(params.REGUA_MINIMO_PCT)} (mediana do mínimo que vendeu em 16 repasses de jun–ago/2026), aplicada sobre a compra em vez do custo. Sobre o custo real isso dá ${formatPct(minimoRazaoEfetiva)}.`,
+      `Compre por ${formatPct(arredondarRazao(comprePorSugerido / base))} da compra, derivado da razão mínimo÷compre-por de ${formatPct(params.RAZAO_MINIMO_SOBRE_COMPRE_POR)} observada nos mesmos vendidos.`,
+    );
+  } else {
+    partes.push(
+      `Mínimo ${formatPct(minimoRazaoEfetiva)} do custo (base ${formatPct(params.REGUA_MINIMO_PCT)} — mediana do mínimo que vendeu em 16 repasses de jun–ago/2026).`,
+      `Compre por ${formatPct(comprePorRazaoEfetiva)}, derivado da razão mínimo÷compre-por de ${formatPct(params.RAZAO_MINIMO_SOBRE_COMPRE_POR)} observada nos mesmos vendidos.`,
+    );
+  }
   for (const a of ajustes) {
     partes.push(`Ajuste ${formatPontos(a.pontos)}: ${a.label}.`);
   }
   if (bateuPiso) {
-    partes.push(`Os ajustes derrubariam o mínimo abaixo do custo — travou em ${formatPct(params.PISO_PCT)}.`);
+    partes.push(
+      `Os ajustes derrubariam o mínimo abaixo d${modo === "girar_rapido" ? "a compra" : "o custo"} — travou em ${formatPct(params.PISO_PCT)}.`,
+    );
   }
 
   return {
     ok: true,
+    modo,
     custo,
     contexto,
     minimoSugerido,
@@ -693,14 +905,19 @@ export function sugerirPrecoRepasse(
     fonteReferencia,
     referenciaTeto,
     ajustes,
-    bandaMinimo: {
-      p25: arredondarCentavos(custo.custoReal * params.BANDA_MINIMO_P25_PCT),
-      p75: arredondarCentavos(custo.custoReal * params.BANDA_MINIMO_P75_PCT),
-    },
+    // C7 — quando existe, a banda é sobre `custo_real` (não trocou de base). O
+    // que o girar faz é NÃO CALCULAR, não calcular sobre outra base.
+    bandaMinimo:
+      modo === "girar_rapido"
+        ? null
+        : {
+            p25: arredondarCentavos(custo.custoReal * params.BANDA_MINIMO_P25_PCT),
+            p75: arredondarCentavos(custo.custoReal * params.BANDA_MINIMO_P75_PCT),
+          },
     justificativa: partes.join(" "),
     alertas,
     parametros: params,
-    versaoRegua: VERSAO_REGUA,
+    versaoRegua: versaoReguaComModo(modo),
   };
 }
 

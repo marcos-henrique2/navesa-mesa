@@ -20,6 +20,21 @@
  * │ por `decomporCusto()` — os mesmos números, não dois cálculos.                │
  * └─────────────────────────────────────────────────────────────────────────────┘
  *
+ * ┌─ C19 — "GIRAR COM MODO RECUPERAR" É INEXPRIMÍVEL AQUI ──────────────────────┐
+ * │ `modo` e `versao_regua` são DERIVADOS de `args.sugestao` — do objeto que o   │
+ * │ motor devolveu. Esta função NÃO aceita `modo` como parâmetro separado e NÃO  │
+ * │ lê o estado do seletor da UI. Se a assinatura permitir passar os dois        │
+ * │ independentemente, a C19 está violada mesmo com todos os testes verdes.      │
+ * │                                                                             │
+ * │ O modo de falha que isto fecha: o seletor guarda o modo em estado de UI, o   │
+ * │ motor devolve os preços, e os dois chegam aqui por caminhos separados.       │
+ * │ Trocar de modo depois do cálculo gravaria uma linha que NENHUM dos 7 CHECKs  │
+ * │ da 030+032 pega — ela é coerente por fora e só mente sobre a própria         │
+ * │ população, envenenando em silêncio a recalibração, que é a única coisa que a │
+ * │ tabela existe pra permitir. É a ÚNICA corrupção que o banco não detecta      │
+ * │ (migration 032 §6), e por isso o fix é de TIPO, não de teste.                │
+ * └─────────────────────────────────────────────────────────────────────────────┘
+ *
  * ┌─ O QUE NÃO SE TESTA AQUI ───────────────────────────────────────────────────┐
  * │ A invariante `compre_por ≥ mínimo ≥ custo_real` vale sobre o par SUGERIDO,   │
  * │ NUNCA sobre o par APLICADO (ADR-003 §11). O Marcos pode legitimamente        │
@@ -32,6 +47,7 @@
 import {
   serializarParametrosRegua,
   type ConfiancaSugestao,
+  type ModoPreco,
   type SugestaoPrecoRepasse,
 } from "@/lib/pricing/sugerir-preco-repasse";
 
@@ -46,6 +62,16 @@ import {
  */
 export type SnapshotPrecificacaoInsert = {
   repasse_id: number;
+  /**
+   * DISCRIMINADOR DE POPULAÇÃO (migration 032, `rep_prec_modo_chk`).
+   * `TEXT NOT NULL` sem DEFAULT: um insert sem esta coluna estoura 23502.
+   *
+   * Sob D3 (régua única) `parametros_regua` fica BYTE A BYTE IDÊNTICO nos dois
+   * modos — derivar o modo do conteúdo da linha deixou de ser inferência fraca e
+   * passou a ser IMPOSSÍVEL. Esta coluna é a ÚNICA fonte do modo.
+   */
+  modo: ModoPreco;
+  /** Com o sufixo do modo nos DOIS modos (C12) — redundância legível, não fonte. */
   versao_regua: string;
   parametros_regua: Record<string, number>;
   minimo_sugerido: number;
@@ -92,6 +118,14 @@ export type SnapshotPrecificacaoMontado = {
 
 export type MontarSnapshotArgs = {
   repasseId: number;
+  /**
+   * A sugestão que produziu os números. **Fonte única do `modo`** — ver o bloco
+   * C19 no topo do arquivo.
+   *
+   * ⚠️ NÃO acrescentar um campo `modo` aqui. Se este tipo aceitar `modo` ao lado
+   * de `sugestao`, "girar com modo recuperar" volta a ser um estado
+   * representável e a C19 está violada, com todos os testes verdes.
+   */
   sugestao: SugestaoPrecoRepasse;
   /** O par que o Marcos de fato vai aplicar. Pode diferir do sugerido (AC19/AC21). */
   aplicado: { minimo: number; comprePor: number };
@@ -131,6 +165,10 @@ export function montarSnapshotPrecificacao(
 
   const insert: SnapshotPrecificacaoInsert = {
     repasse_id: repasseId,
+    // C19 — os dois saem do MESMO objeto que produziu os preços. `versaoRegua`
+    // já vem do motor com o sufixo do modo: não se monta o sufixo aqui, senão
+    // haveria duas fontes pra mesma verdade.
+    modo: sugestao.modo,
     versao_regua: sugestao.versaoRegua,
     // Os VALORES das constantes vigentes, não só o nome da versão: as constantes
     // são editáveis à mão, então o nome pode mentir — os números não.
