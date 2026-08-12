@@ -310,7 +310,8 @@ A `@dara-data-engineer` implementou `supabase/migrations/030_repasse_precificaca
 ## 12. Emenda — dois modos de preço (story 3.1c). A invariante passa a ser função da base
 
 - **Status:** Aceita. **Emenda, não supersessão.** Data: 2026-08-12. Autora: Aria.
-- **Origem:** decisão do Marcos de 2026-08-12 registrada na story `docs/stories/story-3.1c-dois-precos-recuperar-girar.md` (**D1 = (b)**), e as três questões que ela abre (C5, C10, Risk #5/#7 da 3.1c).
+- **Origem:** decisão do Marcos de 2026-08-12 registrada na story `docs/stories/story-3.1c-dois-precos-recuperar-girar.md` (**D1 = (b)**), e as questões que ela abre: a invariante (**C4**), o modo no snapshot (**C12**), o enquadramento do alerta (**C16**) e os **Riscos #4, #5 e #7** da 3.1c.
+- **⚠️ Numeração das ACs:** todos os ponteiros `Cnn` desta §12 são da **v3 da story** (renumerada na v2). Se a story renumerar de novo, **os ponteiros se corrigem AQUI** — a ADR é o documento estável e a story continua mudando; tabela de-para foi descartada de propósito.
 - **O que muda nesta ADR:** §4 ganha uma **segunda derivação** (não substitui a primeira); **§11 tem a invariante reescrita** (§12.2).
 - **O que NÃO muda:** §3 (onde persistir e a ordem de escrita), §5 (Ref. AA informa; custo manda), §6 (G1/G1-b), §7.1, §7.2, §9, §10. Nenhuma decisão anterior é revertida.
 - **Consequência de processo:** a 3.1c **passa a ter migration** (§12.6) e muda o contrato do motor ⇒ volta pro `@pax-po` antes do dev; a `@dara-data-engineer` vira **bloqueante**.
@@ -343,9 +344,9 @@ minimo_recuperar − minimo_girar  =  REGUA_MINIMO_PCT × Σ gastos      (exato)
 
 A diferença entre os modos passa a ser **inteiramente atribuível à base**, é monotônica em `Σ gastos`, e é **zero se e somente se `Σ gastos = 0`**. Igualdade por construção — afirmável como identidade em teste, não como coincidência numérica a R$ 480 de distância. Idem no compre-por, com o fator `REGUA_MINIMO_PCT / RAZAO_MINIMO_SOBRE_COMPRE_POR`.
 
-**Consequência pra honestidade de amostra (C14), e ela melhora:** não há mais "constante de n=12 transposta" pra declarar. Há **uma** constante de n=16 e **duas** bases. A incerteza residual deixa de ser *"qual constante"* e passa a ser *"a base está certa"* — que é exatamente onde a evidência fraca mora (os n=4 com gasto, 102,0% sobre custo × 105,6% sobre compra). A C14 fica mais simples **e** mais verdadeira: a assimetria a declarar é de **base**, não de constante.
+**Consequência pra honestidade de amostra (C17), e ela melhora:** não há mais "constante de n=12 transposta" pra declarar. Há **uma** constante de n=16 e **duas** bases. A incerteza residual deixa de ser *"qual constante"* e passa a ser *"a base está certa"* — que é exatamente onde a evidência fraca mora (os n=4 com gasto, 102,0% sobre custo × 105,6% sobre compra). A C17 fica mais simples **e** mais verdadeira: a assimetria a declarar é de **base**, não de constante. É também o Risco #6 da 3.1c: a régua única roda em duas bases sem calibração específica de nenhuma delas.
 
-**Consequência pra C3 e Risk #6 (`@uma-ux`):** em carro sem gasto os dois modos não ficam "a R$ 480 de distância" — ficam **idênticos, byte a byte**. Isso agrava o Risk #6 ("essa tela mostra a mesma coisa duas vezes") em vez de aliviá-lo, porque agora é literalmente verdade em 12 de 16 carros. A C3 deixa de poder dizer "coincidem, e o girar está por cima": tem que **colapsar as duas colunas numa só** com a explicação, ou dizer sem rodeio que não há segunda conta a fazer neste carro. Isso é decisão de tela, não de motor — passa pra `@uma-ux`.
+**Consequência pra C3 e o Edge case #1 (`@uma-ux`):** em carro sem gasto os dois modos não ficam "a R$ 480 de distância" — ficam **idênticos, byte a byte**. Isso agrava o "essa tela mostra a mesma coisa duas vezes" em vez de aliviá-lo, porque agora é literalmente verdade em 12 de 16 carros. A C3 deixa de poder dizer "coincidem, e o girar está por cima": tem que **colapsar as duas colunas numa só** com a explicação, ou dizer sem rodeio que não há segunda conta a fazer neste carro. Isso é decisão de tela, não de motor — passa pra `@uma-ux`.
 
 #### Os cruzamentos, recalculados
 
@@ -360,15 +361,15 @@ Com `M = REGUA_MINIMO_PCT = 1,066` e `R = RAZAO_MINIMO_SOBRE_COMPRE_POR = 0,952`
 | | Limiar | Fórmula | O que muda ao cruzar | Quem consome |
 |---|---|---|---|---|
 | ~~**C-a**~~ | — | — | **EXTINTO.** Com constante única, `girar ≤ recuperar` sempre, com igualdade sse `g = 0` | — |
-| **C-b** | `g > 6,6%` | `g > M − 1` | `mínimo_girar < custo_real` | **alerta C4/C8 e §12.8** |
+| **C-b** | `g > 6,6%` | `g > M − 1` | `mínimo_girar < custo_real` | **alerta C10; enquadramento C16 (§12.8); Risco #4** |
 | **C-c** | `g > 11,97%` | `g > M/R − 1` | `compre_por_girar < custo_real` | `classificarBadge` em `/repasses` |
 
 **⚠️ C-b NÃO se extingue, e a confusão é fácil de fazer** — os dois papéis do "7,2%" na story eram distintos:
 
 1. **Papel na D1** — sob piso em `custo_real`, era o ponto em que o modo girar **travava** no custo e virava constante. Sob piso na compra o motor não trava mais no custo, e **esse** papel de fato desaparece.
-2. **Papel na C4/C8/§12.8** — é o ponto em que o mínimo do modo girar **cai abaixo** do `custo_real`. Esse papel é o **gatilho de tudo que a §12.8 organiza**, e ele não só permanece como **passa a morder mais cedo: 6,6% em vez de 7,2%**.
+2. **Papel na C10 / C16 / §12.8** — é o ponto em que o mínimo do modo girar **cai abaixo** do `custo_real`. Esse papel é o **gatilho de tudo que a §12.8 organiza**, e ele não só permanece como **passa a morder mais cedo: 6,6% em vez de 7,2%**.
 
-Tratar C-b como extinto deixaria a C8 sem condição de disparo definida — e a C8 existe precisamente porque `valor_minimo < custo_real` vira rotina. **O limiar da C8 é 6,6% de `g`.**
+Tratar C-b como extinto deixaria a **C16** sem condição de disparo definida — e a C16 existe precisamente porque `valor_minimo < custo_real` vira rotina. **O limiar da C10 e da C16 é 6,6% de `g`.**
 
 **C-c muda de número:** `1,066/0,952 = 1,119748` ⇒ `g > 11,9748%`, contra os 12,61% da versão de duas constantes. O efeito é idêntico: acima disso `classificarBadge` (`src/lib/repasses/margem-repasse.ts:153`) avalia a função canônica em `oferta = valor_compre_por`, o primeiro teste de `classificarMargem` (`:142`) devolve vermelho, e **o badge do carro na lista `/repasses` fica 🔴**. O DoD da 3.1c manda "verificar o que `/repasses` faz" sem dizer o número — **é 11,97%**.
 
@@ -377,9 +378,14 @@ Tratar C-b como extinto deixaria a C8 sem condição de disparo definida — e a
 | | Mínimo exato | Mínimo exibido | Compre-por exato | Compre-por exibido | Sobre `custo_real` | Gastos não recuperados |
 |---|---|---|---|---|---|---|
 | Recuperar tudo | 92.582,10 | **92.600** | 97.250,63 | **97.300** | +6,6% | R$ 0 |
-| Girar rápido | **85.280,00** | **85.300** | **89.579,83** | **89.600** | −1,8% | **R$ 1.570** de 6.850 |
+| Girar rápido | **85.280,00** | **85.300** | **89.579,83** | **89.600** | −1,8% | 1.570 sobre o sugerido · **R$ 1.550 sobre o aplicado ← é este que vai pra tela** |
 
-Os números da 3.1c mudam: o mínimo do girar era 85.760/85.800 e o não-recuperado era R$ 1.090. **Passam a ser 85.280/85.300 e R$ 1.570.** A C4 exige o valor **calculado** — o texto do alerta tem que sair da conta, nunca de constante escrita à mão.
+Os números da 3.1c mudam: o mínimo do girar era 85.760/85.800 e o não-recuperado era R$ 1.090. **Passam a ser 85.280/85.300 e R$ 1.570 sobre o par sugerido.** A **C10** exige o valor **calculado** — o texto do alerta tem que sair da conta, nunca de constante escrita à mão.
+
+> **⚠️ Desempate: o número que vai pra TELA é R$ 1.550, não R$ 1.570.**
+> A divergência é real e tem explicação: esta §12 calcula sobre o par **sugerido** (85.280,00 ⇒ 86.850 − 85.280 = **1.570**), porque o sugerido é o canônico da derivação e é o que fecha com I1/I2. A **C10 manda calcular sobre o par aplicado** — o arredondado a R$ 100 que preenche os campos e que o Marcos de fato digita no portal (85.300 ⇒ 86.850 − 85.300 = **1.550**).
+> **Prevalece a C10.** O alerta descreve o que ele está prestes a fazer, não o que o motor calculou antes de arredondar; dizer "você abre mão de R$ 1.570" e anunciar um preço que abre mão de R$ 1.550 põe um número errado na tela — a mesma falha que a C10 já barrou ao proibir "não recupera R$ 6.850".
+> Os R$ 1.570 desta seção são **derivação**, não especificação de UI. **Não hard-codar nenhum dos dois:** os dois saem de conta, e a diferença entre eles é exatamente o arredondamento da AC18 da 3.1.
 
 **Efeito colateral sob C-b, dentro de `classificarMargem`** (inalterado pela revisão): com `mínimo < custo_real`, a faixa 🟠 ("Abaixo do mínimo, acima do custo") fica **vazia** — e ofertas **no ou acima do mínimo anunciado** classificam 🔴. "Bateu o mínimo" e "vermelho" passam a coexistir. É semanticamente correto (é prejuízo de fato) e **não se conserta em `margem-repasse.ts`** — a função continua certa. O que muda é que, em carro girado, o vermelho perde a leitura "alguém errou". Ver §12.8.
 
@@ -401,7 +407,7 @@ E, com o mesmo peso, o que **deixa de ser** invariante — escrito aqui em negat
 I-morta   minimo_sugerido ≥ custo_real
 ```
 
-Não é invariante do sistema. É **corolário** de I1 no modo `recuperar_tudo` (onde `base = custo_real`) e é **falso por desenho** no modo `girar_rapido` sempre que `g > 7,2%` (C-b).
+Não é invariante do sistema. É **corolário** de I1 no modo `recuperar_tudo` (onde `base = custo_real`) e é **falso por desenho** no modo `girar_rapido` sempre que `g > 6,6%` (C-b, §12.1). *(O limiar era 7,2% enquanto existia `REGUA_GIRAR_PCT`; sob a constante única é `REGUA_MINIMO_PCT − 1`. Este parágrafo é a autoridade citada pela C4 da story — o número aqui tem que ser o vigente.)*
 
 **Três propriedades que derivam de graça, e que valem teste** (I0–I3 valem palavra por palavra com constante única — a revisão da §12.1 não toca em nenhuma delas):
 
@@ -448,11 +454,15 @@ O River contou **três clamps**. A conta correta sobre `src/lib/pricing/sugerir-
 |---|---|---|---|
 | 6 | `minimoSugerido / custo.custoReal` | 615 | §12.5 |
 | 7 | `comprePorSugerido / custo.custoReal` | 616 | §12.5 |
-| 8 | `bandaMinimo` p25/p75 × `custo.custoReal` | 697-698 | a banda é dispersão do mínimo **sobre custo** entre 16 carros. Reaplicá-la sobre a compra é o **erro de eixo** que a §4 registrou no "compre-por = p75", repetido. **No modo girar a banda não deve ser exibida** — não existe banda calibrada sobre a compra |
+| 8 | `bandaMinimo` p25/p75 × `custo.custoReal` | 697-698 | a banda é dispersão do mínimo **sobre custo** entre 16 carros. Reaplicá-la sobre a compra é o **erro de eixo** que a §4 registrou no "compre-por = p75", repetido. **No modo girar a banda não deve existir** — a **C7** resolve melhor do que eu tinha proposto: o *motor* devolve `bandaMinimo = null`, em vez de a UI omitir. Regra testável sobre função pura, e nenhuma tela futura pode exibi-la por engano |
 
-**O terceiro item do River (`razaoMinimo < params.PISO_PCT`, linha 574) NÃO muda — e isso merece nota**, porque parecer que muda é o caminho pra estragá-lo. Ele vive em **espaço de razão**, e razão é adimensional em relação à base: `PISO_PCT = 1,0` significa "nunca abaixo de 100% da base", qualquer que seja a base. Ele fica correto sozinho, e com a **constante única** da §12.1 fica correto **sem nenhuma mudança a montante também**: `razaoMinimo` parte de `REGUA_MINIMO_PCT` nos dois modos. Convertê-lo para dinheiro seria regressão — e é a "correção" que um leitor apressado da C5 faria. **Sob constante única, este item some inteiramente da lista de trabalho:** o motor passa a ter **5 sítios que trocam de base e nada mais**.
+**O terceiro item do River (`razaoMinimo < params.PISO_PCT`, linha 574) NÃO muda — e isso merece nota**, porque parecer que muda é o caminho pra estragá-lo. Ele vive em **espaço de razão**, e razão é adimensional em relação à base: `PISO_PCT = 1,0` significa "nunca abaixo de 100% da base", qualquer que seja a base. Ele fica correto sozinho, e com a **constante única** da §12.1 fica correto **sem nenhuma mudança a montante também**: `razaoMinimo` parte de `REGUA_MINIMO_PCT` nos dois modos. Convertê-lo para dinheiro seria regressão — e é a "correção" que um leitor apressado da **C5** faria. **Sob constante única, este item some inteiramente da lista de trabalho:** o motor passa a ter **5 sítios que trocam de base e nada mais**.
 
-**A guarda que FALTA, e que a emenda cria (linha 555):** hoje o motor recusa `custo.custoReal <= 0`. No modo girar a pré-condição é `base(modo) > 0`, e existe um carro que **passa hoje e não deveria**: **compra = 0 com gastos > 0**. `decomporCusto` aceita compra zero (só recusa negativo, linha 390), então `custo_real > 0` passa a guarda enquanto `base(girar) = 0` ⇒ mínimo R$ 0,00. O Risk #9 da 3.1c cobre "compra **nula ou negativa**"; **compra zero com gasto lançado não está coberto por nenhuma AC**. A guarda tem que virar `base(modo) <= 0`, com mensagem pt-BR própria — dado errado e dado ausente pedem ações diferentes, como a linha 544 já faz.
+*(Nota de coerência com o Edge case #3 da 3.1c: `bateu_piso` é **inalcançável** com `REGUA_PADRAO` nos dois modos — o teto efetivo dos ajustes é 5 pontos contra 6,6 de folga até `PISO_PCT`. Isso **não** dispensa nada aqui: a linha 574 continua tendo que estar correta, e o COMMENT da §12.7 existe justamente pro dia em que alguém editar uma constante à mão, que a AC10 permite.)*
+
+**A guarda que FALTA, e que a emenda cria (linha 555):** hoje o motor recusa `custo.custoReal <= 0`. No modo girar a pré-condição é `base(modo) > 0`, e existe um carro que **passa hoje e não deveria**: **compra = 0 com gastos > 0**. `decomporCusto` aceita compra zero (só recusa negativo, linha 390), então `custo_real > 0` passa a guarda enquanto `base(girar) = 0` ⇒ mínimo R$ 0,00. A guarda tem que virar `base(modo) <= 0`, com mensagem pt-BR própria — dado errado e dado ausente pedem ações diferentes, como a linha 544 já faz.
+
+**Estado:** era buraco sem AC na v1 da story (o antigo Risk #9 só falava em compra "nula ou negativa"); **a v3 fechou como C6 + Edge case #2**. Duas notas que a v3 acrescentou e que eu subscrevo: (a) o conserto **não** pode ser um `valor_compra_repasse > 0` global — barraria o caso legítimo do modo recuperar, onde compra 0 com gastos é custo válido; a guarda é **condicional ao modo**. (b) O CHECK `rep_prec_base_do_modo_positiva_chk` da 032 é **último anteparo**, não a proteção: se ele disparar em produção, o bug é do motor, e um clique de "Aplicar" abortando por constraint é o sintoma.
 
 ### 12.5 `minimo_razao_efetiva` — o River está certo, e por um motivo mais forte que o dele
 
@@ -460,7 +470,13 @@ O River contou **três clamps**. A conta correta sobre `src/lib/pricing/sugerir-
 
 O argumento do River é "senão o COMMENT mente". Verdadeiro, mas fraco — COMMENT se corrige. O argumento que sustenta a decisão: **a coluna existe pra que `razão × custo_real` reproduza o preço gravado**, e é essa identidade que torna a linha auditável seis meses depois sem reexecutar o motor. Ela sobrevive à emenda **só se o denominador for uniforme entre modos**, e `custo_real` é o único candidato uniforme — é `NOT NULL` e verificado pelo `rep_prec_custo_decomposto_chk` (`030:212`). Se o denominador variasse com o modo, toda leitura futura precisaria saber o modo **antes** de saber o que a razão significa; a coluna deixaria de ser legível isoladamente.
 
-Confere no PRD2189 sob girar: `85.280 ÷ 86.850 = 0,981923`, e `0,981923 × 86.850 = 85.280` de volta.
+Confere no PRD2189 sob girar: `85.280,00 ÷ 86.850,00 = 0,981923`.
+
+> **⚠️ A identidade fecha a ±R$ 0,01, NÃO exatamente — e isso é por construção, não bug.**
+> A volta dá `0,981923 × 86.850 = 85.280,01`, R$ 0,01 acima. Motivo: `minimo_razao_efetiva` é `numeric(9,6)` e a razão exata é `0,9819228…` — seis casas não guardam o resto.
+> **O valor autoritativo é sempre `minimo_sugerido`** (`numeric(12,2)`), nunca a razão. A razão é **derivada** e serve pra auditar a ordem de grandeza sem reexecutar o motor, não pra reconstituir o centavo.
+> **Nenhum teste pode exigir round-trip exato**, e **nenhum COMMENT da 030/032 pode afirmar igualdade exata** — o COMMENT atual da 030 usa `0,987450 × 86850` e erra R$ 0,03, o que basta pra alguém "consertar" o motor.
+> Registro isto com ênfase porque o projeto trata R$ 0,01 de divergência como **bug crítico** (AGENTS.md §4) e essa é a **única exceção legítima** da fatia: aqui o centavo não é dinheiro, é arredondamento de uma grandeza derivada. Está espelhado no Edge case #4 da 3.1c de propósito — são os dois documentos que um "consertador" abriria.
 
 **Nenhuma correção de COMMENT é necessária aqui.** O COMMENT de `minimo_razao_efetiva` / `compre_por_razao_efetiva` (`030:372-375`) continua verdadeiro palavra por palavra — "razão sobre `custo_real` após ajustes e após o clamp do piso" descreve exatamente o que passa a ser gravado nos dois modos. O exemplo numérico embutido ("1.066000 = 106,60%") vira um dos dois casos; **acrescentar** o exemplo do girar é melhoria opcional, não correção. Isso separa nitidamente esta coluna de `bateu_piso` (§12.7), que **precisa** de correção.
 
@@ -508,11 +524,11 @@ Texto sugerido, no padrão sem acento da 030:
  em custo_real, girar_rapido trava em valor_compra_repasse. Ler SEMPRE junto da coluna modo.'
 ```
 
-**Fecha o Risk #7 da 3.1c:** com a coluna `modo` existindo, `bateu_piso` deixa de ser *"booleano com dois significados dependendo de uma coluna que não está lá"* e vira *"booleano lido junto de uma coluna que o banco garante presente e de domínio fechado"*. A armadilha de recalibração que o River identificou é resolvida **pela coluna**, não pelo COMMENT — o COMMENT só a documenta.
+**Fecha o Risco #7 da v1 da story** (o `bateu_piso` com dois significados; na v3 o ponto está absorvido pela **C12** e pelo Edge case #3)**:** com a coluna `modo` existindo, `bateu_piso` deixa de ser *"booleano com dois significados dependendo de uma coluna que não está lá"* e vira *"booleano lido junto de uma coluna que o banco garante presente e de domínio fechado"*. A armadilha de recalibração que o River identificou é resolvida **pela coluna**, não pelo COMMENT — o COMMENT só a documenta.
 
 ### 12.8 Abaixo do custo **por decisão** × **por erro** — sim, a §11 precisa dizer
 
-**Resposta: sim.** E a distinção não é de UI: é de **origem do dado**. Fica registrada em ADR porque a C8 vai implementá-la e, sem isto escrito, ela lê como regra de alerta improvisada.
+**Resposta: sim.** E a distinção não é de UI: é de **origem do dado**. Fica registrada em ADR porque a **C16** vai implementá-la e, sem isto escrito, ela lê como regra de alerta improvisada. É também a resposta ao **Risco #4** da 3.1c (o "abaixo do custo" que vira rotina em dois lugares e dois limiares).
 
 O sistema hoje tem **um** predicado — `valor_minimo < custo_real` — atendendo **três** situações que pedem reações diferentes:
 
@@ -524,20 +540,20 @@ O sistema hoje tem **um** predicado — `valor_minimo < custo_real` — atendend
 
 Os três são **derivados**. A §3 recusou coluna de procedência (opção 6) e a ADR-002 §4.5 recusou procedência por campo; **a emenda não reabre nenhuma das duas** — e note que a própria §3 já previu esta saída ao escrever que *"a saída não é coluna de procedência — é derivar o estado comparando o snapshot mais recente com a data do último import"* (§9.3).
 
-**Mudança de status que precisa ficar registrada:** a §3.4 declarou a tabela **write-only** e a §9.2 aceitou explicitamente o custo de ela ficar sem leitor. **A C8 é o primeiro leitor da 030**, e ele chega **antes** do n de recalibração. Isso não invalida a §3.4 (não entra tela de histórico), mas muda o cálculo de custo/benefício da tabela pra melhor, e muda o escopo da story:
+**Mudança de status que precisa ficar registrada:** a §3.4 declarou a tabela **write-only** e a §9.2 aceitou explicitamente o custo de ela ficar sem leitor. **A C16 é o primeiro leitor da 030**, e ele chega **antes** do n de recalibração. Isso não invalida a §3.4 (não entra tela de histórico), mas muda o cálculo de custo/benefício da tabela pra melhor, e muda o escopo da story:
 
-> **Correção de escopo obrigatória na 3.1c:** o OUT diz *"tela de histórico / leitura da 030 — continua OUT"*. Reescrever como: **"tela de histórico: OUT. Leitura pontual do snapshot mais recente do repasse, para desambiguar o alerta de abaixo-do-custo (C8): IN."** Sem isso, o `@dex-dev` implementa a C8 e o `@quinn-qa` a marca corretamente como escopo fora.
+> **Correção de escopo obrigatória na 3.1c:** o OUT dizia *"tela de histórico / leitura da 030 — continua OUT"*. Tem que ser: **"tela de histórico: OUT. Leitura pontual do snapshot mais recente do repasse, para desambiguar o alerta de abaixo-do-custo (C16): IN."** Sem isso, o `@dex-dev` implementa a C16 e o `@quinn-qa` a marca corretamente como escopo fora.
 
-**E a regra que fecha o assunto:** *sob o modo girar, "abaixo do custo" não é alerta — é a descrição do modo.* O número que o Marcos precisa ver não é "atenção, abaixo do custo" (foi ele que escolheu), é **quanto** ele está abrindo mão: **R$ 1.570 de R$ 6.850** no PRD2189 sob a constante única (§12.1) — que é a C4, e a C4 já está certa ao exigir o valor **calculado** e não o total de gastos. O fato de esse número ter mudado duas vezes em um dia (1.090 → 1.570) é a melhor prova de que ele nunca pode ser escrito à mão. **O vermelho fica reservado pro que ele não escolheu.** Alerta que toca sempre é alerta que ninguém lê — a mesma razão que matou o alerta de piso na §5.2 e o alerta de teto sobre o compre-por na §5.1.
+**E a regra que fecha o assunto:** *sob o modo girar, "abaixo do custo" não é alerta — é a descrição do modo.* O número que o Marcos precisa ver não é "atenção, abaixo do custo" (foi ele que escolheu), é **quanto** ele está abrindo mão: **R$ 1.550 de R$ 6.850** no PRD2189 — sobre o par **aplicado**, conforme o desempate da §12.1 (a §12 deriva 1.570 sobre o sugerido; **prevalece a C10**). A C10 já está certa ao exigir o valor **calculado** e não o total de gastos. O fato de esse número ter mudado três vezes em um dia (1.090 → 1.570 → 1.550) é a melhor prova de que ele nunca pode ser escrito à mão. **O vermelho fica reservado pro que ele não escolheu.** Alerta que toca sempre é alerta que ninguém lê — a mesma razão que matou o alerta de piso na §5.2 e o alerta de teto sobre o compre-por na §5.1.
 
 ### 12.9 AC13–AC15 e `confianca` — confirmadas, sem alteração
 
 1. **Ref. AA e FIPE seguem sem efeito numérico, nos dois modos.** A §5 (*"Ref. AA informa; custo manda"*) não é enfraquecida pela emenda — é **reforçada**: com **duas** bases, uma referência com poder numérico teria que escolher **qual** base corrigir, e não existe dado que decida isso. **G1-b (§6, §10-T3) continua desarmado** e a migration **031 continua não-bloqueante**. O teto continua se aplicando ao **mínimo** e nunca ao compre-por; sob girar ele passa a morder **menos** (o mínimo é menor), o que é a direção certa — o teto existe pra pegar mínimo caro demais, não barato demais (§5.2).
-2. **`confianca` NÃO é rebaixada no modo girar.** Concordo com o River, e o argumento decisivo está na §11 desvio 4: `media` foi reservado no CHECK como nível do **mesmo eixo** — qualidade da referência de mercado. Usar `confianca` pra dizer "esta régua é menos calibrada" mistura dois eixos num campo de um eixo só, e o dano aparece na recalibração: o único campo da tabela com significado fechado deixaria de ter. A calibração mais fraca do modo girar é **propriedade do modo, não da linha** — e portanto **já está declarada pela coluna `modo`** (§12.6). Comunicá-la é trabalho de alerta e rótulo de amostra na UI (C11, C14), que é onde ela pertence.
+2. **`confianca` NÃO é rebaixada no modo girar.** Concordo com o River, e o argumento decisivo está na §11 desvio 4: `media` foi reservado no CHECK como nível do **mesmo eixo** — qualidade da referência de mercado. Usar `confianca` pra dizer "esta régua é menos calibrada" mistura dois eixos num campo de um eixo só, e o dano aparece na recalibração: o único campo da tabela com significado fechado deixaria de ter. A calibração mais fraca do modo girar é **propriedade do modo, não da linha** — e portanto **já está declarada pela coluna `modo`** (§12.6). Comunicá-la é trabalho de alerta e rótulo de amostra na UI (**C10** e **C17**), que é onde ela pertence.
 
 ### 12.10 O que esta emenda **não** decide
 
-- **D2 — ajuste de dias parados no modo girar.** É do Marcos, com a medição do `@alex-analyst`. O Risk #4 da 3.1c é o mesmo double-count que matou o ajuste de km, e ele se resolve pela medição (ii) — os 2,0 pontos remedidos **sobre a compra** —, não por argumento arquitetural. O que a emenda **impõe** é que, qualquer que seja a resposta, o ajuste continue operando em **espaço de razão** (§12.4, linha 574) e portanto seja base-agnóstico **por construção** — a constante `AJUSTES_APLICAM_NO_MODO_GIRAR` da C9 é chave liga/desliga, nunca uma segunda fórmula.
+- **D2 — ajuste de dias parados no modo girar.** É do Marcos, com a medição do `@alex-analyst`. O **Risco #3** da 3.1c é o mesmo double-count que matou o ajuste de km, e ele se resolve pela medição (ii) — os 2,0 pontos remedidos **sobre a compra** —, não por argumento arquitetural. O que a emenda **impõe** é que, qualquer que seja a resposta, o ajuste continue operando em **espaço de razão** (§12.4, linha 574) e portanto seja base-agnóstico **por construção** — a constante `AJUSTES_APLICAM_NO_MODO_GIRAR` da **C11** é chave liga/desliga, nunca uma segunda fórmula.
 - ~~**O valor de `REGUA_GIRAR_PCT`**~~ — **item extinto pela §12.1.** A constante não existe mais, e com ela sai do **T2** (§10) o item de recalibração próprio do modo girar. Resta o de `REGUA_MINIMO_PCT`, que já estava lá. **O que entra no lugar, e é mais barato de medir:** a pergunta do T2 pro modo girar deixa de ser "qual constante" e passa a ser **"a base está certa"** — mediana de `minimo_que_vendeu ÷ valor_compra_repasse` nos carros **com** gasto (hoje n=4, 105,6%) contra `REGUA_MINIMO_PCT`. Se as duas convergirem quando o n crescer, a escolha de base está validada; se divergirem, o modo girar precisa de constante própria **de novo** — e aí ela volta com dado, não com transposição.
 - **§7.3, `TETO_REF_AA_PCT`** — segue aberta, e segue sem tocar o schema.
 - **Escolha automática de modo** por dias parados/status/destino — OUT na 3.1c, e concordo: é a pergunta da D2 com a resposta escondida num default.
