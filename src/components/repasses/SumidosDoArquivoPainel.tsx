@@ -85,6 +85,10 @@ export type SumidosDoArquivoPainelProps = {
    * você clicar" e oferece "Descartar": sem esse sinal, o Marcos remove 6 carros,
    * se arrepende, clica Descartar e acredita ter desfeito — mas o DELETE já
    * levou junto `repasse_gastos` e `repasse_interessados` por CASCADE.
+   *
+   * `lead_interesses` é a exceção: FK ON DELETE SET NULL. Os interesses NÃO são
+   * apagados — viram órfãos (`repasse_id NULL`) e continuam visíveis em
+   * /leads/[id] pelo `modelo_snapshot`. Ver migration 033.
    */
   onGravou: (quantidade: number) => void;
 };

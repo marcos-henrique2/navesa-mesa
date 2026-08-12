@@ -11,12 +11,17 @@ import assert from "node:assert/strict";
 import {
   parsedParaItensRpc,
   criarInteresseOferta,
+  ehInteresseOrfao,
+  motivoAcaoIndisponivel,
+  referenciaCarro,
   updateInteresse,
   isOrigem,
   isTipoCarro,
+  LABEL_CARRO_REMOVIDO,
   ORIGEM_LABEL,
   ORIGEM_BADGE,
   TIPO_CARRO_LABEL,
+  type CarroDoInteresse,
   type ItemImportacaoRpc,
 } from "@/lib/leads/interesses";
 
@@ -92,6 +97,89 @@ describe("labels pt-BR", () => {
   });
 });
 
+describe("referenciaCarro — interesse órfão (migration 033)", () => {
+  const repasseVivo: CarroDoInteresse = {
+    tipo_carro: "repasse",
+    repasse_id: 42,
+    chassi: null,
+  };
+  // O CASO: o repasse foi deletado, a FK ON DELETE SET NULL zerou repasse_id e a
+  // linha sobreviveu. Antes da 033 o CHECK abortava o DELETE inteiro.
+  const orfao: CarroDoInteresse = {
+    tipo_carro: "repasse",
+    repasse_id: null,
+    chassi: null,
+  };
+  const estoque: CarroDoInteresse = {
+    tipo_carro: "estoque",
+    repasse_id: null,
+    chassi: "9BWZZZ377VT004251",
+  };
+
+  it("repasse vivo → aponta pro repasse", () => {
+    assert.deepEqual(referenciaCarro(repasseVivo), { tipo: "repasse", repasseId: 42 });
+  });
+
+  it("repasse com repasse_id NULL → 'removido' (não 'estoque', não crash)", () => {
+    assert.deepEqual(referenciaCarro(orfao), { tipo: "removido" });
+  });
+
+  it("estoque → aponta pelo chassi", () => {
+    assert.deepEqual(referenciaCarro(estoque), {
+      tipo: "estoque",
+      chassi: "9BWZZZ377VT004251",
+    });
+  });
+
+  it("estoque sem chassi (proibido pelo CHECK) degrada pra 'indefinido'", () => {
+    assert.deepEqual(
+      referenciaCarro({ tipo_carro: "estoque", repasse_id: null, chassi: null }),
+      { tipo: "indefinido" },
+    );
+  });
+
+  it("repasse_id = 0 é id válido, não órfão", () => {
+    assert.deepEqual(referenciaCarro({ ...repasseVivo, repasse_id: 0 }), {
+      tipo: "repasse",
+      repasseId: 0,
+    });
+  });
+
+  it("ehInteresseOrfao só é true pro repasse sem repasse_id", () => {
+    assert.ok(ehInteresseOrfao(orfao));
+    assert.ok(!ehInteresseOrfao(repasseVivo));
+    assert.ok(!ehInteresseOrfao(estoque));
+  });
+});
+
+describe("motivoAcaoIndisponivel — ação desabilitada precisa dizer por quê", () => {
+  it("órfão devolve motivo legível em pt-BR", () => {
+    const motivo = motivoAcaoIndisponivel({
+      tipo_carro: "repasse",
+      repasse_id: null,
+      chassi: null,
+    });
+    assert.ok(motivo != null);
+    assert.match(motivo, /removido do sistema/);
+  });
+
+  it("carro existente devolve null (ação habilitada)", () => {
+    assert.equal(
+      motivoAcaoIndisponivel({ tipo_carro: "repasse", repasse_id: 7, chassi: null }),
+      null,
+    );
+    assert.equal(
+      motivoAcaoIndisponivel({ tipo_carro: "estoque", repasse_id: null, chassi: "X" }),
+      null,
+    );
+  });
+
+  it("o rótulo do badge é pt-BR e não menciona jargão de banco", () => {
+    assert.equal(LABEL_CARRO_REMOVIDO, "Carro removido do sistema");
+    assert.ok(!/null|repasse_id/i.test(LABEL_CARRO_REMOVIDO));
+  });
+});
+
 describe("criarInteresseOferta — validação (pré-request)", () => {
   it("rejeita modelo_snapshot vazio", async () => {
     await assert.rejects(
@@ -106,6 +194,9 @@ describe("criarInteresseOferta — validação (pré-request)", () => {
     );
   });
 
+  // Regra do CLIENTE, mais estrita que o CHECK depois da 033 (que aceita
+  // repasse_id NULL). Criar órfão de propósito não é caso de uso — órfão só
+  // aparece como consequência de deletar um repasse.
   it("repasse exige repasse_id", async () => {
     await assert.rejects(
       () =>

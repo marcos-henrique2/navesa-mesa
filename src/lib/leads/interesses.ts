@@ -9,10 +9,16 @@
  *
  * Tudo client-side via o singleton getSupabase(). Erros propagam como Error.
  *
- * Constraints do banco:
- *   - repasse → repasse_id preenchido + chassi NULL
+ * Constraints do banco (migration 033 relaxou o ramo 'repasse'):
+ *   - repasse → chassi NULL; repasse_id preenchido OU NULL (carro removido)
  *   - estoque → chassi preenchido + repasse_id NULL
  *   - dedup unique (lead_id, repasse_id) e (lead_id, chassi)
+ *
+ * INTERESSE ÓRFÃO: a FK `repasse_id -> repasses(id)` é ON DELETE SET NULL. Quando
+ * o Marcos remove um repasse, os interesses daquele carro sobrevivem com
+ * `tipo_carro='repasse'` e `repasse_id NULL` — o histórico de quem procurou o
+ * carro é escasso demais pra ser apagado como efeito colateral. `modelo_snapshot`
+ * é NOT NULL e continua dizendo QUAL carro era. Ver `referenciaCarro`.
  */
 
 import { getSupabase } from "@/lib/data/supabase";
@@ -121,6 +127,64 @@ export function isTipoCarro(v: unknown): v is TipoCarro {
   return v === "repasse" || v === "estoque";
 }
 
+// ─── REFERÊNCIA DO CARRO (pura) ──────────────────────────────────────────────
+
+/** Campos que identificam o carro de um interesse — o mínimo pros helpers puros. */
+export type CarroDoInteresse = {
+  tipo_carro: TipoCarro;
+  repasse_id: number | null;
+  chassi: string | null;
+};
+
+/**
+ * Pra onde o interesse aponta. Discriminada e TOTAL: toda linha de
+ * `lead_interesses` cai em exatamente um caso, então a UI não precisa adivinhar
+ * o que fazer com um `repasse_id` nulo.
+ *
+ *   repasse    → o carro existe; dá pra abrir /repasses/{id}/interessados
+ *   estoque    → carro do estoque, identificado pelo chassi
+ *   removido   → ÓRFÃO: era repasse e o repasse foi deletado (migration 033).
+ *                Só resta `modelo_snapshot` — a linha continua valendo como
+ *                histórico ("fulano procurou esse carro"), mas nada que dependa
+ *                do carro existir pode ser oferecido.
+ *   indefinido → estoque sem chassi. O CHECK do banco proíbe; existe aqui só pra
+ *                a união ser total e a UI degradar pra "—" em vez de quebrar.
+ */
+export type ReferenciaCarro =
+  | { tipo: "repasse"; repasseId: number }
+  | { tipo: "estoque"; chassi: string }
+  | { tipo: "removido" }
+  | { tipo: "indefinido" };
+
+/** Classifica o carro do interesse. PURA — é o único lugar que lê `repasse_id` cru. */
+export function referenciaCarro(i: CarroDoInteresse): ReferenciaCarro {
+  if (i.tipo_carro === "repasse") {
+    return i.repasse_id != null
+      ? { tipo: "repasse", repasseId: i.repasse_id }
+      : { tipo: "removido" };
+  }
+  return i.chassi != null ? { tipo: "estoque", chassi: i.chassi } : { tipo: "indefinido" };
+}
+
+/** Atalho: o carro deste interesse saiu do sistema? */
+export function ehInteresseOrfao(i: CarroDoInteresse): boolean {
+  return referenciaCarro(i).tipo === "removido";
+}
+
+/** Rótulo pt-BR do órfão — mesma frase nas duas telas. */
+export const LABEL_CARRO_REMOVIDO = "Carro removido do sistema";
+
+/**
+ * Por que uma ação que depende do carro está desabilitada. `null` = está tudo
+ * certo, pode habilitar. Vira o `title` do botão: desabilitar sem dizer o motivo
+ * faz o Marcos achar que a tela bugou.
+ */
+export function motivoAcaoIndisponivel(i: CarroDoInteresse): string | null {
+  return ehInteresseOrfao(i)
+    ? "Esse carro foi removido do sistema — o interesse fica no histórico, mas não dá pra abrir o repasse."
+    : null;
+}
+
 // ─── Normalização ────────────────────────────────────────────────────────────
 
 /** Normaliza INTEGER do Supabase (pode vir como string) pra number ≥ 0. */
@@ -221,6 +285,11 @@ export type OutroInteresseRepasse = {
  *
  * Só interesses de repasse (repasse_id não-nulo); estoque não entra. Retorna
  * Map<lead_id, OutroInteresseRepasse[]>. Leads sem outros interesses não aparecem.
+ *
+ * ÓRFÃOS FICAM DE FORA de propósito: o badge é uma alavanca de venda ("esse
+ * lojista também quer estes carros — ofereça"). Carro que não existe mais não é
+ * oferta possível; listá-lo só inflaria o número. O histórico do órfão continua
+ * inteiro em /leads/[id], que é onde ele serve pra alguma coisa.
  */
 export async function listOutrosInteressesDeLeads(
   leadIds: ReadonlyArray<number>,
@@ -267,6 +336,10 @@ export type CriarInteresseOfertaInput = {
  * Valida a constraint do banco no cliente (defesa em profundidade): repasse →
  * repasse_id + chassi null; estoque → chassi + repasse_id null. O dedup unique
  * do banco impede oferta duplicada do mesmo carro pro mesmo lead.
+ *
+ * Exigir `repasse_id` aqui é MAIS estrito que o CHECK depois da 033, e é
+ * intencional: órfão é resultado de deletar um repasse, nunca algo que se cria.
+ * Ofertar um carro que não existe não é caso de uso.
  */
 export async function criarInteresseOferta(
   input: CriarInteresseOfertaInput,
