@@ -15,6 +15,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  AJUSTES_APLICAM_NO_MODO_GIRAR,
   MODO_PADRAO,
   REGUA_COMPRE_POR_PCT,
   REGUA_PADRAO,
@@ -804,6 +805,39 @@ describe("3.1c C18 — a identidade da diferença (a trava contra uma 2ª consta
     assert.ok(
       exigirSugestao(recuperar(comGasto)).minimoSugerido >
         exigirSugestao(girar(comGasto)).minimoSugerido,
+    );
+  });
+});
+
+describe("3.1c C11/D2 — o ajuste de dias parados APLICA no girar (decidido por dado)", () => {
+  // ⚠️ Isto NÃO é "ficou como estava". D2 foi respondida com medição em
+  // 2026-08-12 (n=62): a diferença entre ≤30 e >30 dias não encolheu ao trocar o
+  // denominador de custo (2,72 pt) pra compra (3,03 pt) — logo "parado" e "base
+  // da compra" são sinais INDEPENDENTES e não há double-count.
+  //
+  // Se a medição virar com n maior, o conserto é FLIPAR
+  // `AJUSTES_APLICAM_NO_MODO_GIRAR`. Uma segunda fórmula viola a ADR-003 §12.10:
+  // o ajuste opera em espaço de razão e é base-agnóstico por construção.
+  it("a chave está LIGADA e o ajuste morde no girar", () => {
+    assert.equal(AJUSTES_APLICAM_NO_MODO_GIRAR, true);
+    const parado = exigirSugestao(girar({ ...PRD2189, diasNoRepasse: 90 }));
+    assert.deepEqual(
+      parado.ajustes.map((a) => a.codigo),
+      ["dias_parado"],
+    );
+    // 90 dias ⇒ (90−30)/30 × 1pt = −2pt ⇒ 1,066 − 0,02 = 1,046 sobre a COMPRA.
+    assert.equal(parado.minimoSugerido, 83_680); // 80.000 × 1,046
+  });
+
+  it("o ajuste é o MESMO em pontos de razão nos dois modos (base-agnóstico)", () => {
+    const g = exigirSugestao(girar({ ...PRD2189, diasNoRepasse: 90 }));
+    const r = exigirSugestao(recuperar({ ...PRD2189, diasNoRepasse: 90 }));
+    assert.deepEqual(g.ajustes, r.ajustes);
+    // E a identidade da diferença continua valendo COM ajuste aplicado — prova
+    // de que o ajuste vive em razão e não vira uma segunda fórmula por modo.
+    assert.equal(
+      cent(r.minimoSugerido - g.minimoSugerido),
+      cent((REGUA_PADRAO.REGUA_MINIMO_PCT - 0.02) * r.custo.gastosTotal),
     );
   });
 });

@@ -547,10 +547,15 @@ function fipeAjustadaPorKm(
 /**
  * D2 (C11 da 3.1c) — **chave liga/desliga**, não constante de régua.
  *
+ * `true` **por medição, não por inércia**: a diferença entre carros ≤30 e >30
+ * dias NÃO encolheu ao trocar o denominador de custo (2,72 pt) pra compra
+ * (3,03 pt), n=62, 2026-08-12. "Parado" e "base da compra" são sinais
+ * independentes ⇒ não há double-count e o ajuste vale nos dois modos.
+ * O bloco em `calcularAjustes` tem a tabela e o critério.
+ *
  * Fica FORA de `ReguaPrecoRepasse` de propósito: a C2 proíbe chave nova em
  * `REGUA_PADRAO`/`parametros_regua`, e isto não é um parâmetro numérico da
- * régua — é a resposta binária de uma decisão em aberto. Ver o bloco de
- * ambiguidade em `calcularAjustes`.
+ * régua — é a resposta binária de uma pergunta de desenho.
  */
 export const AJUSTES_APLICAM_NO_MODO_GIRAR = true;
 
@@ -592,24 +597,32 @@ function calcularAjustes(
   params: ReguaPrecoRepasse,
   modo: ModoPreco,
 ): AjusteRegua[] {
-  // ┌─ ⚠️ D2 EM ABERTO — chave LIGA/DESLIGA, jamais uma segunda fórmula ────────┐
+  // ┌─ ✅ D2 RESPONDIDA COM DADO (2026-08-12, n=62) — NÃO é adiamento ──────────┐
   // │ Pergunta (C11 da 3.1c): o ajuste de DIAS PARADOS deve aplicar no modo     │
-  // │ girar? O Risco #3 é o mesmo double-count que matou o ajuste de km — o     │
-  // │ modo girar JÁ É a resposta pra carro parado ("precisamos vender esse      │
+  // │ girar? O Risco #3 temia o mesmo double-count que matou o ajuste de km —   │
+  // │ o modo girar JÁ É a resposta pra carro parado ("precisamos vender esse    │
   // │ carro rápido, porque está parado há muito tempo" — palavras do Marcos), e │
-  // │ o ajuste desconta DE NOVO pelo mesmo motivo.                              │
+  // │ o ajuste descontaria DE NOVO pelo mesmo motivo.                           │
   // │                                                                           │
-  // │ NÃO DECIDIDO. É do Marcos, com a medição do @alex-analyst: mediana de     │
-  // │ `minimo_que_vendeu ÷ valor_compra_repasse` quebrada por dias parados      │
-  // │ (≤30 × >30). Se os 2,0 pontos do Risk #14 da 3.1 encolherem ao trocar o   │
-  // │ denominador pra COMPRA, "pedir sobre a compra" já É o desconto de carro   │
-  // │ parado e aplicar o ajuste por cima é double-count.                        │
+  // │ Medição do @alex-analyst, com o critério declarado ANTES de rodar (pra    │
+  // │ não virar leitura post-hoc): reproduzir a tabela do Risk #14 da 3.1       │
+  // │ trocando o denominador de CUSTO pra COMPRA. Se os pontos ENCOLHESSEM      │
+  // │ materialmente, "pedir sobre a compra" já seria o desconto de carro parado │
+  // │ e aplicar o ajuste por cima seria double-count.                           │
   // │                                                                           │
-  // │ Até lá o comportamento fica COMO ESTÁ (ajustes aplicam nos dois modos) —  │
-  // │ mesmo molde do bloco de `qtde_anuncios` abaixo. A ADR-003 §12.10 IMPÕE,   │
-  // │ qualquer que seja a resposta: o ajuste opera em ESPAÇO DE RAZÃO e é       │
-  // │ base-agnóstico por construção. Esta constante é chave liga/desliga —      │
-  // │ quem transformar isto numa segunda fórmula viola a §12.10.                │
+  // │        grupo          n     mín÷custo    mín÷compra                       │
+  // │        ≤ 30 dias     41       1,0785       1,0816                         │
+  // │        > 30 dias     21       1,0513       1,0513                         │
+  // │        diferença              2,72 pt      3,03 pt                        │
+  // │                                                                           │
+  // │ A diferença NÃO encolheu — cresceu de leve. Logo NÃO há double-count:     │
+  // │ "parado" e "base da compra" são sinais INDEPENDENTES, e o ajuste          │
+  // │ sobrevive nos dois modos. `AJUSTES_APLICAM_NO_MODO_GIRAR` fica `true`.    │
+  // │                                                                           │
+  // │ A chave permanece no código de propósito: a ADR-003 §12.10 IMPÕE que o    │
+  // │ ajuste opere em ESPAÇO DE RAZÃO e seja base-agnóstico por construção.     │
+  // │ Se a medição virar com n maior, o conserto é FLIPAR A CHAVE — quem        │
+  // │ transformar isto numa segunda fórmula viola a §12.10.                     │
   // └───────────────────────────────────────────────────────────────────────────┘
   if (modo === "girar_rapido" && !AJUSTES_APLICAM_NO_MODO_GIRAR) return [];
 

@@ -34,8 +34,8 @@
 > **Convenção de numeração:** ACs desta fatia são **C1…C18**, pra não colidirem com as AC1–AC31
 > da 3.1. Referências cruzadas aparecem como "AC*nn* da 3.1".
 >
-> **Estado:** 🟡 pronta pro `@pax-po` revalidar. Uma decisão segue aberta (**D2**) e bloqueia
-> **só a C11**.
+> **Estado:** 🟢 GO 8/10 do `@pax-po`. **Nenhuma decisão em aberto** — D1, D3 e **D2**
+> (2026-08-12, com medição) estão fechadas.
 
 ---
 
@@ -45,7 +45,28 @@
 |---|---|---|
 | **D1** | Piso do modo girar | ✅ **DECIDIDA — `valor_compra_repasse`** (Marcos, 2026-08-12) |
 | **D3** | Uma constante ou duas | ✅ **DECIDIDA — régua ÚNICA `REGUA_MINIMO_PCT = 1.066` nas duas bases** (Marcos, 2026-08-12) |
-| **D2** | Ajuste de dias parados no modo girar | ⏳ **ABERTA** — do Marcos, com medição do `@alex-analyst`. Bloqueia só a **C11** |
+| **D2** | Ajuste de dias parados no modo girar | ✅ **RESPONDIDA COM DADO — o ajuste APLICA** (medição do `@alex-analyst`, 2026-08-12, n=62). Não é adiamento |
+
+### ✅ D2 — o ajuste de dias parados APLICA no modo girar
+
+Medição do `@alex-analyst` (2026-08-12, **n=62**), com o **critério declarado antes de rodar**,
+conforme a medição (ii) do Risco #3: reproduzir a tabela do Risk #14 da 3.1 trocando o denominador
+de **custo** pra **compra**. Se os pontos **encolhessem** materialmente, "pedir sobre a compra" já
+seria o desconto de carro parado e aplicar o ajuste por cima seria **double-count**.
+
+| Grupo | n | mínimo ÷ custo | mínimo ÷ compra |
+|---|---|---|---|
+| ≤ 30 dias | 41 | 1,0785 | 1,0816 |
+| **> 30 dias** | 21 | 1,0513 | 1,0513 |
+| **Diferença** | | **2,72 pt** | **3,03 pt** |
+
+**A diferença não encolheu — cresceu de leve.** Logo **não há double-count**: "parado" e "base da
+compra" são sinais **independentes**, e o ajuste sobrevive nos dois modos.
+`AJUSTES_APLICAM_NO_MODO_GIRAR = true`.
+
+A chave **permanece no código** de propósito. Se a medição virar com n maior, o conserto é **flipar
+a chave** — nunca escrever uma segunda fórmula: a ADR-003 §12.10 impõe que o ajuste opere em
+**espaço de razão** e seja base-agnóstico por construção.
 
 ### ✅ D1 — piso = `valor_compra_repasse`
 
@@ -217,7 +238,7 @@ os dois mudaram de número:
     > **Desempate dos R$ 20 — prevalece esta AC.** A ADR-003 §12.1/§12.8 cita **R$ 1.570** porque calcula sobre o par **sugerido**; a C10 manda calcular sobre o par **aplicado** (R$ 1.550), que é o preço que vai de fato ao portal e portanto o dinheiro de que o Marcos realmente abre mão. **Prevalece a C10.** Sem esta frase, o dev que abrir a §12.8 primeiro hard-coda 1.570 — que é o literal que o parágrafo acima proíbe.
 
     E o **enquadramento** é o da §12.8: sob o modo girar, "abaixo do custo" **não é alerta — é a descrição do modo**; o vermelho fica reservado pro que ele **não** escolheu (C16).
-11. **C11** ⏳ *(bloqueada por D2)* — GIVEN um carro parado há mais de `DIAS_PARADO_LIMIAR` WHEN o modo **girar** calcula THEN o ajuste de dias parados **[aplica / não aplica]** conforme D2. Enquanto D2 estiver aberta, o comportamento fica atrás da constante nomeada `AJUSTES_APLICAM_NO_MODO_GIRAR`, com o bloco de ambiguidade em `calcularAjustes` no molde do bloco de `qtde_anuncios`. **Restrição imposta pela ADR-003 §12.10, qualquer que seja a resposta:** o ajuste opera em **espaço de razão** e é **base-agnóstico por construção** — a constante é chave **liga/desliga**, jamais uma segunda fórmula.
+11. **C11** ✅ *(D2 respondida — o ajuste **APLICA**)* — GIVEN um carro parado há mais de `DIAS_PARADO_LIMIAR` WHEN o modo **girar** calcula THEN o ajuste de dias parados **aplica**, com os **mesmos pontos de razão** do modo recuperar. Base da decisão: a diferença ≤30 × >30 **não encolheu** ao trocar o denominador pra compra (2,72 pt → 3,03 pt, n=62, 2026-08-12) ⇒ sinais **independentes**, sem double-count. A constante nomeada `AJUSTES_APLICAM_NO_MODO_GIRAR` **permanece no código**, agora com a tabela da medição e o critério no lugar do bloco de ambiguidade — pra que uma virada futura seja **flipar a chave**, não reabrir a pergunta. **Restrição da ADR-003 §12.10, que a resposta não revoga:** o ajuste opera em **espaço de razão** e é **base-agnóstico por construção** — chave **liga/desliga**, jamais uma segunda fórmula. *(Testado: os `ajustes` são `deepEqual` entre modos, e a identidade da diferença continua fechando com a régua já ajustada.)*
 
 ### B. Snapshot e schema
 
@@ -314,7 +335,7 @@ os dois mudaram de número:
 |---|---|---|
 | 🟠 **Bloqueante — entregue, NÃO aplicada** | **Migration 032** — `supabase/migrations/032_repasse_precificacao_modo.sql`, esperando o Marcos aplicar. Coluna `modo TEXT NOT NULL` sem DEFAULT, `rep_prec_modo_chk` (2 valores), **`rep_prec_base_do_modo_positiva_chk` condicional ao modo** (barra compra 0 no girar, deixa passar no recuperar — C6) e COMMENT de `bateu_piso` corrigido | `@dara-data-engineer` ✅ |
 | 🟡 **Bloqueante — revalidação** | A story muda o contrato do motor, ganha migration e ganha um leitor da 030 | `@pax-po` |
-| 🟡 **Bloqueia só a C11** | **D2** — ajuste de dias parados no modo girar | **Marcos**, com a medição do `@alex-analyst` (Risk #3) |
+| 🟢 **Resolvida** | **D2** — ajuste de dias parados no modo girar: **aplica**. Medição de 2026-08-12 (n=62) fechou o Risk #3 — a diferença não encolheu sobre a compra (2,72 pt → 3,03 pt), logo sinais independentes | `@alex-analyst` ✅ |
 | 🟢 **Resolvida** | **Emenda ADR-003 §12** — invariante em função de `base(modo)`, os 5 sítios, a guarda que falta, a decisão da coluna `modo`, as três origens de "abaixo do custo" | `@aria-architect` — commit `22a2d0d` |
 | 🟢 **Resolvida** | **D1** (piso = compra) e **D3** (régua única) | Marcos, 2026-08-12 |
 | 🟢 **Pronta** | Story **3.1a** implementada e revisada; migration **030 aplicada** (`20260812122106`), tabela com **zero linhas** | — |
@@ -383,7 +404,7 @@ da 030 e a que exige a query de lista. Mas com o **preço declarado**: sem ela, 
 **ruído permanente numa lista hoje limpa** (Risk #4). Por isso corta **dentro do mesmo sprint**, não
 pra depois.
 
-**C11** sai inteira aguardando D2. O que **não** dá pra cortar é a **C12/C19** — snapshot que não
+**C11** entrou (D2 respondida com dado em 2026-08-12). O que **não** dá pra cortar é a **C12/C19** — snapshot que não
 diz qual régua produziu o número mistura duas populações e destrói o valor de calibração da 030
 **retroativamente** — nem a **C6**, que é bug com dinheiro na tela.
 
@@ -393,7 +414,7 @@ diz qual régua produziu o número mistura duas populações e destrói o valor 
 
 - [ ] **Migration 032 aplicada** (`supabase/migrations/032_repasse_precificacao_modo.sql`, já escrita e revisada — falta o Marcos rodar), com a verificação pós-aplicação do próprio arquivo executada. ⚠️ **Aplicar enquanto a tabela ainda tem zero linhas** — é a janela em que `NOT NULL` sem `DEFAULT` sai de graça (ADR-003 §12.6)
 - [ ] **`rep_prec_base_do_modo_positiva_chk` nunca dispara em teste manual** — se disparar, o bug é do motor, não da constraint (C6)
-- [ ] **D2 respondida** — ou explicitamente adiada, com `AJUSTES_APLICAM_NO_MODO_GIRAR` e o bloco de ambiguidade no código (C11)
+- [x] **D2 respondida COM DADO** (2026-08-12, n=62 — não adiada): o ajuste **aplica** no girar, `AJUSTES_APLICAM_NO_MODO_GIRAR = true`, com a tabela da medição e o critério registrados no código e na story (C11)
 - [ ] Código + testes verdes (`node --import tsx --test tests/*.test.ts`, suíte inteira)
 - [ ] Typecheck (`tsc`) + lint clean, zero `any`, imports `@/`
 - [ ] **Não-regressão do modo recuperar comprovada** — casos da 3.1a passam sem edição, exceto o da invariante, reescrito conforme ADR-003 §12.3 **com o comentário obrigatório** apontando pra §12.2 e pra decisão de 2026-08-12 (C1, C18)
