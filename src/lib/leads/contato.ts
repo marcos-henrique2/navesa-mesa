@@ -19,12 +19,19 @@
  * O escopo por `repasse_id` é o que garante o isolamento: contatar um lojista
  * sobre 1 carro não pode mexer nos outros 7 carros que ele também quer.
  *
- * Caminho secundário (carro de ESTOQUE, sem repasse_id): a RPC não consegue
- * isolar — sem `p_repasse_id` ela marca TODOS os interesses sem data_contato do
- * lead, exatamente o que não se quer. Então esse caso cai num UPDATE direto pelo
- * `id` do interesse, que é isolado por construção. Limitação assumida e
- * documentada: esse caminho NÃO promove `leads.status_relacionamento` (só a RPC
- * faz isso) e não é atômico.
+ * Caminho secundário (SEM repasse_id): a RPC não consegue isolar — sem
+ * `p_repasse_id` ela marca TODOS os interesses sem data_contato do lead,
+ * exatamente o que não se quer. Então esse caso cai num UPDATE direto pelo `id`
+ * do interesse, que é isolado por construção. Limitação assumida e documentada:
+ * esse caminho NÃO promove `leads.status_relacionamento` (só a RPC faz isso) e
+ * não é atômico.
+ *
+ * Caem aqui DOIS casos, não um: carro de ESTOQUE (nunca teve repasse_id) e
+ * interesse ÓRFÃO — era repasse e o repasse foi deletado, deixando `repasse_id`
+ * NULL (migration 033). O órfão vem de graça: sem id de repasse pra escopar, o
+ * UPDATE pelo `id` do interesse é justamente a rota certa. Passar o repasse_id
+ * nulo pra RPC é que seria o erro — ela alargaria o escopo pros outros carros
+ * do mesmo lojista.
  *
  * Desfazer: reverte as DUAS coisas que a RPC fez — o interesse (`data_contato` +
  * `status_followup`) e, quando ela informou `status_promovido`, o
@@ -62,7 +69,10 @@ export type RegistrarContatoInput = {
   leadId: number;
   /** id da linha em `lead_interesses` — usado no caminho de estoque. */
   interesseId: number;
-  /** Carro de repasse → RPC isolada. `null` (estoque) → UPDATE direto. */
+  /**
+   * Carro de repasse existente → RPC isolada. `null` → UPDATE direto pelo id do
+   * interesse: vale pra estoque E pra interesse órfão (repasse deletado).
+   */
   repasseId: number | null;
   /** Status atual do interesse (só o caminho de estoque precisa). */
   statusAtual: StatusFollowup;
@@ -244,6 +254,23 @@ export function paramsMarcarContatado(
 }
 
 /**
+ * Esta chamada pode usar a RPC isolada? PURA — é o desvio que decide o caminho, e
+ * ele passou a ter consequência depois da 033.
+ *
+ * Só com um `repasse_id` de verdade a RPC consegue escopar em
+ * `WHERE lead_id = X AND repasse_id = Y`. Sem ele (estoque, ou interesse órfão de
+ * repasse deletado) o UPDATE direto pelo `id` do interesse é a rota segura: mandar
+ * um repasse_id ausente pra RPC cairia no fallback dela, que marca TODOS os
+ * interesses pendentes do lead — os outros 7 carros do lojista junto.
+ *
+ * Type predicate de propósito: quem passa por aqui entrega `number` pro
+ * `paramsMarcarContatado` sem cast.
+ */
+export function usaRpcIsolada(repasseId: number | null): repasseId is number {
+  return repasseId != null;
+}
+
+/**
  * Registra o contato do lead sobre UM carro específico.
  *
  * Não abre o WhatsApp e não mexe em UI — quem chama já abriu a aba (síncrono,
@@ -261,8 +288,8 @@ export async function registrarContatoLead(
 
   const hoje = hojeLocal();
 
-  // ── Estoque (sem repasse_id): UPDATE direto, isolado pelo id do interesse ──
-  if (repasseId == null) {
+  // ── Sem repasse_id (estoque OU órfão): UPDATE direto, isolado pelo id ─────
+  if (!usaRpcIsolada(repasseId)) {
     return comRetryUnico(async () => {
       const atualizado = await updateInteresse(interesseId, {
         data_contato: hoje,

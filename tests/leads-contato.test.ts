@@ -40,6 +40,7 @@ import {
   podeRebaixarLead,
   reverterContatoOtimista,
   reverterPromocaoLead,
+  usaRpcIsolada,
   type InteresseContatavel,
   type LeadPromovivel,
 } from "@/lib/leads/contato";
@@ -448,5 +449,25 @@ describe("paramsMarcarContatado — o isolamento que vive no WHERE da RPC", () =
       carros.map((p) => p.p_repasse_id),
       [101, 102, 103],
     );
+  });
+});
+
+describe("usaRpcIsolada — roteamento RPC × UPDATE direto (órfão da migration 033)", () => {
+  it("repasse existente vai pra RPC isolada", () => {
+    assert.ok(usaRpcIsolada(42));
+  });
+
+  it("O CASO: interesse órfão (repasse deletado, repasse_id NULL) NÃO vai pra RPC", () => {
+    // Se fosse, a RPC não teria como escopar o UPDATE e cairia no fallback que
+    // marca todos os interesses pendentes do lead — os outros 7 carros junto.
+    assert.ok(!usaRpcIsolada(null));
+  });
+
+  it("estoque (também sem repasse_id) segue pelo mesmo UPDATE direto", () => {
+    assert.ok(!usaRpcIsolada(null));
+  });
+
+  it("repasse_id = 0 é id válido — não pode ser confundido com ausência", () => {
+    assert.ok(usaRpcIsolada(0));
   });
 });

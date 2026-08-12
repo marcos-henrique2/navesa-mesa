@@ -385,6 +385,13 @@ export function InteressadosCRM({ repasseId }: { repasseId: number }) {
 
   const ano = repasse?.ano_modelo ?? repasse?.ano_fabricacao ?? null;
 
+  // Repasse deletado com a tela aberta (ou URL antiga no histórico do navegador).
+  // `getRepasse` devolve null e a lista vem vazia — sem esse estado a tela dizia
+  // "Nenhum interessado ainda, clique em Importar", e importar violaria a FK
+  // `lead_interesses.repasse_id`. Os interesses que existiam não sumiram: viraram
+  // órfãos e continuam em /leads/[id] (migration 033).
+  const repasseRemovido = repasse == null;
+
   return (
     <div className="space-y-6">
       {/* Cabeçalho: voltar + dados do carro */}
@@ -396,7 +403,7 @@ export function InteressadosCRM({ repasseId }: { repasseId: number }) {
           >
             <ArrowLeft className="h-3.5 w-3.5" /> Repasses
           </Link>
-          {repasse && (
+          {repasse ? (
             <div>
               <h2 className="text-base font-bold text-[var(--text-strong)]">
                 {repasse.modelo}
@@ -407,12 +414,27 @@ export function InteressadosCRM({ repasseId }: { repasseId: number }) {
                 {repasse.km != null ? ` · ${formatInt(repasse.km)} km` : ""}
               </p>
             </div>
+          ) : (
+            <div>
+              <h2 className="text-base font-bold text-[var(--text-strong)]">
+                Repasse #{repasseId}
+              </h2>
+              <p className="text-xs text-amber-700 dark:text-amber-400">
+                Carro removido do sistema
+              </p>
+            </div>
           )}
         </div>
         <button
           type="button"
           onClick={() => setImportOpen(true)}
-          className="inline-flex items-center gap-2 rounded-md bg-[var(--brand-700)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--brand-800)]"
+          disabled={repasseRemovido}
+          title={
+            repasseRemovido
+              ? "Esse carro foi removido do sistema — não dá pra importar interessados pra ele."
+              : "Colar a lista de quem visualizou o anúncio"
+          }
+          className="inline-flex items-center gap-2 rounded-md bg-[var(--brand-700)] px-3 py-1.5 text-sm font-medium text-white hover:bg-[var(--brand-800)] disabled:cursor-not-allowed disabled:opacity-40"
         >
           <UserPlus className="h-4 w-4" /> Importar do Auto Avaliar
         </button>
@@ -460,8 +482,11 @@ export function InteressadosCRM({ repasseId }: { repasseId: number }) {
         <div className="rounded-lg border border-dashed border-[var(--border-base)] p-10 text-center">
           <Users className="mx-auto h-8 w-8 text-[var(--text-subtle)]" />
           <p className="mt-2 text-sm text-[var(--text-muted)]">
-            Nenhum interessado ainda. Clique em “Importar do Auto Avaliar” pra colar a lista de
-            quem visualizou o anúncio.
+            {repasseRemovido
+              ? "Esse carro foi removido do sistema. Quem tinha demonstrado interesse continua no " +
+                "histórico de cada lead — abra o lead em /leads pra ver."
+              : "Nenhum interessado ainda. Clique em “Importar do Auto Avaliar” pra colar a lista de " +
+                "quem visualizou o anúncio."}
           </p>
         </div>
       ) : (
