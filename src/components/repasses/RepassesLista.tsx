@@ -40,6 +40,7 @@ import {
   Search,
   Users,
   BarChart3,
+  Calculator,
 } from "lucide-react";
 import {
   deleteRepasse,
@@ -1129,6 +1130,14 @@ function TabelaRepasses({
                     >
                       <FileText className="h-3 w-3" /> Anúncio
                     </button>
+                    {/* AC30 — deep-link pra aba de precificação com o carro já carregado. */}
+                    <Link
+                      href={`/precificar?placa=${encodeURIComponent(r.placa)}`}
+                      className="inline-flex items-center gap-1 rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-2 py-0.5 text-[11px] font-medium text-[var(--text-body)] hover:bg-[var(--bg-muted)]"
+                      title="Sugerir mínimo e compre por sobre o custo real"
+                    >
+                      <Calculator className="h-3 w-3" /> Precificar
+                    </Link>
                     <Link
                       href={`/repasses/${r.id}/interessados`}
                       className="inline-flex items-center gap-1 rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-2 py-0.5 text-[11px] font-medium text-[var(--text-body)] hover:bg-[var(--bg-muted)]"

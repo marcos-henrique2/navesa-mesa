@@ -18,6 +18,10 @@ import {
   classificarBadge,
   type CorMargem,
 } from "./margem-repasse";
+import {
+  classificarOrigemAbaixoDoCusto,
+  type SnapshotRecente,
+} from "@/lib/pricing/origem-abaixo-do-custo";
 
 /** Envelhecimento: carro parado há mais de 60 dias. */
 export const DIAS_ENVELHECIMENTO = 60;
@@ -192,7 +196,17 @@ export function filtrarAnuncio(
 // ─── Alertas (Story 1.3) — só in-app ─────────────────────────────────────────
 
 export type Alertas = {
-  /** Prejuízo latente: valor_minimo < custo_real (carros incompletos NÃO entram). */
+  /**
+   * Prejuízo latente: `valor_minimo < custo_real` (carros incompletos NÃO entram).
+   *
+   * ⚠️ **C16 — carro GIRADO DELIBERADAMENTE não entra aqui** (story 3.1c,
+   * ADR-003 §12.8). O predicado é o mesmo, mas a origem não: sob o modo
+   * `girar_rapido` ficar abaixo do custo é a **descrição do modo**, não uma
+   * anomalia — acima de 6,6% de gastos acontece por construção. Sem essa
+   * separação, a partir do primeiro carro girado a caixa vermelha lista a placa
+   * dele como prejuízo **para sempre**, e alerta que toca sempre deixa de ser
+   * lido (a mesma razão que matou o alerta de piso na ADR-003 §5).
+   */
   prejuizoLatente: CarroAnuncioItem[];
   /** Os piores: valor_compre_por < custo_real (anúncio já sai no prejuízo). */
   prejuizoNoAnuncio: CarroAnuncioItem[];
@@ -200,7 +214,17 @@ export type Alertas = {
   envelhecimento: CarroAnuncioItem[];
 };
 
-export function calcularAlertas(items: ReadonlyArray<CarroAnuncioItem>): Alertas {
+/**
+ * @param snapshots C16 — último snapshot por `repasse_id`
+ * (`buscarUltimosSnapshotsPrecificacao`). **Omitir mantém o comportamento
+ * anterior byte a byte**: sem registro, a origem é `fora_do_sistema` e o carro
+ * segue na caixa vermelha. É o que faz esta mudança degradar com segurança
+ * quando a leitura da 030 falha.
+ */
+export function calcularAlertas(
+  items: ReadonlyArray<CarroAnuncioItem>,
+  snapshots?: ReadonlyMap<number, SnapshotRecente>,
+): Alertas {
   const prejuizoLatente: CarroAnuncioItem[] = [];
   const prejuizoNoAnuncio: CarroAnuncioItem[] = [];
   const envelhecimento: CarroAnuncioItem[] = [];
@@ -208,9 +232,20 @@ export function calcularAlertas(items: ReadonlyArray<CarroAnuncioItem>): Alertas
   for (const it of items) {
     if (!it.incompleto && it.custoReal != null) {
       if (it.valorMinimo != null && it.valorMinimo < it.custoReal) {
-        prejuizoLatente.push(it);
+        // Só o `girar_rapido` deliberado sai. `deriva` (gasto tardio) e
+        // `fora_do_sistema` (import/edição inline) continuam vermelhos — o
+        // primeiro é justamente o caso que o Risk #8 da 3.1 mirava.
+        const origem = classificarOrigemAbaixoDoCusto(
+          snapshots?.get(it.id) ?? null,
+          it.valorMinimo,
+          it.custoReal,
+        );
+        if (origem !== "decisao") prejuizoLatente.push(it);
       }
       if (it.valorComprePor != null && it.valorComprePor < it.custoReal) {
+        // ⚠️ `prejuizoNoAnuncio` fica INTACTO de propósito. O gatilho dele é
+        // `compre_por < custo_real` (g > 11,97%) — caso mais raro, e o Marcos
+        // decidiu em 2026-08-12 NÃO ampliar a C16 pra ele nesta fatia.
         prejuizoNoAnuncio.push(it);
       }
     }

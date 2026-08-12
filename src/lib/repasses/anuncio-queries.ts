@@ -19,6 +19,8 @@ import {
   type CarroAnuncioInput,
   type CarroAnuncioItem,
 } from "@/lib/repasses/relatorio-anuncio";
+import { buscarUltimosSnapshotsPrecificacao } from "@/lib/repasses/precificar-queries";
+import type { SnapshotRecente } from "@/lib/pricing/origem-abaixo-do-custo";
 
 /** Row cru dos campos que o relatório precisa. NUMERIC pode vir como string. */
 type AnuncioRow = {
@@ -50,11 +52,24 @@ function num(v: number | string | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+export type RelatorioAnuncioCarregado = {
+  itens: CarroAnuncioItem[];
+  /**
+   * C16 — último snapshot de decisão por `repasse_id`.
+   *
+   * **Vazio quando a leitura falha**, de propósito: o relatório degrada pro
+   * comportamento anterior (todo mundo vermelho) em vez de quebrar. A 030 é
+   * informação de desambiguação, não pilar do relatório.
+   */
+  snapshots: Map<number, SnapshotRecente>;
+};
+
 /**
  * Carrega e monta o relatório dos carros em anúncio (status='subido').
- * Gastos e interessados vêm em queries paralelas e são agrupados por repasse_id.
+ * Gastos, interessados e snapshots de decisão vêm em queries paralelas e são
+ * agrupados por repasse_id.
  */
-export async function listCarrosEmAnuncio(): Promise<CarroAnuncioItem[]> {
+export async function listCarrosEmAnuncio(): Promise<RelatorioAnuncioCarregado> {
   const sb = getSupabase();
 
   const { data: rows, error } = await sb
@@ -69,9 +84,14 @@ export async function listCarrosEmAnuncio(): Promise<CarroAnuncioItem[]> {
   const anuncios = (rows ?? []) as AnuncioRow[];
   const ids = anuncios.map((r) => r.id);
 
-  const [gastosPorId, interessadosPorId] = await Promise.all([
+  const [gastosPorId, interessadosPorId, snapshots] = await Promise.all([
     listGastosPorRepasse(ids),
     carregarInteressadosPorRepasse(ids),
+    // C16 — não pode derrubar o relatório: sem os registros de decisão, a caixa
+    // de prejuízo latente volta a listar todo mundo, que é o comportamento de
+    // antes desta fatia. Perder a desambiguação é degradação; perder o
+    // relatório inteiro seria regressão.
+    buscarUltimosSnapshotsPrecificacao(ids).catch(() => new Map<number, SnapshotRecente>()),
   ]);
 
   const inputs: CarroAnuncioInput[] = anuncios.map((r) => ({
@@ -97,7 +117,7 @@ export async function listCarrosEmAnuncio(): Promise<CarroAnuncioItem[]> {
   }));
 
   // `hoje` LOCAL — o cálculo de dias é sobre o calendário do usuário.
-  return montarRelatorioAnuncio(inputs, hojeLocal());
+  return { itens: montarRelatorioAnuncio(inputs, hojeLocal()), snapshots };
 }
 
 // ─── Dados de margem de UM repasse (painel de negociação) ────────────────────

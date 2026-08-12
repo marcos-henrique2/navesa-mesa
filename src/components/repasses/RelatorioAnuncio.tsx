@@ -30,6 +30,7 @@ import {
   filtrarAnuncio,
   type CarroAnuncioItem,
 } from "@/lib/repasses/relatorio-anuncio";
+import type { SnapshotRecente } from "@/lib/pricing/origem-abaixo-do-custo";
 import {
   COR_MARGEM_EMOJI,
   COR_MARGEM_LABEL,
@@ -55,6 +56,8 @@ const TITULO_DIAS_APROXIMADOS =
 
 export function RelatorioAnuncio() {
   const [itens, setItens] = useState<CarroAnuncioItem[]>([]);
+  /** C16 — último snapshot de decisão por repasse. Vazio = comportamento antigo. */
+  const [snapshots, setSnapshots] = useState<ReadonlyMap<number, SnapshotRecente>>(new Map());
   const [carregando, setCarregando] = useState(true);
   const [exportando, setExportando] = useState(false);
 
@@ -65,7 +68,10 @@ export function RelatorioAnuncio() {
 
   useEffect(() => {
     listCarrosEmAnuncio()
-      .then(setItens)
+      .then((r) => {
+        setItens(r.itens);
+        setSnapshots(r.snapshots);
+      })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
         showErrorToast(`Erro ao carregar carros em anúncio: ${msg}`);
@@ -83,7 +89,7 @@ export function RelatorioAnuncio() {
     });
   }, [itens, diasMin, modelo, ano]);
 
-  const alertas = useMemo(() => calcularAlertas(itens), [itens]);
+  const alertas = useMemo(() => calcularAlertas(itens, snapshots), [itens, snapshots]);
   const temFiltro = diasMin.trim() !== "" || modelo.trim() !== "" || ano.trim() !== "";
 
   function limparFiltros() {
