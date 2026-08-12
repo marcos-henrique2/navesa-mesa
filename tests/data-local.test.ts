@@ -16,12 +16,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { formatarDataBR, hojeLocal } from "@/lib/utils/data-local";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MODULO = pathToFileURL(join(__dirname, "..", "src", "lib", "utils", "data-local.ts")).href;
+/** Sonda executada em processo filho — ver o cabeçalho dela. */
+const SONDA_TZ = join(__dirname, "_hoje-local-em-utc.ts");
 
 describe("hojeLocal", () => {
   it("formata YYYY-MM-DD com zero à esquerda", () => {
@@ -63,16 +64,22 @@ describe("hojeLocal", () => {
 
   it("[R2] rodando com TZ=UTC ainda devolve o dia de Brasília", () => {
     // O cenário real: processo da Vercel em UTC. Antes do fix, 22h de Brasília
-    // saía como o dia seguinte. Roda de verdade num processo com TZ=UTC.
-    const script = `import('${MODULO}').then(m => {
-      process.stdout.write(m.hojeLocal(new Date('2026-08-07T01:00:00Z')));
-    });`;
-    const saida = execFileSync(process.execPath, ["--import", "tsx", "--eval", script], {
-      env: { ...process.env, TZ: "UTC" },
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    assert.equal(saida.trim(), "2026-08-06");
+    // saía como o dia seguinte. Roda de verdade num processo filho com TZ=UTC —
+    // o fuso do processo só dá pra fixar na largada do Node.
+    //
+    // A sonda é um ARQUIVO .ts, não `--eval`: o hook do tsx não engata no
+    // contexto `[eval]` do Node 22 (a versão do CI) e o módulo volta vazio.
+    const saida = execFileSync(
+      process.execPath,
+      ["--import", "tsx", SONDA_TZ, "2026-08-07T01:00:00Z"],
+      { env: { ...process.env, TZ: "UTC" }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+    );
+    const [fusoDoProcesso, data] = saida.trim().split("|");
+
+    // Sem esta primeira asserção o teste seria vazio num sistema que ignorasse
+    // TZ: ele passaria sem nunca ter provado o cenário da Vercel.
+    assert.equal(fusoDoProcesso, "UTC", "o processo filho precisava rodar em UTC");
+    assert.equal(data, "2026-08-06");
   });
 });
 
