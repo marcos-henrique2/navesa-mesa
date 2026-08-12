@@ -47,6 +47,8 @@ import {
 } from "lucide-react";
 import {
   diffPresencaNoArquivo,
+  LIMITE_SUSPEITA_ARQUIVO_PARCIAL,
+  pareceArquivoParcial,
   type RepasseRefPresenca,
 } from "@/lib/repasses/presenca-arquivo-auto-avaliar";
 import {
@@ -77,9 +79,20 @@ export type SumidosDoArquivoPainelProps = {
    * mudou de loja — é o bug que este fluxo inteiro existe pra não cometer.
    */
   placasNoArquivo: ReadonlySet<string>;
+  /**
+   * Avisa o pai que ESTE painel já gravou no banco (venda registrada ou repasse
+   * removido). Existe porque o rodapé da conferência promete "nada é gravado até
+   * você clicar" e oferece "Descartar": sem esse sinal, o Marcos remove 6 carros,
+   * se arrepende, clica Descartar e acredita ter desfeito — mas o DELETE já
+   * levou junto `repasse_gastos` e `repasse_interessados` por CASCADE.
+   */
+  onGravou: (quantidade: number) => void;
 };
 
-export function SumidosDoArquivoPainel({ placasNoArquivo }: SumidosDoArquivoPainelProps) {
+export function SumidosDoArquivoPainel({
+  placasNoArquivo,
+  onGravou,
+}: SumidosDoArquivoPainelProps) {
   const { removerLocalmente: removerChassiEmRepasse } = useChassisEmRepasse();
 
   const [repasses, setRepasses] = useState<RepasseRefPresenca[] | null>(null);
@@ -124,6 +137,8 @@ export function SumidosDoArquivoPainel({ placasNoArquivo }: SumidosDoArquivoPain
   );
 
   const sumiram = diff.sumiram;
+  /** Fatia grande demais do estoque sumiu de uma vez — cheiro de download pela metade. */
+  const arquivoParcial = pareceArquivoParcial(diff);
   const selecionadosArr = useMemo(
     () => sumiram.filter((r) => selecionados.has(r.id)),
     [sumiram, selecionados],
@@ -145,6 +160,9 @@ export function SumidosDoArquivoPainel({ placasNoArquivo }: SumidosDoArquivoPain
   }
 
   function toggleTodos() {
+    // Trava, não aviso: mesma régua do `contagemQuebrada` desta tela. Só o atalho
+    // de massa cai — desmarcar tudo e marcar item a item seguem livres.
+    if (arquivoParcial && selecionados.size !== sumiram.length) return;
     setSelecionados((prev) =>
       prev.size === sumiram.length ? new Set() : new Set(sumiram.map((r) => r.id)),
     );
@@ -193,6 +211,7 @@ export function SumidosDoArquivoPainel({ placasNoArquivo }: SumidosDoArquivoPain
   async function confirmarVenda(repasse: RepasseRefPresenca, input: MarcarVendidoInput) {
     try {
       await marcarComoVendido(repasse.id, input);
+      onGravou(1);
       descartar([repasse.id]);
       const feitas = registradas + 1;
       setRegistradas(feitas);
@@ -211,6 +230,7 @@ export function SumidosDoArquivoPainel({ placasNoArquivo }: SumidosDoArquivoPain
     const alvos = selecionadosArr;
     try {
       const n = await deleteRepasses(alvos.map((r) => r.id));
+      onGravou(n);
       for (const r of alvos) if (r.chassi !== "") removerChassiEmRepasse(r.chassi);
       descartar(alvos.map((r) => r.id));
       setConfirmandoRemocao(false);
@@ -239,6 +259,15 @@ export function SumidosDoArquivoPainel({ placasNoArquivo }: SumidosDoArquivoPain
         pausado, carro transferido ou download incompleto.{" "}
         <strong className="text-[var(--text-strong)]">Quem decide é você</strong> — nada aqui é
         automático.
+      </p>
+      {/* O resto da tela só grava no "Confirmar e gravar". Este painel não —
+          e a promessa do rodapé ("nada é gravado até você clicar") mentiria
+          por omissão se isso não estivesse escrito ANTES dos botões. */}
+      <p className="mt-2 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-[11px] text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+        <AlertTriangle className="mr-1 inline h-3 w-3" />
+        Diferente do resto desta tela, as ações deste painel{" "}
+        <strong>gravam na hora, cada uma por si</strong> — não entram no
+        &quot;Confirmar e gravar&quot; nem são desfeitas pelo &quot;Descartar&quot;.
       </p>
 
       {erro && (
@@ -272,6 +301,23 @@ export function SumidosDoArquivoPainel({ placasNoArquivo }: SumidosDoArquivoPain
         </p>
       )}
 
+      {arquivoParcial && (
+        <div className="mt-3 flex items-start gap-2 rounded-lg border border-rose-300 bg-rose-50 p-3 text-xs text-rose-900 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            <strong>
+              {formatInt(sumiram.length)} de {formatInt(diff.total_ativos_comparaveis)} carros
+              ativos sumiram deste arquivo
+            </strong>{" "}
+            — mais de {Math.round(LIMITE_SUSPEITA_ARQUIVO_PARCIAL * 100)}% do estoque em repasse.
+            Isso é bem mais parecido com <strong>download incompleto</strong> do que com venda em
+            massa. Baixe o relatório de novo antes de dar baixa em qualquer coisa. O{" "}
+            <strong>&quot;selecionar todos&quot; está desabilitado</strong>; se você conferiu e é
+            real mesmo, marque os carros um a um.
+          </span>
+        </div>
+      )}
+
       {sumiram.length > 0 && (
         <>
           <div className="mt-3 overflow-x-auto">
@@ -283,8 +329,14 @@ export function SumidosDoArquivoPainel({ placasNoArquivo }: SumidosDoArquivoPain
                       type="checkbox"
                       checked={selecionados.size === sumiram.length && sumiram.length > 0}
                       onChange={toggleTodos}
+                      disabled={arquivoParcial && selecionados.size !== sumiram.length}
                       aria-label="Selecionar todos os carros que saíram do anúncio"
-                      className="h-3.5 w-3.5 accent-[var(--brand-700)]"
+                      title={
+                        arquivoParcial
+                          ? "Desabilitado: sumiu gente demais de uma vez. Confira o arquivo e marque um a um."
+                          : undefined
+                      }
+                      className="h-3.5 w-3.5 accent-[var(--brand-700)] disabled:cursor-not-allowed disabled:opacity-40"
                     />
                   </th>
                   <th className="py-1.5 pr-2 font-semibold">Placa</th>
@@ -413,6 +465,7 @@ export function SumidosDoArquivoPainel({ placasNoArquivo }: SumidosDoArquivoPain
       {confirmandoRemocao && (
         <ConfirmarRemocaoModal
           itens={selecionadosArr}
+          custoDe={custoDe}
           removendo={removendo}
           onCancelar={() => setConfirmandoRemocao(false)}
           onConfirmar={() => void removerSelecionados()}
@@ -476,17 +529,26 @@ function Reapareceram({ itens }: { itens: ReadonlyArray<RepasseRefPresenca> }) {
  */
 function ConfirmarRemocaoModal({
   itens,
+  custoDe,
   removendo,
   onCancelar,
   onConfirmar,
 }: {
   itens: ReadonlyArray<RepasseRefPresenca>;
+  custoDe: (r: RepasseRefPresenca) => number | null;
   removendo: boolean;
   onCancelar: () => void;
   onConfirmar: () => void;
 }) {
   const [aceito, setAceito] = useState(false);
   const total = itens.length;
+
+  // O R$ que vai ser jogado fora é o argumento mais forte contra o clique errado.
+  // `parcial` quando algum carro não tem custo: soma incompleta não pode se
+  // apresentar como total — subestimar o estrago é o erro perigoso aqui.
+  const custos = itens.map(custoDe);
+  const custoTotal = custos.reduce<number>((s, c) => s + (c ?? 0), 0);
+  const semCusto = custos.filter((c) => c == null).length;
 
   return (
     <div
@@ -522,13 +584,37 @@ function ConfirmarRemocaoModal({
         </div>
 
         <ul className="mt-3 max-h-56 space-y-1 overflow-y-auto rounded-md border border-[var(--border-soft)] bg-[var(--bg-muted)] p-2 text-xs">
-          {itens.map((r) => (
-            <li key={r.id} className="flex flex-wrap items-baseline gap-x-2">
-              <span className="font-mono font-semibold text-[var(--text-strong)]">{r.placa}</span>
-              <span className="truncate text-[var(--text-muted)]">{r.modelo || "—"}</span>
-            </li>
-          ))}
+          {itens.map((r) => {
+            const custo = custoDe(r);
+            return (
+              <li key={r.id} className="flex items-baseline gap-x-2">
+                <span className="shrink-0 font-mono font-semibold text-[var(--text-strong)]">
+                  {r.placa}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[var(--text-muted)]">
+                  {r.modelo || "—"}
+                </span>
+                <span className="shrink-0 tabular-nums text-[var(--text-body)]">
+                  {custo == null ? "—" : formatBRL(custo)}
+                </span>
+              </li>
+            );
+          })}
         </ul>
+
+        <p className="mt-2 rounded-md border border-red-300 bg-red-50 px-2.5 py-1.5 text-xs text-red-900 dark:border-red-900 dark:bg-red-950/30 dark:text-red-200">
+          Vai embora com {total === 1 ? "ele" : "eles"}:{" "}
+          <strong className="tabular-nums">{formatBRL(custoTotal)}</strong> de custo real
+          registrado (compra + gastos)
+          {semCusto > 0 && (
+            <>
+              {" "}
+              — e {formatInt(semCusto)} {semCusto === 1 ? "carro" : "carros"} sem custo conhecido,
+              então o total real é <strong>maior</strong> que isso
+            </>
+          )}
+          .
+        </p>
 
         <label className="mt-3 flex cursor-pointer items-start gap-2 text-xs text-[var(--text-body)]">
           <input

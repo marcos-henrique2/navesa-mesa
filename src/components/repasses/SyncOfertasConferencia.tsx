@@ -92,6 +92,13 @@ export function SyncOfertasConferencia({
   const [aplicando, setAplicando] = useState(false);
   const [aplicado, setAplicado] = useState<RelatorioSync | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  /**
+   * Gravações feitas pelo painel de "saíram do Auto Avaliar", que acontecem FORA
+   * do ciclo do Aplicar. Sem esse contador o rodapé continuaria dizendo "nada é
+   * gravado até você clicar" enquanto o Marcos já apagou repasse — e o
+   * "Descartar" leria como desfazer, que ele não é.
+   */
+  const [gravadoNoPainel, setGravadoNoPainel] = useState(0);
 
   // Depois de gravar, a tela passa a mostrar o que FOI gravado — mesmo contrato,
   // modo "aplicado". O preview fica guardado só pra detectar deriva (§5.1).
@@ -285,7 +292,10 @@ export function SyncOfertasConferencia({
           </section>
 
           {/* ─── Grupo: saíram do arquivo (diff de conjunto, no cliente) ──── */}
-          <SumidosDoArquivoPainel placasNoArquivo={placasNoArquivo} />
+          <SumidosDoArquivoPainel
+            placasNoArquivo={placasNoArquivo}
+            onGravou={(n) => setGravadoNoPainel((v) => v + n)}
+          />
 
           {/* ─── Grupo: sem alteração ─────────────────────────────────────── */}
           <section className="rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4">
@@ -400,10 +410,21 @@ export function SyncOfertasConferencia({
 
         {/* ─── Barra de ação ───────────────────────────────────────────────── */}
         <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 rounded-b-xl border-t border-[var(--border-soft)] bg-[var(--bg-surface)] p-4">
-          <span className="text-xs text-[var(--text-muted)]">
+          <span className="min-w-0 flex-1 text-xs text-[var(--text-muted)]">
             {aplicado
               ? `${formatInt(aplicado.resumo.linhas_gravadas)} gravados · ${formatInt(rel.resumo.sem_alteracao)} sem alteração · ${formatInt(rel.resumo.nao_encontradas)} não encontradas · ${formatInt(rel.resumo.ignoradas)} ignoradas`
-              : "Nada é gravado até você clicar. O sistema recalcula tudo de novo no clique — nunca grava o que está na tela."}
+              : "A SINCRONIZAÇÃO não grava nada até você clicar. O sistema recalcula tudo de novo no clique — nunca grava o que está na tela."}
+            {gravadoNoPainel > 0 && (
+              <span className="mt-1 flex items-start gap-1.5 font-medium text-amber-800 dark:text-amber-300">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>
+                  {formatInt(gravadoNoPainel)}{" "}
+                  {gravadoNoPainel === 1 ? "alteração já gravada" : "alterações já gravadas"} no
+                  painel &quot;saíram do Auto Avaliar&quot; (venda registrada ou repasse removido).{" "}
+                  <strong>Descartar não desfaz isso.</strong>
+                </span>
+              </span>
+            )}
           </span>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -413,7 +434,9 @@ export function SyncOfertasConferencia({
               className="inline-flex items-center gap-2 rounded-md border border-[var(--border-base)] px-4 py-2 text-sm font-medium text-[var(--text-body)] hover:bg-[var(--bg-muted)] disabled:opacity-50"
             >
               {aplicado ? <CheckCircle2 className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
-              {aplicado ? "Fechar" : "Descartar"}
+              {/* "Descartar A IMPORTAÇÃO": o escopo tem que estar no rótulo. O botão
+                  joga fora o arquivo conferido, não as gravações do painel abaixo. */}
+              {aplicado ? "Fechar" : "Descartar a importação"}
             </button>
             {!aplicado && (
               <button

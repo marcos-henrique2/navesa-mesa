@@ -73,7 +73,35 @@ export type DiffPresencaArquivo = {
    * sobre eles — ficam de fora dos dois grupos em vez de virarem falso positivo.
    */
   sem_placa_comparavel: RepasseRefPresenca[];
+  /**
+   * Ativos com placa comparável = `sumiram` + os que continuam no arquivo. É o
+   * denominador da guarda de arquivo parcial — sem ele, "6 sumiram" não diz se
+   * isso é 10% ou 90% do estoque em repasse.
+   */
+  total_ativos_comparaveis: number;
 };
+
+/**
+ * Acima desta fração dos ativos, "sumiu do anúncio" deixa de ser leitura
+ * plausível e vira sintoma de download incompleto. Não é ciência: é a linha a
+ * partir da qual o custo de errar (remoção em lote irreversível) supera a
+ * conveniência do "selecionar todos".
+ */
+export const LIMITE_SUSPEITA_ARQUIVO_PARCIAL = 0.3;
+
+/**
+ * Sintoma de arquivo truncado/incompleto: uma fatia grande demais do estoque
+ * ativo sumiu de uma vez.
+ *
+ * Existe pelo mesmo motivo que `baldesFecham` trava o botão de gravar em vez de
+ * só avisar — aviso em prosa não impede clique. Aqui o efeito é desabilitar o
+ * "selecionar todos"; a seleção item a item continua livre, porque o caso
+ * legítimo (fim de mês, saiu tudo) precisa continuar possível.
+ */
+export function pareceArquivoParcial(diff: DiffPresencaArquivo): boolean {
+  if (diff.total_ativos_comparaveis === 0 || diff.sumiram.length === 0) return false;
+  return diff.sumiram.length / diff.total_ativos_comparaveis > LIMITE_SUSPEITA_ARQUIVO_PARCIAL;
+}
 
 // ─── Universo de comparação ──────────────────────────────────────────────────
 
@@ -118,6 +146,7 @@ export function diffPresencaNoArquivo(
   const sumiram: RepasseRefPresenca[] = [];
   const reapareceram: RepasseRefPresenca[] = [];
   const sem_placa_comparavel: RepasseRefPresenca[] = [];
+  let total_ativos_comparaveis = 0;
 
   for (const r of repasses) {
     const placa = normalizarPlaca(r.placa);
@@ -128,6 +157,7 @@ export function diffPresencaNoArquivo(
       continue;
     }
     if (ativo) {
+      total_ativos_comparaveis++;
       if (!placasVistas.has(placa)) sumiram.push(r);
     } else if (r.status === "vendido" && placasVistas.has(placa)) {
       reapareceram.push(r);
@@ -141,5 +171,6 @@ export function diffPresencaNoArquivo(
     sumiram: sumiram.sort(porPlaca),
     reapareceram: reapareceram.sort(porPlaca),
     sem_placa_comparavel: sem_placa_comparavel.sort((a, b) => a.id - b.id),
+    total_ativos_comparaveis,
   };
 }
