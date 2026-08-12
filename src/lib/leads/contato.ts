@@ -44,10 +44,13 @@
  * Esse segundo contato é válido e está registrado — rebaixar o lead pra 'novo' faria
  * o `status_relacionamento` mentir na direção oposta. Ver `existeOutroContatoNoDia`.
  *
- * Escopo inesperado: a RPC tem um fallback (migration 028, §1) que, quando o interesse
- * do repasse alvo não existe mais, marca TODOS os interesses do lead sem `data_contato`.
- * O resultado carrega `escopoInesperado` pra tela avisar e NÃO oferecer o "Desfazer" —
- * ele reverteria só 1 dos N interesses atingidos.
+ * Escopo inesperado: a RPC tem um fallback que dispara quando o interesse do repasse
+ * alvo não casa (o carro foi removido entre o enfileiramento e o disparo). Ele marca os
+ * interesses ÓRFÃOS do lead — `tipo_carro='repasse'` com `repasse_id NULL`, ou seja, só
+ * carros que já não existem (migration 034; até a 028 ele marcava TODOS os pendentes,
+ * levando junto os carros vivos do lojista). Mesmo escopado, pode atingir 0 ou N em vez
+ * de 1, então o resultado ainda carrega `escopoInesperado` pra tela avisar e NÃO oferecer
+ * o "Desfazer" — ele reverteria só 1 dos N atingidos.
  *
  * Autenticação: o app inteiro roda atrás do proxy de auth (src/proxy.ts) — toda
  * rota não-pública exige usuário logado. O `createBrowserClient` carrega a
@@ -89,8 +92,8 @@ export type RegistrarContatoResultado = {
   /**
    * true = pedimos escopo isolado (`repasse_id`) e a operação NÃO atingiu exatamente
    * 1 interesse. Só acontece pelo fallback da RPC: o interesse do carro alvo sumiu
-   * entre o carregamento da tela e o clique, e ela marcou todos os interesses do lead
-   * sem `data_contato` (0 quando não sobrou nenhum).
+   * entre o carregamento da tela e o clique, e ela marcou os interesses órfãos do lead
+   * (0 quando não havia órfão pendente; N quando o lead tinha mais de um carro removido).
    *
    * A tela precisa avisar e NÃO oferecer "Desfazer": o desfazer é escopado no
    * `interesseId` e reverteria só 1 dos N que o banco marcou.
@@ -230,9 +233,10 @@ export function mensagemEscopoInesperado(interessesMarcados: number): string {
   const causa =
     interessesMarcados === 0
       ? "nenhum interesse foi marcado"
-      : `${interessesMarcados} interesses do lead foram marcados em vez de 1`;
+      : `${interessesMarcados} interesses foram marcados em vez de 1 — todos de carros ` +
+        "já removidos do sistema, nenhum carro ativo foi tocado";
   return (
-    `Atenção: o contato foi registrado, mas ${causa} — esse carro saiu da lista de ` +
+    `Atenção: o contato foi registrado, mas ${causa}. Esse carro saiu da lista de ` +
     "interesses desde que a tela abriu. Recarregue a página pra ver o estado real. " +
     'Por isso o "Desfazer" não está disponível neste contato.'
   );
@@ -259,9 +263,10 @@ export function paramsMarcarContatado(
  *
  * Só com um `repasse_id` de verdade a RPC consegue escopar em
  * `WHERE lead_id = X AND repasse_id = Y`. Sem ele (estoque, ou interesse órfão de
- * repasse deletado) o UPDATE direto pelo `id` do interesse é a rota segura: mandar
- * um repasse_id ausente pra RPC cairia no fallback dela, que marca TODOS os
- * interesses pendentes do lead — os outros 7 carros do lojista junto.
+ * repasse deletado) o UPDATE direto pelo `id` do interesse é a rota segura: chamar a
+ * RPC sem `p_repasse_id` cai no ramo largo dela — o mesmo da 'sondagem' —, que marca
+ * TODOS os interesses pendentes do lead, os outros 7 carros do lojista junto. Esse
+ * ramo não é o fallback escopado da 034; ele nunca foi restringido, e nem deve ser.
  *
  * Type predicate de propósito: quem passa por aqui entrega `number` pro
  * `paramsMarcarContatado` sem cast.

@@ -20,9 +20,10 @@
  *     registrado — inconsistente e invisível. O desfazer precisa reverter os dois,
  *     e só quando a promoção foi dele (`status_promovido`) E nenhum outro carro do
  *     mesmo lead foi contatado na janela dos 8s (`podeRebaixarLead`).
- *   - ESCOPO INESPERADO: a RPC tem um fallback que alarga o UPDATE pra todos os
- *     interesses pendentes do lead. Quando ele dispara, o "Desfazer" reverteria 1 de
- *     N — a tela precisa saber (`escopoInesperado`) pra avisar e não oferecê-lo.
+ *   - ESCOPO INESPERADO: a RPC tem um fallback pro caso de o carro alvo não casar.
+ *     Desde a 034 ele alcança só os interesses ÓRFÃOS do lead (carros removidos),
+ *     nunca os vivos — mas ainda pode atingir 0 ou N em vez de 1, e aí o "Desfazer"
+ *     reverteria 1 de N. A tela precisa saber (`escopoInesperado`) pra não oferecê-lo.
  *
  * As funções que tocam o Supabase (`registrarContatoLead`, `desfazerContatoLead`)
  * ficam pra e2e — aqui testamos as partes puras e o combinador de retry.
@@ -342,10 +343,10 @@ describe("interpretarRetornoContato", () => {
 
 describe("escopo inesperado — o fallback da RPC atingindo mais (ou menos) que 1 carro", () => {
   // A RPC marca o interesse do carro pedido (WHERE lead_id AND repasse_id). Se ele
-  // sumiu entre o carregamento da tela e o clique, ROW_COUNT = 0 e ela cai num
-  // fallback que marca TODOS os interesses do lead sem data_contato — os outros 7
-  // carros do lojista junto. O "Desfazer" é escopado num interesse só: ofertá-lo aqui
-  // reverteria 1 de N e deixaria o resto marcado, em silêncio.
+  // sumiu entre o carregamento da tela e o clique, ROW_COUNT = 0 e ela cai no fallback.
+  // Desde a 034 esse fallback mira só os órfãos (repasse_id NULL) — os carros vivos do
+  // lojista ficam de fora. Ainda assim o contador pode vir 0 ou N: o "Desfazer" é
+  // escopado num interesse só, e ofertá-lo aqui reverteria 1 de N em silêncio.
   const comEscopo = (interesses_marcados: number) =>
     interpretarRetornoContato({ interesses_marcados, status_promovido: true }, 7, HOJE, true);
 
@@ -353,11 +354,11 @@ describe("escopo inesperado — o fallback da RPC atingindo mais (ou menos) que 
     assert.equal(comEscopo(1).escopoInesperado, false);
   });
 
-  it("O CASO: fallback pegou 5 carros do mesmo lojista", () => {
+  it("O CASO: fallback pegou 5 interesses (o lead tinha vários carros removidos)", () => {
     assert.equal(comEscopo(5).escopoInesperado, true);
   });
 
-  it("0 marcados também é anomalia (o carro sumiu e não sobrou pendente nenhum)", () => {
+  it("0 marcados também é anomalia (o carro sumiu e não havia órfão pendente)", () => {
     assert.equal(comEscopo(0).escopoInesperado, true);
   });
 
@@ -387,6 +388,16 @@ describe("escopo inesperado — o fallback da RPC atingindo mais (ou menos) que 
     const muitos = mensagemEscopoInesperado(5);
     assert.match(muitos, /5 interesses/);
     assert.match(muitos, /Desfazer/);
+  });
+
+  it("com N>1 o aviso garante que nenhum carro ativo foi tocado (034)", () => {
+    // Antes da 034 esses N podiam ser carros vivos do lojista, e o aviso mandava o
+    // Marcos recarregar sem dizer o tamanho do estrago. Agora o fallback só alcança
+    // órfãos, e a mensagem pode afirmar isso — é a diferença entre "algo aconteceu"
+    // e "aconteceu, e não custou nada".
+    const muitos = mensagemEscopoInesperado(3);
+    assert.match(muitos, /removidos do sistema/);
+    assert.match(muitos, /nenhum carro ativo foi tocado/);
   });
 });
 
@@ -458,8 +469,9 @@ describe("usaRpcIsolada — roteamento RPC × UPDATE direto (órfão da migratio
   });
 
   it("O CASO: interesse órfão (repasse deletado, repasse_id NULL) NÃO vai pra RPC", () => {
-    // Se fosse, a RPC não teria como escopar o UPDATE e cairia no fallback que
-    // marca todos os interesses pendentes do lead — os outros 7 carros junto.
+    // Chamá-la sem p_repasse_id cai no ramo largo (o da 'sondagem'), que marca todos
+    // os interesses pendentes do lead — os outros 7 carros junto. Esse ramo é
+    // intencional e a 034 não mexeu nele; o que não pode é chegar nele por acidente.
     assert.ok(!usaRpcIsolada(null));
   });
 
