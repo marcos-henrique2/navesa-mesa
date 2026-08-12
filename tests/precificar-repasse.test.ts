@@ -32,6 +32,10 @@ import {
   type SugestaoPrecoRepasse,
 } from "@/lib/pricing/sugerir-preco-repasse";
 import { montarSnapshotPrecificacao } from "@/lib/pricing/snapshot-precificacao";
+import {
+  classificarOrigemAbaixoDoCusto,
+  type SnapshotRecente,
+} from "@/lib/pricing/origem-abaixo-do-custo";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -1077,5 +1081,67 @@ describe("3.1c C12/C19 — o snapshot e o modo que o produziu", () => {
     const r = montar("recuperar_tudo").insert;
     assert.equal(r.minimo_razao_efetiva, 1.066);
     assert.equal(cent(r.minimo_razao_efetiva * r.custo_real), r.minimo_sugerido);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// C16 — AS TRÊS ORIGENS DE "ABAIXO DO CUSTO" (ADR-003 §12.8)
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// ⚠️ O que estes testes protegem: o vermelho fica reservado pro que o Marcos NÃO
+// escolheu. Se um "conserto" futuro fizer carro girado voltar a acender
+// vermelho, o alerta passa a tocar em TODO carro girado com g > 6,6% — e alerta
+// que toca sempre deixa de ser lido (a razão que matou o alerta de piso, §5).
+
+describe("3.1c C16 — classificarOrigemAbaixoDoCusto", () => {
+  const girado: SnapshotRecente = {
+    modo: "girar_rapido",
+    minimoAplicado: 85_300,
+    custoReal: 86_850,
+    aplicadoEmData: "2026-08-12",
+  };
+
+  it("DECISÃO — snapshot girar e o aplicado bate com o preço de hoje", () => {
+    assert.equal(classificarOrigemAbaixoDoCusto(girado, 85_300), "decisao");
+  });
+
+  it("DERIVA — snapshot recuperar que bate: o custo subiu depois (gasto tardio)", () => {
+    // Na hora da decisão a I1 garantia `minimo ≥ custo`; se hoje está abaixo, o
+    // custo é que subiu. É o caso que o Risk #8 da 3.1 mirava — vermelho intacto.
+    const recuperado: SnapshotRecente = {
+      modo: "recuperar_tudo",
+      minimoAplicado: 106_600,
+      custoReal: 100_000,
+      aplicadoEmData: "2026-08-12",
+    };
+    assert.equal(classificarOrigemAbaixoDoCusto(recuperado, 106_600), "deriva");
+  });
+
+  it("FORA DO SISTEMA — não há snapshot nenhum", () => {
+    assert.equal(classificarOrigemAbaixoDoCusto(null, 85_300), "fora_do_sistema");
+  });
+
+  it("FORA DO SISTEMA — o preço de hoje NÃO é o que foi aplicado (import/inline)", () => {
+    // O import do portal ou uma edição inline sobrescreveram o preço: a decisão
+    // registrada não explica o número que está no ar.
+    assert.equal(classificarOrigemAbaixoDoCusto(girado, 84_000), "fora_do_sistema");
+  });
+
+  it("FORA DO SISTEMA — linha 'sugeriu e não aplicou' (carimbo nunca veio)", () => {
+    assert.equal(
+      classificarOrigemAbaixoDoCusto({ ...girado, minimoAplicado: null }, 85_300),
+      "fora_do_sistema",
+    );
+  });
+
+  it("a comparação do aplicado é CENTAVO-PERFECT, não por tolerância", () => {
+    assert.equal(classificarOrigemAbaixoDoCusto(girado, 85_300.0), "decisao");
+    assert.equal(classificarOrigemAbaixoDoCusto(girado, 85_300.01), "fora_do_sistema");
+  });
+
+  it("girar que bate continua DECISÃO mesmo com o custo de hoje bem acima", () => {
+    // Gasto tardio num carro JÁ girado não converte a decisão em erro: o preço
+    // no ar continua sendo exatamente o que ele mandou pro portal.
+    assert.equal(classificarOrigemAbaixoDoCusto(girado, 85_300), "decisao");
   });
 });

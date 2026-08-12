@@ -29,6 +29,7 @@ import type {
   CarimboAplicado,
   SnapshotPrecificacaoInsert,
 } from "@/lib/pricing/snapshot-precificacao";
+import type { SnapshotRecente } from "@/lib/pricing/origem-abaixo-do-custo";
 import type { RepasseStatus } from "./types";
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -418,6 +419,55 @@ export async function atualizarPrecosRepasse(
     .update({ valor_minimo: valorMinimo, valor_compre_por: valorComprePor })
     .eq("id", repasseId);
   if (error) throw new Error(`Falha ao gravar os preços no repasse: ${error.message}`);
+}
+
+/**
+ * C16 — leitura PONTUAL do snapshot mais recente de UM repasse.
+ *
+ * ⚠️ **Primeiro leitor da tabela 030.** A ADR-003 §3.4 a declarou write-only e a
+ * §9.2 aceitou o custo de ela ficar sem leitor; a §12.8 revisa isso: a leitura
+ * pontual entra pra desambiguar o "abaixo do custo". **Tela de histórico segue
+ * OUT** — isto aqui é uma linha por repasse, não navegação.
+ *
+ * Usa o índice `idx_rep_prec_repasse_recente` (`repasse_id, criado_em DESC`) da
+ * 030. `maybeSingle` porque zero linhas é o caso comum (a tabela nasceu vazia).
+ */
+export async function buscarUltimoSnapshotPrecificacao(
+  repasseId: number,
+): Promise<SnapshotRecente | null> {
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("repasse_precificacao_sugerida")
+    .select("modo, minimo_aplicado, custo_real, aplicado_em")
+    .eq("repasse_id", repasseId)
+    .order("criado_em", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`Falha ao ler o registro da última decisão: ${error.message}`);
+  if (data == null) return null;
+
+  const row = data as {
+    modo: string;
+    minimo_aplicado: number | string | null;
+    custo_real: number | string | null;
+    aplicado_em: string | null;
+  };
+  const custoReal = num(row.custo_real);
+  // `custo_real` é NOT NULL na 030; se vier lixo, tratar como "sem snapshot" é
+  // mais honesto que classificar uma origem em cima de dado quebrado.
+  if (custoReal == null) return null;
+  if (row.modo !== "recuperar_tudo" && row.modo !== "girar_rapido") return null;
+
+  return {
+    modo: row.modo,
+    minimoAplicado: num(row.minimo_aplicado),
+    custoReal,
+    // ⚠️ `aplicado_em` é TIMESTAMPTZ (instante técnico). Cortar os 10 primeiros
+    // caracteres do ISO devolveria o dia em UTC — das 21h em diante o Marcos
+    // veria a data de AMANHÃ. `hojeLocal` converte pro calendário de Brasília
+    // antes de virar data (o alerta da própria `data-local.ts`).
+    aplicadoEmData: row.aplicado_em != null ? hojeLocal(new Date(row.aplicado_em)) : null,
+  };
 }
 
 /** 1º passo: insere o snapshot SEM carimbo. Devolve o id da linha. */
