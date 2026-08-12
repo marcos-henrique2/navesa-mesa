@@ -57,6 +57,7 @@ import {
   type RelatorioSync,
 } from "@/lib/repasses/sync-arquivo-auto-avaliar";
 import { aplicarSyncArquivo } from "@/lib/repasses/sync-arquivo-auto-avaliar-queries";
+import { SumidosDoArquivoPainel } from "./SumidosDoArquivoPainel";
 import { cn, formatInt } from "@/lib/utils";
 
 export type SyncOfertasConferenciaProps = {
@@ -64,6 +65,12 @@ export type SyncOfertasConferenciaProps = {
   meta: OfertasMeta;
   /** Linhas retidas no CLIENTE por serem de outra loja — nunca chegaram à RPC (AC5). */
   outraLoja: ReadonlyArray<LinhaOutraLoja>;
+  /**
+   * Universo de placas do arquivo — TODAS as lojas, não só a Matriz. Alimenta o
+   * balde "saíram do Auto Avaliar", que é um diff de conjunto feito no cliente
+   * (a RPC só enxerga o payload da loja alvo, e por isso não pode calculá-lo).
+   */
+  placasNoArquivo: ReadonlySet<string>;
   /** O mesmo payload bruto do preview: a RPC de aplicar recalcula o diff do zero. */
   payload: PayloadSyncArquivo;
   preview: RelatorioSync;
@@ -76,6 +83,7 @@ export function SyncOfertasConferencia({
   arquivoNome,
   meta,
   outraLoja,
+  placasNoArquivo,
   payload,
   preview,
   onFechar,
@@ -275,6 +283,9 @@ export function SyncOfertasConferencia({
               </div>
             )}
           </section>
+
+          {/* ─── Grupo: saíram do arquivo (diff de conjunto, no cliente) ──── */}
+          <SumidosDoArquivoPainel placasNoArquivo={placasNoArquivo} />
 
           {/* ─── Grupo: sem alteração ─────────────────────────────────────── */}
           <section className="rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4">

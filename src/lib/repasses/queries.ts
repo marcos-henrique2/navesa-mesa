@@ -23,6 +23,7 @@ import { hojeLocal } from "@/lib/utils/data-local";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import { buildChassisEmRepasseMap, type RepasseAtivoRow } from "./chassis-em-repasse";
 import { criarErroRepasse } from "./erros";
+import type { RepasseRefPresenca } from "./presenca-arquivo-auto-avaliar";
 import {
   isCautelarStatus,
   isDocStatus,
@@ -106,6 +107,18 @@ const STATUS_VALIDOS: ReadonlyArray<Repasse["status"]> = [
   "nao_vendido",
   "cancelado",
 ];
+
+/** Row do select estreito de `listRepassesParaPresencaArquivo`. */
+type RepassePresencaRow = {
+  id: number;
+  chassi: string | null;
+  placa: string | null;
+  modelo: string | null;
+  status: string | null;
+  valor_compra_repasse: number | string | null;
+  valor_minimo: number | string | null;
+  valor_compre_por: number | string | null;
+};
 
 function isRepasseStatus(v: unknown): v is Repasse["status"] {
   return typeof v === "string" && (STATUS_VALIDOS as ReadonlyArray<string>).includes(v);
@@ -215,6 +228,35 @@ export async function listChassisEmRepasse(): Promise<Map<string, number>> {
     .in("status", ["marcado", "subido"]);
   if (error) throw new Error(`Falha ao listar chassis em repasse: ${error.message}`);
   return buildChassisEmRepasseMap((data ?? []) as ReadonlyArray<RepasseAtivoRow>);
+}
+
+/**
+ * Repasses que o diff de presença do arquivo do Auto Avaliar precisa comparar
+ * (Fatia 3b) — os ativos no anúncio mais os `vendido`, que são o caso inverso
+ * ("estava vendido e voltou a aparecer").
+ *
+ * Select ESTREITO de propósito: nada aqui grava, o diff é um `Set.has` de placa
+ * e o resto da linha só serve pra listar na tela e alimentar o
+ * `MarcarVendidoModal`. `nao_vendido` e `cancelado` ficam fora — já saíram do
+ * ciclo por decisão do Marcos, e o arquivo não tem o que dizer sobre eles.
+ */
+export async function listRepassesParaPresencaArquivo(): Promise<RepasseRefPresenca[]> {
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("repasses")
+    .select("id, chassi, placa, modelo, status, valor_compra_repasse, valor_minimo, valor_compre_por")
+    .in("status", ["marcado", "subido", "vendido"]);
+  if (error) throw new Error(`Falha ao listar repasses pra conferir presença: ${error.message}`);
+  return ((data ?? []) as ReadonlyArray<RepassePresencaRow>).map((row) => ({
+    id: row.id,
+    chassi: row.chassi ?? "",
+    placa: row.placa ?? "",
+    modelo: row.modelo ?? "",
+    status: row.status ?? "",
+    valor_compra_repasse: normalizarNumeric(row.valor_compra_repasse),
+    valor_minimo: normalizarNumeric(row.valor_minimo),
+    valor_compre_por: normalizarNumeric(row.valor_compre_por),
+  }));
 }
 
 /**
