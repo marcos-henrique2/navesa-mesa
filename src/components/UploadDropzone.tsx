@@ -7,23 +7,54 @@ import { parseNbsXlsx } from "@/lib/parsers/nbs-xlsx";
 import { parseNbsVendasXlsx } from "@/lib/parsers/nbs-vendas-xlsx";
 import { parseNbsCustosXls } from "@/lib/parsers/nbs-custos-xls";
 import { parseNbsCustosEstoquePdf } from "@/lib/parsers/nbs-custos-estoque-pdf";
+import {
+  parseAutoAvaliarOfertasXls,
+  montarPayloadSyncArquivo,
+  mensagemErroArquivo,
+  type LinhaOutraLoja,
+  type OfertasMeta,
+  type PayloadSyncArquivo,
+} from "@/lib/parsers/auto-avaliar-ofertas-xls";
+import { previewSyncArquivo } from "@/lib/repasses/sync-arquivo-auto-avaliar-queries";
+import type { RelatorioSync } from "@/lib/repasses/sync-arquivo-auto-avaliar";
+import { SyncOfertasConferencia } from "@/components/repasses/SyncOfertasConferencia";
 import { useInventory } from "@/lib/store/inventory";
 import { cn, formatInt } from "@/lib/utils";
 
-type Modo = "estoque" | "vendas" | "custos" | "custos-estoque";
+/**
+ * ⚠️ Os quatro primeiros modos são do NBS: processam local e terminam num store
+ * do navegador. O quinto (`repasse-ofertas`) é diferente em espécie — ele chama
+ * o Supabase e GRAVA EM PRODUÇÃO. Por isso ele tem passo de confirmação e os
+ * outros não: o arquivo vira preview (RPC read-only), a conferência abre, e só
+ * um clique explícito grava.
+ */
+type Modo = "estoque" | "vendas" | "custos" | "custos-estoque" | "repasse-ofertas";
 
-const CONFIG = {
+type ConfigModo = {
+  title: string;
+  desc: string;
+  label: string;
+  accept: Record<string, string[]>;
+  /** Teto de tamanho. Default 50MB (XLSX real do NBS é ~1-3MB). */
+  maxSize?: number;
+  /** Extensões mostradas no dropzone. */
+  hint: string;
+};
+
+const CONFIG: Record<Modo, ConfigModo> = {
   estoque: {
     title: "Estoque (Veículos em Estoque)",
     desc: "Arraste o XLSX de estoque do NBS aqui.",
     label: "Estoque",
     accept: { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] },
+    hint: ".xlsx ou .xls",
   },
   vendas: {
     title: "Vendas (Veículos Vendidos)",
     desc: "Arraste o XLSX de vendas do NBS aqui.",
     label: "Vendas",
     accept: { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"] },
+    hint: ".xlsx ou .xls",
   },
   custos: {
     title: "Custos (Relatório de Custos)",
@@ -33,13 +64,34 @@ const CONFIG = {
       "application/vnd.ms-excel": [".xls"],
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": [".xlsx"],
     },
+    hint: ".xlsx ou .xls",
   },
   "custos-estoque": {
     title: "Custos de Estoque (Markup)",
     desc: "Arraste o PDF 'Custos de Veículos em Estoque' do NBS aqui.",
     label: "Custos Estoque",
     accept: { "application/pdf": [".pdf"] },
+    hint: ".pdf",
   },
+  "repasse-ofertas": {
+    title: "Repasse — Veículos em Oferta",
+    desc: "Arraste o .xls 'Veículos em Oferta' do Auto Avaliar. Mostra o que vai mudar antes de gravar.",
+    label: "Veículos em Oferta",
+    accept: { "application/vnd.ms-excel": [".xls"], "text/html": [".xls"] },
+    // Teto menor: o relatório real tem ~60 linhas / 30 KB. Um arquivo grande aqui
+    // trava a aba no SheetJS sem nenhum ganho possível.
+    maxSize: 5 * 1024 * 1024,
+    hint: ".xls do Auto Avaliar",
+  },
+};
+
+/** Estado do quinto modo entre o preview e a gravação. Nada foi escrito ainda. */
+type ConferenciaOfertas = {
+  arquivoNome: string;
+  meta: OfertasMeta;
+  outraLoja: LinhaOutraLoja[];
+  payload: PayloadSyncArquivo;
+  preview: RelatorioSync;
 };
 
 export function UploadDropzone({ modo }: { modo: Modo }) {
@@ -56,11 +108,14 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
     custosMeta,
     custosEstoqueMeta,
   } = useInventory();
-  const [status, setStatus] = useState<"idle" | "parsing" | "done" | "error">("idle");
+  const [status, setStatus] = useState<
+    "idle" | "parsing" | "conferindo" | "done" | "error"
+  >("idle");
   const [error, setError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [resultCount, setResultCount] = useState<number | null>(null);
   const [mergeFeedback, setMergeFeedback] = useState<string | null>(null);
+  const [conferencia, setConferencia] = useState<ConferenciaOfertas | null>(null);
 
   const resetar = useCallback(() => {
     setStatus("idle");
@@ -68,6 +123,7 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
     setFileName(null);
     setResultCount(null);
     setMergeFeedback(null);
+    setConferencia(null);
   }, []);
 
   const onDrop = useCallback(
@@ -82,6 +138,32 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
 
       try {
         const buf = await file.arrayBuffer();
+
+        // ─── Quinto modo: sync de valores de repasse (grava em PRODUÇÃO) ───
+        // O parser devolve ERRO TIPADO em vez de lançar: ramificar em `ok` é
+        // obrigatório. Um `catch` aqui nunca veria "esse é o arquivo errado" e
+        // a tela cairia num "erro ao processar" sem informação.
+        if (modo === "repasse-ofertas") {
+          const parse = parseAutoAvaliarOfertasXls(buf, file.name);
+          if (!parse.ok) {
+            setError(mensagemErroArquivo(parse.erro));
+            setStatus("error");
+            return;
+          }
+          const payload = montarPayloadSyncArquivo(parse.linhas);
+          const preview = await previewSyncArquivo(payload);
+          setConferencia({
+            arquivoNome: file.name,
+            meta: parse.meta,
+            outraLoja: parse.outra_loja,
+            payload,
+            preview,
+          });
+          // "conferindo", não "done": nada foi gravado até o clique no modal.
+          setStatus("conferindo");
+          return;
+        }
+
         if (modo === "estoque") {
           const result = await parseNbsXlsx(buf, file.name);
           await setFromParse(result);
@@ -134,21 +216,27 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
     onDrop,
     accept: CONFIG[modo].accept,
     maxFiles: 1,
-    maxSize: 50 * 1024 * 1024, // 50MB — XLSX real do NBS é ~1-3MB; previne DoS local com arquivo gigante
-    disabled: status === "parsing",
+    // 50MB por padrão — XLSX real do NBS é ~1-3MB; previne DoS local com arquivo
+    // gigante. Modos com teto próprio declaram `maxSize` no CONFIG.
+    maxSize: CONFIG[modo].maxSize ?? 50 * 1024 * 1024,
+    disabled: status === "parsing" || status === "conferindo",
   });
 
   const cfg = CONFIG[modo];
-  const tone: "blue" | "purple" | "emerald" | "amber" =
+  // `rose` só no quinto modo: é o único que grava em produção, e a cor é o
+  // primeiro sinal de que ele não é mais um upload local do NBS.
+  const tone: "blue" | "purple" | "emerald" | "amber" | "rose" =
     modo === "estoque" ? "blue"
     : modo === "vendas" ? "purple"
     : modo === "custos" ? "emerald"
-    : "amber";
+    : modo === "custos-estoque" ? "amber"
+    : "rose";
   const existing =
     modo === "estoque" ? meta
     : modo === "vendas" ? vendasMeta
     : modo === "custos" ? custosMeta
-    : custosEstoqueMeta;
+    : modo === "custos-estoque" ? custosEstoqueMeta
+    : null; // repasse-ofertas não tem store local: o destino é o banco
 
   return (
     <div className="space-y-3">
@@ -165,8 +253,9 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
           isDragActive && tone === "purple" && "border-purple-500 bg-purple-50",
           isDragActive && tone === "emerald" && "border-emerald-500 bg-emerald-50",
           isDragActive && tone === "amber" && "border-amber-500 bg-amber-50",
+          isDragActive && tone === "rose" && "border-rose-500 bg-rose-50",
           !isDragActive && "border-[var(--border-base)] bg-[var(--bg-surface)]",
-          status === "parsing" && "cursor-wait opacity-60",
+          (status === "parsing" || status === "conferindo") && "cursor-wait opacity-60",
         )}
       >
         <input {...getInputProps()} />
@@ -174,8 +263,15 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
         <p className="mt-3 text-sm font-medium">
           {isDragActive ? "Solte aqui" : modo === "custos-estoque" ? "Arraste o PDF ou clique" : "Arraste o XLSX ou clique"}
         </p>
-        <p className="mt-1 text-xs text-[var(--text-muted)]">{modo === "custos-estoque" ? ".pdf" : ".xlsx ou .xls"}</p>
+        <p className="mt-1 text-xs text-[var(--text-muted)]">{cfg.hint}</p>
       </div>
+
+      {modo === "repasse-ofertas" && (
+        <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] text-rose-900 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200">
+          Único upload que <strong>grava no sistema</strong> (os outros ficam só no navegador).
+          Abre uma conferência antes: nada é gravado sem sua confirmação.
+        </p>
+      )}
 
       {existing && status === "idle" && (
         <div className="rounded-md border border-[var(--border-soft)] bg-[var(--bg-muted)] px-3 py-2 text-xs">
@@ -231,14 +327,30 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
               <p className="truncate text-sm font-medium">{fileName}</p>
               {status === "parsing" && (
                 <p className="mt-1 flex items-center gap-2 text-xs text-blue-600">
-                  <Loader2 className="h-3 w-3 animate-spin" /> Parseando…
+                  <Loader2 className="h-3 w-3 animate-spin" />{" "}
+                  {modo === "repasse-ofertas" ? "Conferindo contra o sistema…" : "Parseando…"}
+                </p>
+              )}
+              {status === "conferindo" && (
+                <p className="mt-1 flex items-center gap-2 text-xs font-medium text-rose-700 dark:text-rose-400">
+                  <AlertCircle className="h-3 w-3" /> Conferência aberta — nada foi gravado ainda.
                 </p>
               )}
               {status === "done" && (
                 <>
                   <p className="mt-1 flex items-center gap-2 text-xs font-medium text-green-700">
                     <CheckCircle2 className="h-3 w-3" />
-                    {cfg.label} importado ({formatInt(resultCount ?? 0)} registros). Você pode subir o próximo arquivo.
+                    {modo === "repasse-ofertas" ? (
+                      <>
+                        Sincronizado: {formatInt(resultCount ?? 0)}{" "}
+                        {resultCount === 1 ? "carro atualizado" : "carros atualizados"} no sistema.
+                      </>
+                    ) : (
+                      <>
+                        {cfg.label} importado ({formatInt(resultCount ?? 0)} registros). Você pode
+                        subir o próximo arquivo.
+                      </>
+                    )}
                   </p>
                   {mergeFeedback && (
                     <p className="mt-1 text-[11px] text-[var(--text-muted)]">
@@ -271,6 +383,26 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
             </div>
           </div>
         </div>
+      )}
+
+      {conferencia && (
+        <SyncOfertasConferencia
+          arquivoNome={conferencia.arquivoNome}
+          meta={conferencia.meta}
+          outraLoja={conferencia.outraLoja}
+          payload={conferencia.payload}
+          preview={conferencia.preview}
+          onAplicado={(relatorio) => {
+            setResultCount(relatorio.resumo.linhas_gravadas);
+            setStatus("done");
+          }}
+          onFechar={() => {
+            // Descartar sem gravar limpa tudo; depois de gravar, o card fica em
+            // "done" com a contagem e só perde o modal.
+            if (status === "conferindo") resetar();
+            else setConferencia(null);
+          }}
+        />
       )}
     </div>
   );

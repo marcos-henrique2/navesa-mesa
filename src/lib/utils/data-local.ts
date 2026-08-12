@@ -13,12 +13,37 @@
  * do calendário do usuário.
  */
 
-/** Data de HOJE (ou de `d`) no fuso local, em YYYY-MM-DD. */
+/** Fuso do negócio. A Navesa é em Goiânia; o calendário do Marcos é este. */
+export const FUSO_BRASILIA = "America/Sao_Paulo";
+
+const FMT_BRASILIA = new Intl.DateTimeFormat("pt-BR", {
+  timeZone: FUSO_BRASILIA,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+/**
+ * Data de HOJE (ou de `d`) no calendário de BRASÍLIA, em YYYY-MM-DD.
+ *
+ * ⚠️ O fuso é FIXO, não o do processo. Antes esta função usava
+ * `getFullYear/getMonth/getDate`, que respondem no fuso de quem está rodando.
+ * Isso funcionava por acidente: todos os call sites são `"use client"`, então o
+ * processo era o navegador do Marcos e o fuso do processo *era* o dele. No dia
+ * em que alguém chamasse isto de um route handler, na Vercel (UTC), a data
+ * sairia um dia à frente das 21h em diante — e o sintoma só apareceria à noite,
+ * passando em todo teste local. Fixar `America/Sao_Paulo` fecha a armadilha
+ * (Story 2.2, Risco R2).
+ *
+ * ⚠️ Isto NÃO autoriza gravar data de calendário calculada em TypeScript no
+ * servidor: o caminho correto continua sendo `public.hoje_brasilia()` no banco
+ * (AC16). Esta função é para exibição e para o cliente.
+ */
 export function hojeLocal(d: Date = new Date()): string {
-  const ano = d.getFullYear();
-  const mes = String(d.getMonth() + 1).padStart(2, "0");
-  const dia = String(d.getDate()).padStart(2, "0");
-  return `${ano}-${mes}-${dia}`;
+  const partes = FMT_BRASILIA.formatToParts(d);
+  const get = (tipo: Intl.DateTimeFormatPartTypes): string =>
+    partes.find((p) => p.type === tipo)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
 /**

@@ -59,6 +59,8 @@ import { contarInteressesPorRepasse } from "@/lib/leads/interesses";
 import { calcularMargemVenda, classificarMargemVenda } from "@/lib/repasses/margem-venda";
 import {
   COR_MARGEM_LABEL,
+  calcularCustoReal,
+  calcularMargemValor,
   type CorMargem,
 } from "@/lib/repasses/margem-repasse";
 import type {
@@ -952,6 +954,10 @@ function TabelaRepasses({
             <Th>Cautelar</Th>
             <Th className="text-right">Valor pra subir</Th>
             <Th className="text-right">Bônus</Th>
+            {/* Sinais de mercado do Auto Avaliar (arquivo Veículos em Oferta) —
+                deliberadamente longe das colunas de custo: são coisas diferentes. */}
+            <Th className="text-right">Maior oferta</Th>
+            <Th className="text-right">Anúncios</Th>
             <Th>Observação</Th>
             <Th>Status</Th>
             <Th className="text-right">Resultado</Th>
@@ -1074,6 +1080,26 @@ function TabelaRepasses({
                       <span className="text-[var(--text-subtle)]">—</span>
                     );
                   })()}
+                </Td>
+
+                {/* Maior oferta recebida no Auto Avaliar, lida contra o custo real */}
+                <Td className="text-right">
+                  <MaiorOfertaCell repasse={r} gastos={gastosDo(gastosPorRepasse, r.id)} />
+                </Td>
+
+                {/* Qtde de anúncios ativos — contexto competitivo, não valor.
+                    0 é medição real ("sem anúncio ativo"); null é "não medido". */}
+                <Td className="text-right tabular-nums text-xs">
+                  {r.qtde_anuncios != null ? (
+                    <span
+                      className="text-[var(--text-body)]"
+                      title="Anúncios ativos do mesmo carro no Auto Avaliar"
+                    >
+                      {formatInt(r.qtde_anuncios)}
+                    </span>
+                  ) : (
+                    <span className="text-[var(--text-subtle)]">—</span>
+                  )}
                 </Td>
 
                 {/* Observação */}
@@ -1539,6 +1565,74 @@ function ResultadoCell({
     );
   }
   return <span className="text-[var(--text-subtle)]">—</span>;
+}
+
+/**
+ * Coluna "Maior oferta" — o maior lance que o carro já recebeu no Auto Avaliar,
+ * lido CONTRA O CUSTO REAL (Story 2.2 / AC18-AC19).
+ *
+ * ┌─ REGRA DE OURO ────────────────────────────────────────────────────────────┐
+ * │ custo_real = valor_compra_repasse + Σ repasse_gastos, via `margem-repasse`. │
+ * │ NUNCA valor_aquisicao — aquele é custo de VAREJO e acenderia vermelho falso.│
+ * └─────────────────────────────────────────────────────────────────────────────┘
+ *
+ * O número é pintado em tom próprio (âmbar/índigo, não o verde/vermelho de
+ * custo) porque é OFERTA DE MERCADO, não dinheiro que a Navesa gastou. A linha
+ * de baixo é a distância até o custo — a conta que o Marcos hoje faz de cabeça.
+ * Sem oferta, nenhuma comparação é exibida: não se inventa semáforo sobre
+ * ausência de dado.
+ */
+function MaiorOfertaCell({
+  repasse,
+  gastos,
+}: {
+  repasse: Repasse;
+  /** null = a query de gastos falhou → sem custo real confiável, sem comparação. */
+  gastos: ReadonlyArray<number> | null;
+}) {
+  const oferta = repasse.valor_maior_oferta;
+  if (oferta == null) {
+    return <span className="text-[var(--text-subtle)]">—</span>;
+  }
+
+  const custoReal = gastos == null ? null : calcularCustoReal(repasse.valor_compra_repasse, gastos);
+  const delta = calcularMargemValor(oferta, custoReal);
+
+  return (
+    <div className="flex flex-col items-end">
+      <span
+        className="text-xs font-semibold tabular-nums text-indigo-700 dark:text-indigo-300"
+        title="Maior oferta recebida no Auto Avaliar — informação de mercado, não custo"
+      >
+        {formatBRL(oferta)}
+      </span>
+      {delta == null ? (
+        <span
+          className="text-[10px] text-[var(--text-muted)]"
+          title={
+            gastos == null
+              ? "Falha ao carregar os gastos do repasse — custo real indisponível"
+              : "Sem valor de compra do repasse — custo real indisponível"
+          }
+        >
+          vs custo —
+        </span>
+      ) : (
+        <span
+          className={cn(
+            "text-[10px] font-semibold tabular-nums",
+            delta < 0
+              ? "text-red-700 dark:text-red-400"
+              : "text-emerald-700 dark:text-emerald-400",
+          )}
+          title={`Maior oferta ${formatBRLCents(oferta)} − custo real ${formatBRLCents(custoReal)} = ${formatBRLCents(delta)} (compra de repasse + gastos; nunca valor de aquisição)`}
+        >
+          {delta < 0 ? "−" : "+"}
+          {formatBRL(Math.abs(delta))} vs custo
+        </span>
+      )}
+    </div>
+  );
 }
 
 function Th({ children, className }: { children?: React.ReactNode; className?: string }) {
