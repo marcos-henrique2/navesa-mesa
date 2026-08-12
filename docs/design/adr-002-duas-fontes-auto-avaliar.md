@@ -45,7 +45,7 @@ Segundo fato, na direção oposta: o comportamento destrutivo do texto é **load
 | # | Opção | Prós | Contras | Veredito |
 |---|---|---|---|---|
 | 1 | **Nada muda.** Duas semânticas convivem; texto vence por último. | Zero risco na entrega; 028 intocada. | `valor_web` do arquivo tem meia-vida de uma colagem. | **Base da decisão** (ver §4) |
-| 2 | Migration 030: `COALESCE` só no write de `valor_web` da 028. | Elimina o conflito com 1 linha. | Toca RPC de produção **por um campo que ninguém lê**; a story deixa de ser "não encosta em produção"; exige reteste do fluxo texto sem harness de Postgres. | **Rejeitado agora** — vira gatilho (§5) |
+| 2 | Migration do `COALESCE` (chamada aqui de "030"; **é a 031** — ver §5) só no write de `valor_web` da 028. | Elimina o conflito com 1 linha. | Toca RPC de produção **por um campo que ninguém lê**; a story deixa de ser "não encosta em produção"; exige reteste do fluxo texto sem harness de Postgres. | **Rejeitado agora** — vira gatilho (§5) |
 | 3 | Texto inteiro vira contribuição (COALESCE em tudo + fim do DELETE de gastos). | Semântica única, sem ordem. | **Quebra `custo_real`**: gasto zerado nunca some. Regressão no fluxo que funciona. | **Rejeitado** |
 | 4 | Procedência por campo (coluna `fonte_valor_web`, `escrito_por`, etc.). | Auditável; resolve "quem escreveu por último". | 1 usuário, 62 linhas, sem equipe. Metadados > dado. Custo de manutenção permanente. | **Rejeitado — overkill** |
 | 5 | Arquivo **não** grava `valor_web`; fica nos 5 estáveis + as 2 colunas novas. | Zero campo disputado por construção. | Desvia do desenho da Dara sem ganho: com `COALESCE` já no `UPDATE` do arquivo, escrever custa zero, e o dado sobrevive até a próxima colagem. Perder de graça é pior que ganhar temporariamente. | **Rejeitado** |
@@ -73,13 +73,17 @@ Segundo custo, menor: aceitamos que o sistema tem **duas semânticas de escrita 
 
 ## 5. Gatilhos de reversão
 
-A opção 2 (migration 030) sai do backlog e vira **pré-requisito bloqueante** quando qualquer um destes ocorrer:
+> **Correção de numeração (2026-08-12).** Onde esta ADR escreveu "migration 030", leia-se **migration 031**. O "030" aqui era nome de rascunho, não reserva de número: a 030 foi consumida por `030_repasse_precificacao_sugerida.sql` (ADR-003), porque a 029 era a última aplicada e deixar buraco na sequência faria o preenchimento tardio rodar fora de ordem. Nenhuma decisão desta ADR muda.
+
+A opção 2 (migration 031) sai do backlog e vira **pré-requisito bloqueante** quando qualquer um destes ocorrer:
 
 - **G1** — `valor_web` (ou `valor_fipe`, ou `valor_auto_avaliar`) passar a ser lido: entrar no tipo `Repasse`, aparecer em `RepassesLista.tsx`/`RelatorioAnuncio.tsx`, ou virar insumo de precificação. Deixa de ser dado latente.
 - **G2** — Alguém precisar que o texto escreva `valor_maior_oferta` ou `qtde_anuncios` (viola o item 3 acima).
 - **G3** — Marcos reportar que o valor de web sumindo o incomoda na prática.
 
-Qualquer gatilho ⇒ migration 030 com `COALESCE` nos campos afetados da 028, como **story própria**, com roteiro de verificação manual do fluxo de texto. Nunca embutida numa story de feature.
+Qualquer gatilho ⇒ migration 031 com `COALESCE` nos campos afetados da 028, como **story própria**, com roteiro de verificação manual do fluxo de texto. Nunca embutida numa story de feature.
+
+**Status: G1 acionado em 2026-08-12** pela story 3.1 — `valor_auto_avaliar` e `valor_fipe` viraram insumo de precificação. Ver ADR-003 §6: a 031 sai do backlog pra "próxima story", mas **não bloqueia** a 3.1, porque a falha é degradação anunciada (`confianca` cai + alerta em pt-BR), não erro silencioso. `valor_web` segue sem leitor e fora do gatilho.
 
 Fora dos gatilhos, o débito é absorvido pela **Fatia 3b** (unificação das duas RPCs), que já está no backlog e é onde a decisão de semântica única deve ser tomada de verdade.
 

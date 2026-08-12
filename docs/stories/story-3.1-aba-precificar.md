@@ -9,10 +9,12 @@
 > factuais da v1 aplicadas: Amarok era % da FIPE (não da Ref. AA); "3,85%" era prêmio, não razão;
 > `valor_subir` **não** é alternativa de persistência.
 >
-> **v4 (12/ago/2026)** — **AC16 revisada durante a 3.1a**: o ajuste de km saiu (decisão do
-> Marcos, 2026-08-12) por double-count contra a própria régua, medido em placas reais. A régua é
-> plana em quilometragem; dias parados e `qtde_anuncios` seguem como ajuste. Ver o bloco sob a
-> AC16 e o item aberto em Risk #14. Nenhuma outra AC muda.
+> **v4 (12/ago/2026)** — duas revisões durante a 3.1a, ambas decididas pelo Marcos em
+> 2026-08-12. **AC16**: o ajuste de km saiu por double-count contra a própria régua, medido em
+> placas reais — a régua é plana em quilometragem; dias parados e `qtde_anuncios` seguem como
+> ajuste (item aberto em Risk #14). **AC18**: os campos de aplicar passam a vir preenchidos com o
+> par **arredondado** a R$ 100, não com o centavo exato, pra que `minimo_aplicado` registre o
+> preço que de fato foi ao ar. Ver os blocos sob cada AC. Nenhuma outra AC muda.
 >
 > **v3 (12/ago/2026)** — 5 fixes de redação do `@pax-po` (GO 8/10, sem revalidação). Explicitada a
 > **invariante das AC13–AC15** (referência não entra no preço — era o caminho pelo qual G1-b dispararia
@@ -143,7 +145,26 @@ REGUA_COMPRE_POR_PCT          = REGUA_MINIMO_PCT / RAZAO_MINIMO_SOBRE_COMPRE_POR
 > quilometragem"* — dois carros idênticos com km muito diferente têm que receber o mesmo
 > preço.
 17. **AC17** — GIVEN qualquer sugestão produzida WHEN vejo o resultado THEN vem acompanhada de `justificativa` (texto curto em pt-BR) e `alertas: string[]` — mesmo contrato de saída de `@/lib/pricing/suggest.ts`, que serve de **referência de estilo** (constantes no topo, bandas, justificativa, alertas) e **não** deve ser reaproveitado como implementação, já que mira varejo e só aceita `VeiculoParsed` do NBS.
-18. **AC18** — GIVEN a sugestão exibida WHEN olho os números THEN os preços são arredondados pra múltiplo de R$ 100 **na apresentação**, e o valor efetivamente gravado no banco é centavo-perfect (`numeric(12,2)`), sem drift de ponto flutuante.
+18. **AC18** *(revisada em 2026-08-12 — ver bloco abaixo)* — GIVEN a sugestão exibida WHEN olho os números THEN os preços são arredondados pra múltiplo de R$ 100, e **é esse par arredondado que preenche os campos de aplicar**. Toda escrita no banco continua centavo-perfect (`numeric(12,2)`), sem drift de ponto flutuante: o snapshot grava a saída **crua** da régua em `minimo_sugerido`/`compre_por_sugerido` e o par **arredondado** em `minimo_aplicado`/`compre_por_aplicado`.
+
+> **Prefill com o valor arredondado — decisão do Marcos, 2026-08-12.** A v3 mandava
+> arredondar só "na apresentação", o que deixava os campos de aplicar preenchidos com o
+> centavo exato (ex.: R$ 111.974,79).
+>
+> **Por quê mudou:** R$ 100 é o que ele digita no portal de qualquer forma. Com o
+> prefill exato, aplicar sem editar gravava `sugerido == aplicado` **num valor que nunca
+> foi ao ar** — ruído no rótulo de calibração, que é a razão de a tabela 030 existir.
+> Agora `minimo_aplicado` é o preço praticado de verdade.
+>
+> **Guarda obrigatória:** o arredondamento **nunca fura o piso**. Se a centena de baixo
+> cruzasse o `custo_real` (ou invertesse o par), vale o valor exato e um alerta é
+> emitido. Arredondar pra baixo do custo seria transformar uma conveniência de digitação
+> em prejuízo.
+>
+> **Efeito colateral aceito:** `houveEdicao` passa a ser `true` na maioria das aplicações,
+> mesmo sem o Marcos digitar nada. Quem recalibrar deve olhar a **magnitude** da
+> diferença sugerido × aplicado, não o booleano — abaixo de R$ 100 é arredondamento,
+> acima disso é correção de verdade. Registrado no tipo em `snapshot-precificacao.ts`.
 
 ### D. Aplicar: editar, gravar o operacional e capturar a decisão
 
@@ -249,8 +270,15 @@ REGUA_COMPRE_POR_PCT          = REGUA_MINIMO_PCT / RAZAO_MINIMO_SOBRE_COMPRE_POR
     - **Dias parados: o ajuste tem suporte empírico e é conservador.** O próprio Marcos já pede **2,0 pontos a menos** nos carros parados (1,0716 → 1,0513). O ajuste do motor tira em média **0,77 pt** no grupo afetado (teto 3 pt) — ou seja, ele **corrige cerca de metade** do que o Marcos já faz à mão, e na direção certa. É o oposto do caso do km. Sobre a frota inteira o ajuste tira em média R$ 1.263 dos 21 carros afetados; o delta médio da sugestão contra o pedido vai de **+R$ 214 (plana)** para **−R$ 235 (com dias)**.
     - **Contra-argumento a considerar:** `REGUA_MINIMO_PCT` é a mediana do mínimo que **vendeu** — população que por definição girou rápido —, então o sinal "está parado" pode ser informação genuinamente nova, e não algo que a mediana já absorveu. A assimetria: km é **característica** do carro; dias e reanúncio são **estado**.
     - **`qtde_anuncios`: não é mensurável hoje.** Os **59/59** carros ativos estão com o campo `NULL` — o ajuste de reanúncio **nunca dispara** na frota atual. O campo só se popula pelo import do arquivo (migration 029). Enquanto estiver assim, ele é código sem efeito: não faz mal, mas também não foi validado contra nada.
+    - **⚠️ E a semântica dele está em aberto (levantado pelo `@quinn-qa`).** O racional do ajuste — *"esse carro já voltou N vezes, o preço está alto"* — pressupõe **reanúncio ao longo do tempo**. O COMMENT da migration 029 diz *"quantidade de anúncios **ativos**"*, e três anúncios **simultâneos** não são a mesma coisa que um carro reanunciado três vezes; se for simultaneidade, o sinal pode ser o **oposto** (mais exposição, não mais dificuldade). **O Marcos vai confirmar no portal o que a coluna conta.** Até a resposta, o comportamento fica como está — o custo de errar é zero enquanto os 59/59 estiverem `NULL`. A ambiguidade está registrada em bloco no `calcularAjustes` de `sugerir-preco-repasse.ts`. **Precisa estar resolvido antes de o import de arquivo começar a popular a coluna.**
 
-    **Decisão do Marcos, não do dev.** As duas opções são "manter como está" (a plana já fica praticamente centrada no hábito dele, +R$ 214 de delta médio) ou "manter o ajuste de dias" (aproxima do comportamento dele nos parados, ao custo de sair do centro na frota toda).
+    **✅ DECIDIDO — Marcos, 2026-08-12: manter o ajuste de dias parados.** O código já está assim; nada muda na implementação.
+
+    Racional aceito: o ajuste reproduz um comportamento que o Marcos **já tem** (descontar carro parado) e puxa na direção do achado central da análise — quem corta cedo sai com +14,3% de lucro mediano, quem corta tarde sai com +4,9%. Sem o ajuste, a régua sugeriria **acima** do que ele pede justamente nos 21 carros parados, que são os que mais precisam sair. O custo aceito é o delta médio de −R$ 235 na frota toda (contra +R$ 214 da plana) — magnitudes equivalentes, então o critério de desempate foi o alinhamento com o comportamento observado, não a centralidade.
+
+    **Ainda não calibrado.** O teto de 3 pt e o corte de 30 dias não saem de regressão — são o mesmo tipo de número não-calibrado que `TETO_REF_AA_PCT`. Recalibrar junto com `REGUA_MINIMO_PCT` no gatilho T2 (n > ~40 vendas).
+
+    **`qtde_anuncios` permanece como está** — código sem efeito enquanto os 59/59 carros ativos tiverem o campo `NULL`. Não foi removido porque o import do arquivo (migration 029) popula o campo; quando popular, o ajuste passa a valer **sem nunca ter sido validado**. Quem for mexer nisso: medir antes de confiar, no mesmo molde da medição de dias acima.
 
 ## Complexity (T-shirt)
 

@@ -127,6 +127,7 @@ export function PrecificarAba() {
       anoModelo: carro.anoModelo,
       anoReferencia: new Date().getFullYear(),
       diasNoRepasse: carro.diasNoRepasse,
+      diasAproximados: carro.diasAproximados,
       qtdeAnuncios: carro.qtdeAnuncios,
     });
   }, [carro]);
@@ -135,8 +136,13 @@ export function PrecificarAba() {
     sugestaoResultado != null && sugestaoResultado.ok ? sugestaoResultado : null;
 
   // ── Valores a aplicar ────────────────────────────────────────────────────
-  const minimoTexto = minimoInput ?? (sugestao ? paraInput(sugestao.minimoSugerido) : "");
-  const comprePorTexto = comprePorInput ?? (sugestao ? paraInput(sugestao.comprePorSugerido) : "");
+  // Prefill com o par ARREDONDADO, não com o centavo exato (decisão do Marcos,
+  // 2026-08-12): é o número que ele digita no portal, então é ele que tem que
+  // virar `minimo_aplicado`. Gravar o exato registraria um preço que nunca foi
+  // ao ar — ruído no rótulo de calibração, que é a razão da tabela 030 existir.
+  const minimoTexto = minimoInput ?? (sugestao ? paraInput(sugestao.minimoArredondado) : "");
+  const comprePorTexto =
+    comprePorInput ?? (sugestao ? paraInput(sugestao.comprePorArredondado) : "");
   const minimoAplicar = parseValorBR(minimoTexto);
   const comprePorAplicar = parseValorBR(comprePorTexto);
 
@@ -221,10 +227,12 @@ export function PrecificarAba() {
         encontrado: true,
         carro: { ...carro, valorMinimo: minimoAplicar, valorComprePor: comprePorAplicar },
       });
+      // Centavos na confirmação: a mensagem que confirma a ESCRITA é o pior
+      // lugar pra arredondar num projeto que trata R$ 0,01 como bug crítico.
       showSuccessToast(
         r.updatePulado
-          ? `Decisão registrada. Os preços já eram esses (mínimo ${formatBRL(minimoAplicar)} · compre por ${formatBRL(comprePorAplicar)}) — nada mudou no repasse.`
-          : `Preço aplicado: mínimo ${formatBRL(minimoAplicar)} · compre por ${formatBRL(comprePorAplicar)}.`,
+          ? `Decisão registrada. Os preços já eram esses (mínimo ${formatBRLCents(minimoAplicar)} · compre por ${formatBRLCents(comprePorAplicar)}) — nada mudou no repasse.`
+          : `Preço aplicado: mínimo ${formatBRLCents(minimoAplicar)} · compre por ${formatBRLCents(comprePorAplicar)}.`,
         { duracaoMs: 8_000 },
       );
       if (veioDeDeepLink.current) router.push("/repasses");
@@ -455,12 +463,17 @@ function CabecalhoCarro({ carro }: { carro: CarroPrecificar }) {
         <Campo label="Compre por gravado" valor={formatBRL(carro.valorComprePor)} />
       </div>
 
-      {/* AC3 — a identidade do repasse é por CICLO, nunca por chassi. */}
+      {/* AC3 — a identidade do repasse é por CICLO, nunca por chassi.
+          A data tem que sair do ciclo ESCOLHIDO: `ciclos` vem por id desc
+          INCLUINDO cancelados, e o escolhido é o mais recente NÃO-cancelado —
+          `ciclos[0]` mostraria a data do ciclo errado justamente no texto que
+          existe pra desambiguar. */}
       {carro.ciclos.length > 1 && (
         <p className="mt-4 rounded-md bg-[var(--bg-muted)] px-3 py-2 text-[11px] text-[var(--text-muted)]">
           Essa placa tem {carro.ciclos.length} ciclos de repasse. Precificando o ciclo{" "}
-          <strong>#{carro.repasseId}</strong> (marcado em {formatarDataBR(carro.ciclos[0]?.dataMarcado)})
-          — o mais recente que não está cancelado.
+          <strong>#{carro.repasseId}</strong> (marcado em{" "}
+          {formatarDataBR(carro.ciclos.find((c) => c.id === carro.repasseId)?.dataMarcado)}) — o mais
+          recente que não está cancelado.
         </p>
       )}
     </div>
@@ -620,24 +633,33 @@ function BlocoSugestao({ sugestao }: { sugestao: SugestaoPrecoRepasse }) {
             sugestao.confianca === "muito_baixa" &&
               "bg-[var(--bg-muted)] text-[var(--text-muted)]",
           )}
-          title={CONFIANCA_MOTIVO[sugestao.confianca]}
         >
           {CONFIANCA_LABEL[sugestao.confianca]}
         </span>
       </div>
 
+      {/* O motivo é TEXTO VISÍVEL, não tooltip. Um badge verde "Confiança alta"
+          ao lado de um número que sai de n=16 é o Risk #1 da story — a sugestão
+          parecer mais científica do que é. E o badge mede só "existe referência
+          pra conferir", não "o preço está certo". Tooltip não aparece em toque
+          nem em leitor de tela: quem mais precisa da ressalva não a receberia. */}
+      <p className="mt-1 text-[11px] text-[var(--text-muted)]">
+        {CONFIANCA_MOTIVO[sugestao.confianca]} Mede se há referência de mercado pra conferir — não
+        se o preço está certo.
+      </p>
+
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <PrecoCard
           titulo="Mínimo"
           descricao="Piso do leilão de 24h"
-          exibicao={sugestao.minimoExibicao}
+          arredondado={sugestao.minimoArredondado}
           exato={sugestao.minimoSugerido}
           razao={sugestao.minimoRazaoEfetiva}
         />
         <PrecoCard
           titulo="Compre por"
           descricao="Compra direta — encerra o anúncio na hora"
-          exibicao={sugestao.comprePorExibicao}
+          arredondado={sugestao.comprePorArredondado}
           exato={sugestao.comprePorSugerido}
           razao={sugestao.comprePorRazaoEfetiva}
         />
@@ -677,13 +699,13 @@ function BlocoSugestao({ sugestao }: { sugestao: SugestaoPrecoRepasse }) {
 function PrecoCard({
   titulo,
   descricao,
-  exibicao,
+  arredondado,
   exato,
   razao,
 }: {
   titulo: string;
   descricao: string;
-  exibicao: number;
+  arredondado: number;
   exato: number;
   razao: number;
 }) {
@@ -691,14 +713,16 @@ function PrecoCard({
     <div className="rounded-lg border border-[var(--border-soft)] bg-[var(--bg-muted)] p-4">
       <p className="text-[10px] uppercase tracking-wide text-[var(--text-subtle)]">{titulo}</p>
       <p className="mt-1 text-2xl font-bold tabular-nums text-[var(--text-strong)]">
-        {formatBRL(exibicao)}
+        {formatBRL(arredondado)}
       </p>
       <p className="mt-1 text-[11px] text-[var(--text-muted)]">
         {descricao} · {(razao * 100).toFixed(1)}% do custo
       </p>
-      <p className="mt-0.5 text-[10px] text-[var(--text-subtle)]">
-        Valor exato: {formatBRLCents(exato)}
-      </p>
+      {arredondado !== exato && (
+        <p className="mt-0.5 text-[10px] text-[var(--text-subtle)]">
+          Régua crua: {formatBRLCents(exato)}
+        </p>
+      )}
     </div>
   );
 }
@@ -750,12 +774,14 @@ function BlocoAplicar({
       </p>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        {/* A referência da diferença é o par ARREDONDADO — é ele que preenche o
+            campo, então "sem edição" tem que mostrar diferença zero. */}
         <CampoPreco
           id="aplicar-minimo"
           label="Mínimo"
           valor={minimoTexto}
           numero={minimoAplicar}
-          sugerido={sugestao.minimoSugerido}
+          sugerido={sugestao.minimoArredondado}
           desabilitado={!carro.editavel || aplicando}
           onChange={onMinimo}
         />
@@ -764,7 +790,7 @@ function BlocoAplicar({
           label="Compre por"
           valor={comprePorTexto}
           numero={comprePorAplicar}
-          sugerido={sugestao.comprePorSugerido}
+          sugerido={sugestao.comprePorArredondado}
           desabilitado={!carro.editavel || aplicando}
           onChange={onComprePor}
         />

@@ -78,7 +78,15 @@ export type CarimboAplicado = {
 export type SnapshotPrecificacaoMontado = {
   insert: SnapshotPrecificacaoInsert;
   carimbo: CarimboAplicado;
-  /** true = o Marcos editou pelo menos um dos dois preços antes de aplicar. */
+  /**
+   * true = o par aplicado difere do par que o motor sugeriu.
+   *
+   * ⚠️ Desde a decisão do Marcos de 2026-08-12, a UI preenche os campos com o
+   * par ARREDONDADO pra centena, então este booleano é `true` na maioria das
+   * aplicações mesmo sem o Marcos ter digitado nada. Quem for recalibrar deve
+   * olhar a MAGNITUDE da diferença, não a flag: diferença abaixo de R$ 100 é
+   * arredondamento; acima disso é correção de verdade.
+   */
   houveEdicao: boolean;
 };
 

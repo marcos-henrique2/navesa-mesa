@@ -253,6 +253,15 @@ export type EntradaSugestaoRepasse = {
   /** Ano corrente, injetado pra manter a função pura. */
   anoReferencia: number;
   diasNoRepasse: number | null | undefined;
+  /**
+   * `repasses.data_subido_aproximada` — true quando `data_subido` foi INFERIDA
+   * no backfill da migration 027 e pode variar alguns dias.
+   *
+   * Importa porque `dias_no_repasse` é hoje o único ajuste que mexe em DINHEIRO
+   * (até −3 pt): a justificativa marca a incerteza em vez de apresentar um
+   * desconto derivado de data inferida como se fosse medida.
+   */
+  diasAproximados?: boolean;
   qtdeAnuncios: number | null | undefined;
 };
 
@@ -260,12 +269,25 @@ export type SugestaoPrecoRepasse = {
   ok: true;
   custo: CustoDecomposto;
   contexto: ContextoSugestao;
-  /** Centavo-perfect (numeric(12,2)). É o que vai pro snapshot. */
+  /**
+   * Saída crua da régua, centavo-perfect (numeric(12,2)). É o que vai pro
+   * snapshot em `minimo_sugerido` / `compre_por_sugerido` — o que o MOTOR
+   * sugeriu, não necessariamente o que foi aplicado.
+   */
   minimoSugerido: number;
   comprePorSugerido: number;
-  /** Múltiplo de R$ 100 — SÓ apresentação (AC18). Nunca gravado. */
-  minimoExibicao: number;
-  comprePorExibicao: number;
+  /**
+   * Múltiplo de R$ 100 (AC18). É o valor EXIBIDO **e** o que preenche os campos
+   * de aplicar — decisão do Marcos, 2026-08-12: é o número que ele digita no
+   * portal de qualquer forma, então é ele que deve virar `minimo_aplicado`.
+   * Gravar o centavo exato registraria um preço que nunca foi ao ar, poluindo
+   * justamente o rótulo de calibração que a tabela 030 existe pra capturar.
+   *
+   * ⚠️ Respeita o piso: se arredondar pra baixo cruzasse o `custo_real` (ou
+   * invertesse o par), cai de volta pro valor exato e um alerta é emitido.
+   */
+  minimoArredondado: number;
+  comprePorArredondado: number;
   /** Razão sobre `custo_real` DEPOIS dos ajustes e DEPOIS do piso (numeric(9,6)). */
   minimoRazaoEfetiva: number;
   comprePorRazaoEfetiva: number;
@@ -315,9 +337,20 @@ function arredondarRazao(v: number): number {
   return Math.round((v + Number.EPSILON) * 1e6) / 1e6;
 }
 
-/** Múltiplo de R$ 100 — SÓ apresentação (AC18). */
+/** Múltiplo de R$ 100 (AC18). */
 export function arredondarParaCentena(v: number): number {
   return Math.round(v / 100) * 100;
+}
+
+/**
+ * Arredonda pra centena **sem furar o piso**: se a centena de baixo cruzasse o
+ * limite (`custo_real` no caso do mínimo; o próprio mínimo no caso do compre
+ * por), devolve o valor exato. Vale a pena arredondar pra facilitar a digitação
+ * no portal — não vale a pena arredondar pra baixo do custo.
+ */
+function arredondarRespeitandoPiso(exato: number, piso: number): number {
+  const centena = arredondarParaCentena(exato);
+  return centena < piso ? exato : centena;
 }
 
 function formatBRL(n: number): string {
@@ -349,7 +382,12 @@ export function decomporCusto(
   valorCompraRepasse: number | null | undefined,
   gastos: ReadonlyArray<number | null | undefined>,
 ): CustoDecomposto | null {
-  if (!isNumFinito(valorCompraRepasse) || valorCompraRepasse < 0) return null;
+  if (!isNumFinito(valorCompraRepasse)) return null;
+  // Negativo é dado ERRADO, não dado ausente. Os dois casos devolvem `null`
+  // aqui, mas `sugerirPrecoRepasse` os separa na MENSAGEM — mandar o Marcos
+  // preencher um campo que já está preenchido (com lixo) o faz procurar a coisa
+  // errada. O CHECK `valor_compra_repasse >= 0` da 030 recusaria de todo jeito.
+  if (valorCompraRepasse < 0) return null;
 
   const validos = gastos.filter(isNumFinito);
   const gastosTotal = somarCentavos(validos);
@@ -411,9 +449,23 @@ function limitarAjuste(pontos: number, teto: number): number {
  * `ReguaPrecoRepasse`. A régua é PLANA em quilometragem.
  *
  * A diferença que sustenta manter estes dois: km é CARACTERÍSTICA do carro, e a
- * mediana da amostra já a absorveu; dias parados e reanúncio são ESTADO, e
- * "esse carro já voltou N vezes" é sinal novo de que o preço está alto.
+ * mediana da amostra já a absorveu; dias parados e reanúncio são ESTADO.
  * Isso é argumento, não medição — os dois seguem NÃO CALIBRADOS.
+ *
+ * ┌─ ⚠️ SEMÂNTICA DE `qtde_anuncios` EM ABERTO — não mexer até a resposta ─────┐
+ * │ O racional deste ajuste ("esse carro já voltou N vezes, o preço está alto")│
+ * │ pressupõe REANÚNCIO AO LONGO DO TEMPO. Mas o COMMENT da migration 029 diz  │
+ * │ "quantidade de anúncios ATIVOS" — e três anúncios SIMULTÂNEOS não são a    │
+ * │ mesma coisa que um carro reanunciado três vezes. Se for simultaneidade, o  │
+ * │ sinal pode ser o oposto (mais exposição, não mais dificuldade).            │
+ * │                                                                            │
+ * │ O Marcos vai confirmar no portal o que a coluna conta. Até lá o            │
+ * │ comportamento fica COMO ESTÁ, e o custo de errar é zero na prática: os     │
+ * │ 59/59 carros ativos têm o campo NULL (medido em 2026-08-12), então o       │
+ * │ ajuste NUNCA dispara hoje. Ele só ganha efeito quando o import de arquivo  │
+ * │ (029) começar a popular a coluna — e é aí que a resposta precisa ter       │
+ * │ chegado.                                                                   │
+ * └────────────────────────────────────────────────────────────────────────────┘
  */
 function calcularAjustes(
   entrada: EntradaSugestaoRepasse,
@@ -433,7 +485,11 @@ function calcularAjustes(
     if (pontos < 0) {
       ajustes.push({
         codigo: "dias_parado",
-        label: `${entrada.diasNoRepasse} dias em repasse (limiar ${params.DIAS_PARADO_LIMIAR})`,
+        label:
+          `${entrada.diasNoRepasse} dias em repasse (limiar ${params.DIAS_PARADO_LIMIAR})` +
+          (entrada.diasAproximados === true
+            ? " — data de subida INFERIDA no backfill da 027, pode variar alguns dias"
+            : ""),
         pontos,
       });
     }
@@ -483,10 +539,14 @@ export function sugerirPrecoRepasse(
   // AC6 — sem `valor_compra_repasse` não há sugestão. Sem fallback, em hipótese
   // nenhuma, pra `valor_aquisicao` (custo de VAREJO).
   if (custo == null) {
+    // Dado ERRADO e dado AUSENTE pedem ações diferentes do Marcos: um é conferir
+    // o lançamento, o outro é preencher o campo.
+    const negativa = isNumFinito(entrada.valorCompraRepasse) && entrada.valorCompraRepasse < 0;
     return {
       ok: false,
-      motivo:
-        "Dados incompletos — falta o R$ Compra do Auto Avaliar (valor de compra do repasse). Sem ele não há custo real, e sem custo real não há sugestão.",
+      motivo: negativa
+        ? "R$ Compra do repasse está NEGATIVO — confira o lançamento. Não é campo em branco: é valor inválido, e o banco recusaria."
+        : "Dados incompletos — falta o R$ Compra do Auto Avaliar (valor de compra do repasse). Sem ele não há custo real, e sem custo real não há sugestão.",
       custo: null,
     };
   }
@@ -540,6 +600,15 @@ export function sugerirPrecoRepasse(
   if (minimoSugerido < custo.custoReal) minimoSugerido = custo.custoReal;
   let comprePorSugerido = arredondarCentavos(custo.custoReal * razaoComprePor);
   if (comprePorSugerido < minimoSugerido) comprePorSugerido = minimoSugerido;
+
+  // ── Par ARREDONDADO — é o que preenche os campos de aplicar (AC18) ───────
+  const minimoArredondado = arredondarRespeitandoPiso(minimoSugerido, custo.custoReal);
+  const comprePorArredondado = arredondarRespeitandoPiso(comprePorSugerido, minimoArredondado);
+  if (minimoArredondado !== arredondarParaCentena(minimoSugerido)) {
+    alertas.push(
+      `Mínimo sugerido não foi arredondado pra centena: R$ 100 pra baixo cruzaria o custo real (${formatBRL(custo.custoReal)}). Vale o valor exato.`,
+    );
+  }
 
   // Razões EFETIVAS derivadas do dinheiro final — o snapshot fica internamente
   // coerente (razão × custo reproduz o preço gravado).
@@ -615,8 +684,8 @@ export function sugerirPrecoRepasse(
     contexto,
     minimoSugerido,
     comprePorSugerido,
-    minimoExibicao: arredondarParaCentena(minimoSugerido),
-    comprePorExibicao: arredondarParaCentena(comprePorSugerido),
+    minimoArredondado,
+    comprePorArredondado,
     minimoRazaoEfetiva,
     comprePorRazaoEfetiva,
     bateuPiso,

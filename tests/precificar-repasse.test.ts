@@ -89,12 +89,52 @@ describe("régua: mínimo pela mediana, compre-por derivado da razão", () => {
     assert.equal(s.bateuPiso, false);
   });
 
-  it("arredondamento pra centena é SÓ apresentação — o gravado é centavo-perfect", () => {
+  it("o par arredondado é o que se aplica; o exato é o que o snapshot chama de sugerido", () => {
     const s = exigirSugestao(sugerirPrecoRepasse(entrada()));
-    assert.equal(s.comprePorExibicao, 112_000);
+    assert.equal(s.comprePorArredondado, 112_000);
     assert.equal(s.comprePorSugerido, 111_974.79);
+    assert.equal(s.minimoArredondado, 106_600); // já era múltiplo de 100
     assert.equal(arredondarParaCentena(106_649), 106_600);
     assert.equal(arredondarParaCentena(106_651), 106_700);
+  });
+
+  it("o arredondamento NUNCA fura o piso — cai pro exato e avisa", () => {
+    // Piso ativo: o mínimo trava no custo_real, e a centena de BAIXO cruzaria.
+    // custo 100.040,00 ⇒ mínimo trava em 100.040,00; arredondar daria 100.000.
+    const s = exigirSugestao(
+      sugerirPrecoRepasse(entrada({ valorCompraRepasse: 100_040 }), {
+        ...REGUA_PADRAO,
+        REGUA_MINIMO_PCT: 0.9, // força o clamp no piso
+      }),
+    );
+    assert.equal(s.bateuPiso, true);
+    assert.equal(s.minimoSugerido, 100_040);
+    assert.equal(s.minimoArredondado, 100_040); // NÃO virou 100.000
+    assert.ok(s.minimoArredondado >= s.custo.custoReal);
+    assert.ok(s.alertas.some((a) => a.includes("não foi arredondado")));
+  });
+
+  it("arredondar pra CIMA não fura piso nenhum e segue valendo", () => {
+    // custo 100.060 ⇒ trava em 100.060; a centena mais próxima é 100.100 (acima).
+    const s = exigirSugestao(
+      sugerirPrecoRepasse(entrada({ valorCompraRepasse: 100_060 }), {
+        ...REGUA_PADRAO,
+        REGUA_MINIMO_PCT: 0.9,
+      }),
+    );
+    assert.equal(s.minimoArredondado, 100_100);
+    assert.ok(!s.alertas.some((a) => a.includes("não foi arredondado")));
+  });
+
+  it("o compre por arredondado nunca cai abaixo do mínimo arredondado", () => {
+    for (const compra of [100_000, 100_050, 66_037, 248_991.47, 12_345.67]) {
+      const s = exigirSugestao(sugerirPrecoRepasse(entrada({ valorCompraRepasse: compra })));
+      assert.ok(
+        s.comprePorArredondado >= s.minimoArredondado &&
+          s.minimoArredondado >= s.custo.custoReal,
+        `par arredondado quebrou a ordem em compra=${compra}`,
+      );
+    }
   });
 
   it("a banda p25–p75 é do MÍNIMO entre carros, não a faixa mínimo↔compre-por", () => {
@@ -454,7 +494,7 @@ describe("montarSnapshotPrecificacao (AC21/AC22)", () => {
     ),
   );
 
-  it("aplicar SEM editar grava sugerido == aplicado", () => {
+  it("aplicar exatamente o sugerido grava sugerido == aplicado", () => {
     const { insert, carimbo, houveEdicao } = montarSnapshotPrecificacao({
       repasseId: 42,
       sugestao,
@@ -465,6 +505,22 @@ describe("montarSnapshotPrecificacao (AC21/AC22)", () => {
     assert.equal(carimbo.minimo_aplicado, insert.minimo_sugerido);
     assert.equal(carimbo.compre_por_aplicado, insert.compre_por_sugerido);
     assert.equal(carimbo.aplicado_em, "2026-08-12T15:30:00.000Z");
+  });
+
+  it("o caminho REAL da UI aplica o par arredondado — delta abaixo de R$ 100", () => {
+    // Decisão do Marcos, 2026-08-12: grava-se o que foi de fato ao ar, não o
+    // centavo da régua. Quem recalibrar tem que olhar a MAGNITUDE, não a flag.
+    const { insert, carimbo, houveEdicao } = montarSnapshotPrecificacao({
+      repasseId: 42,
+      sugestao,
+      aplicado: { minimo: sugestao.minimoArredondado, comprePor: sugestao.comprePorArredondado },
+      agora: AGORA,
+    });
+    assert.equal(houveEdicao, true);
+    assert.ok(Math.abs(carimbo.minimo_aplicado - insert.minimo_sugerido) < 100);
+    assert.ok(Math.abs(carimbo.compre_por_aplicado - insert.compre_por_sugerido) < 100);
+    // O sugerido gravado continua sendo a saída CRUA da régua.
+    assert.equal(insert.minimo_sugerido, sugestao.minimoSugerido);
   });
 
   it("editar antes de aplicar preserva OS DOIS PARES — a correção é o rótulo", () => {

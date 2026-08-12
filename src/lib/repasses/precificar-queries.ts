@@ -62,6 +62,11 @@ export type CarroPrecificar = {
   km: number | null;
   status: RepasseStatus;
   diasNoRepasse: number | null;
+  /**
+   * true = `data_subido` foi INFERIDA no backfill da 027. Marca a incerteza no
+   * ajuste de dias parados, que é o único ajuste que mexe em dinheiro.
+   */
+  diasAproximados: boolean;
   valorCompraRepasse: number | null;
   gastos: GastoRepasseItem[];
   valorAutoAvaliar: number | null;
@@ -127,7 +132,7 @@ function isRepasseStatus(v: unknown): v is RepasseStatus {
 /** Colunas que a aba precisa. `valor_aquisicao` NÃO entra — é custo de varejo. */
 const COLUNAS_PRECIFICAR =
   "id, chassi, placa, modelo, marca, ano_fabricacao, ano_modelo, km, status, " +
-  "data_subiu, data_subido, data_vendido, valor_compra_repasse, valor_minimo, " +
+  "data_subiu, data_subido, data_subido_aproximada, data_vendido, valor_compra_repasse, valor_minimo, " +
   "valor_compre_por, valor_auto_avaliar, valor_fipe, valor_maior_oferta, qtde_anuncios";
 
 type RepassePrecificarRow = {
@@ -142,6 +147,8 @@ type RepassePrecificarRow = {
   status: string;
   data_subiu: string | null;
   data_subido: string | null;
+  /** Coluna da migration 027 — pode vir ausente até a migration ser aplicada. */
+  data_subido_aproximada?: boolean | null;
   data_vendido: string | null;
   valor_compra_repasse: number | string | null;
   valor_minimo: number | string | null;
@@ -272,6 +279,9 @@ export async function buscarCarroPorPlaca(termo: string): Promise<ResultadoBusca
       escolhido.data_vendido,
       hojeLocal(),
     ),
+    // `=== true` porque a coluna só existe a partir da 027: antes disso vem
+    // undefined, e undefined não pode virar "data aproximada".
+    diasAproximados: escolhido.data_subido_aproximada === true,
     valorCompraRepasse: num(escolhido.valor_compra_repasse),
     gastos,
     valorAutoAvaliar: num(escolhido.valor_auto_avaliar),
