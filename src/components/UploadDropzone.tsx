@@ -15,6 +15,7 @@ import {
   type OfertasMeta,
   type PayloadSyncArquivo,
 } from "@/lib/parsers/auto-avaliar-ofertas-xls";
+import { placasVistasNoArquivo } from "@/lib/repasses/presenca-arquivo-auto-avaliar";
 import { previewSyncArquivo } from "@/lib/repasses/sync-arquivo-auto-avaliar-queries";
 import type { RelatorioSync } from "@/lib/repasses/sync-arquivo-auto-avaliar";
 import { SyncOfertasConferencia } from "@/components/repasses/SyncOfertasConferencia";
@@ -90,6 +91,12 @@ type ConferenciaOfertas = {
   arquivoNome: string;
   meta: OfertasMeta;
   outraLoja: LinhaOutraLoja[];
+  /**
+   * Placas de TODAS as lojas do arquivo. Só existe aqui porque `payload` já saiu
+   * filtrado pela Matriz: o balde "saiu do anúncio" precisa do arquivo inteiro,
+   * senão carro transferido de loja é acusado de ter sumido.
+   */
+  placasNoArquivo: ReadonlySet<string>;
   payload: PayloadSyncArquivo;
   preview: RelatorioSync;
 };
@@ -156,6 +163,7 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
             arquivoNome: file.name,
             meta: parse.meta,
             outraLoja: parse.outra_loja,
+            placasNoArquivo: placasVistasNoArquivo(parse.linhas, parse.outra_loja),
             payload,
             preview,
           });
@@ -390,6 +398,7 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
           arquivoNome={conferencia.arquivoNome}
           meta={conferencia.meta}
           outraLoja={conferencia.outraLoja}
+          placasNoArquivo={conferencia.placasNoArquivo}
           payload={conferencia.payload}
           preview={conferencia.preview}
           onAplicado={(relatorio) => {

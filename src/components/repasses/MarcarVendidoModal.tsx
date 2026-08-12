@@ -24,8 +24,19 @@ import { parseValorBR } from "@/lib/utils/parse-br";
 import { hojeLocal } from "@/lib/utils/data-local";
 import { formatBRL } from "@/lib/utils";
 
+/**
+ * Recorte do repasse que o modal realmente lê. `Repasse` satisfaz este tipo, então
+ * quem já passava a linha inteira continua passando — mas fluxos que buscam um
+ * select estreito (o diff de presença do arquivo do Auto Avaliar, Fatia 3b)
+ * também servem, sem precisar carregar a row completa só pra abrir este modal.
+ */
+export type RepasseParaVenda = Pick<
+  Repasse,
+  "placa" | "modelo" | "valor_compra_repasse" | "valor_minimo" | "valor_compre_por"
+>;
+
 export type MarcarVendidoModalProps = {
-  repasse: Repasse;
+  repasse: RepasseParaVenda;
   /**
    * Valores de `repasse_gastos` do carro — entram no custo_real.
    * `null` = a query de gastos falhou: sem o Σ gastos a prévia sairia
@@ -35,6 +46,14 @@ export type MarcarVendidoModalProps = {
   open: boolean;
   onClose: () => void;
   onConfirm: (input: MarcarVendidoInput) => void | Promise<void>;
+  /**
+   * Linha de contexto sob o título — usada quando o modal é um passo de uma
+   * FILA ("Carro 2 de 6 que saíram do anúncio"). Sem ela o usuário não sabe
+   * quantos ainda vêm.
+   */
+  contexto?: string;
+  /** Rótulo do botão de saída. Numa fila, "Cancelar" mente: ali ele PULA o carro. */
+  rotuloCancelar?: string;
 };
 
 /** Data de hoje pro `<input type="date">` — LOCAL, senão às 22h já mostra amanhã. */
@@ -57,6 +76,8 @@ export function MarcarVendidoModal({
   open,
   onClose,
   onConfirm,
+  contexto,
+  rotuloCancelar = "Cancelar",
 }: MarcarVendidoModalProps) {
   const [valorRaw, setValorRaw] = useState("");
   const [data, setData] = useState(hojeYMD());
@@ -120,6 +141,11 @@ export function MarcarVendidoModal({
             <p className="mt-0.5 text-xs text-[var(--text-muted)]">
               {repasse.modelo} · <span className="font-mono">{repasse.placa}</span>
             </p>
+            {contexto && (
+              <p className="mt-1 text-[11px] font-medium text-[var(--brand-700)] dark:text-[var(--brand-300)]">
+                {contexto}
+              </p>
+            )}
           </div>
           <button
             type="button"
@@ -208,7 +234,7 @@ export function MarcarVendidoModal({
             disabled={salvando}
             className="rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-4 py-2 text-sm text-[var(--text-body)] hover:bg-[var(--bg-muted)] disabled:opacity-50"
           >
-            Cancelar
+            {rotuloCancelar}
           </button>
           <button
             type="button"

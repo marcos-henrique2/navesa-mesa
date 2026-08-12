@@ -26,8 +26,12 @@ import {
 import { getLead, updateLead, type Lead, type LeadPatch } from "@/lib/leads/leads";
 import {
   deleteInteresse,
+  ehInteresseOrfao,
   listInteressesPorLead,
+  motivoAcaoIndisponivel,
+  referenciaCarro,
   updateInteresse,
+  LABEL_CARRO_REMOVIDO,
   ORIGEM_BADGE,
   TIPO_CARRO_LABEL,
   STATUS_FOLLOWUP_LABEL,
@@ -401,21 +405,11 @@ export function LeadDetalhe({ leadId }: { leadId: number }) {
                   <div className="flex flex-wrap items-center gap-1.5">
                     <OrigemBadge origem={i.origem} />
                     <TipoBadge tipo={i.tipo_carro} />
+                    {ehInteresseOrfao(i) && <BadgeCarroRemovido />}
                   </div>
                   <p className="mt-1.5 font-medium text-[var(--text-strong)]">{i.modelo_snapshot}</p>
                   <p className="mt-0.5 text-[11px] text-[var(--text-muted)]">
-                    {i.tipo_carro === "repasse" && i.repasse_id != null ? (
-                      <Link
-                        href={`/repasses/${i.repasse_id}/interessados`}
-                        className="hover:underline"
-                      >
-                        Repasse #{i.repasse_id}
-                      </Link>
-                    ) : i.chassi ? (
-                      <span className="font-mono">{i.chassi}</span>
-                    ) : (
-                      "—"
-                    )}
+                    <RefCarro interesse={i} />
                     {i.origem === "visualizou" && ` · ${i.qtd_visualizacoes} visualização(ões)`}
                   </p>
                 </div>
@@ -491,6 +485,53 @@ function OrigemBadge({ origem }: { origem: Origem }) {
       {ORIGEM_BADGE[origem]}
     </span>
   );
+}
+
+/**
+ * Órfão (migration 033): o repasse foi deletado e `repasse_id` virou NULL. A
+ * linha NÃO some — ela ainda diz que esse lead procurou esse carro, e esse
+ * histórico é escasso. O badge existe pra o Marcos não achar que a tela perdeu o
+ * link por bug.
+ */
+function BadgeCarroRemovido() {
+  return (
+    <span
+      className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+      title={motivoAcaoIndisponivel({ tipo_carro: "repasse", repasse_id: null, chassi: null }) ?? ""}
+    >
+      {LABEL_CARRO_REMOVIDO}
+    </span>
+  );
+}
+
+/**
+ * Linha de referência do carro. Cada caso da união é explícito: o "removido"
+ * mostra o motivo em vez de um traço mudo, e o link só existe quando há repasse
+ * pra abrir.
+ */
+function RefCarro({ interesse }: { interesse: LeadInteresse }) {
+  const ref = referenciaCarro(interesse);
+  switch (ref.tipo) {
+    case "repasse":
+      return (
+        <Link href={`/repasses/${ref.repasseId}/interessados`} className="hover:underline">
+          Repasse #{ref.repasseId}
+        </Link>
+      );
+    case "estoque":
+      return <span className="font-mono">{ref.chassi}</span>;
+    case "removido":
+      return (
+        <span
+          className="italic text-amber-700 dark:text-amber-400"
+          title={motivoAcaoIndisponivel(interesse) ?? ""}
+        >
+          Repasse removido — sem página pra abrir
+        </span>
+      );
+    case "indefinido":
+      return <>—</>;
+  }
 }
 
 function TipoBadge({ tipo }: { tipo: TipoCarro }) {
