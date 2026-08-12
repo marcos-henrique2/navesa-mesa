@@ -11,13 +11,35 @@
  *                    maior oferta recebida e qtde de anúncios. Nunca cria carro.
  *
  * Toda a lógica mora nas duas abas; aqui é só a escolha e o texto que explica.
+ *
+ * Duas decisões de implementação que não são cosméticas:
+ *
+ * 1. Só a aba ativa fica MONTADA (não é `hidden`), pra `ImportarPorArquivo`
+ *    poder ser lazy de verdade. O preço é que trocar de aba mata o estado da
+ *    outra — por isso a troca é guardada quando há colagem/preview em pé.
+ * 2. `ImportarPorArquivo` entra por `next/dynamic`: ele puxa o SheetJS (~460 KB
+ *    minificado), e sem isso todo carregamento de /repasses/importar pagaria
+ *    esse chunk mesmo pra quem só vai colar texto.
  */
 
-import { useState } from "react";
-import { ClipboardPaste, FileUp } from "lucide-react";
+import { useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { ClipboardPaste, FileUp, Loader2 } from "lucide-react";
 import { ImportarPorTexto } from "@/components/repasses/ImportarPorTexto";
-import { ImportarPorArquivo } from "@/components/repasses/ImportarPorArquivo";
 import { cn } from "@/lib/utils";
+
+const ImportarPorArquivo = dynamic(
+  () =>
+    import("@/components/repasses/ImportarPorArquivo").then((m) => m.ImportarPorArquivo),
+  {
+    ssr: false,
+    loading: () => (
+      <p className="flex items-center gap-2 rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-5 text-sm text-[var(--text-muted)]">
+        <Loader2 className="h-4 w-4 animate-spin" /> Carregando o leitor de planilha…
+      </p>
+    ),
+  },
+);
 
 type Aba = "texto" | "arquivo";
 
@@ -63,13 +85,46 @@ const ABAS: Record<Aba, InfoAba> = {
 
 export function ImportarAutoAvaliar() {
   const [aba, setAba] = useState<Aba>("texto");
+  /** Espelha o estado interno da aba de texto (colagem/preview em pé). */
+  const [textoComTrabalhoVivo, setTextoComTrabalhoVivo] = useState(false);
+  const refsAbas = useRef<Partial<Record<Aba, HTMLButtonElement | null>>>({});
   const ativa = ABAS[aba];
+
+  /** Devolve `true` se a troca aconteceu. Sair do texto com trabalho vivo pede aval. */
+  function trocarAba(destino: Aba): boolean {
+    if (destino === aba) return false;
+    if (
+      aba === "texto" &&
+      textoComTrabalhoVivo &&
+      !confirm("Trocar de aba descarta a colagem e o preview. Continuar?")
+    ) {
+      return false;
+    }
+    setTextoComTrabalhoVivo(false);
+    setAba(destino);
+    return true;
+  }
+
+  /** Padrão ARIA de tablist: setas circulam, Home/End vão às pontas. */
+  function navegarPorTeclado(e: React.KeyboardEvent<HTMLDivElement>) {
+    const atual = ORDEM.indexOf(aba);
+    const destino =
+      e.key === "ArrowRight" ? ORDEM[(atual + 1) % ORDEM.length]
+      : e.key === "ArrowLeft" ? ORDEM[(atual - 1 + ORDEM.length) % ORDEM.length]
+      : e.key === "Home" ? ORDEM[0]
+      : e.key === "End" ? ORDEM[ORDEM.length - 1]
+      : undefined;
+    if (destino === undefined) return;
+    e.preventDefault();
+    if (trocarAba(destino)) refsAbas.current[destino]?.focus();
+  }
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
       <div
         role="tablist"
         aria-label="Forma de importar"
+        onKeyDown={navegarPorTeclado}
         className="grid gap-3 sm:grid-cols-2"
       >
         {ORDEM.map((id) => {
@@ -81,9 +136,15 @@ export function ImportarAutoAvaliar() {
               type="button"
               role="tab"
               id={`aba-${id}`}
+              ref={(el) => {
+                refsAbas.current[id] = el;
+              }}
               aria-selected={selecionada}
-              aria-controls={`painel-${id}`}
-              onClick={() => setAba(id)}
+              // Só o painel ATIVO existe no DOM — apontar pro outro seria um
+              // aria-controls órfão.
+              aria-controls={selecionada ? `painel-${id}` : undefined}
+              tabIndex={selecionada ? 0 : -1}
+              onClick={() => trocarAba(id)}
               className={cn(
                 "rounded-xl border-2 px-4 py-3 text-left transition",
                 selecionada
@@ -117,7 +178,11 @@ export function ImportarAutoAvaliar() {
           {ativa.detalhe}
         </p>
 
-        {aba === "texto" ? <ImportarPorTexto /> : <ImportarPorArquivo />}
+        {aba === "texto" ? (
+          <ImportarPorTexto onTrabalhoVivoChange={setTextoComTrabalhoVivo} />
+        ) : (
+          <ImportarPorArquivo />
+        )}
       </div>
     </div>
   );

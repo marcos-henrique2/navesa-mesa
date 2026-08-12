@@ -17,7 +17,7 @@
  * `import-auto-avaliar`; aqui é só orquestração de UI + as 2 chamadas de I/O.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -46,7 +46,16 @@ const ROTULO_AVISO: Record<string, string> = {
   linha_ignorada: "Linha ignorada",
 };
 
-export function ImportarPorTexto() {
+export function ImportarPorTexto({
+  onTrabalhoVivoChange,
+}: {
+  /**
+   * Avisa a casca quando há colagem ou preview em pé. Trocar de aba DESMONTA
+   * este componente e mata o `useState` — sem esse aviso, um clique na aba
+   * vizinha apaga em silêncio a lista colada e o preview já conferido.
+   */
+  onTrabalhoVivoChange?: (vivo: boolean) => void;
+}) {
   const [texto, setTexto] = useState("");
   const [analisando, setAnalisando] = useState(false);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
@@ -75,6 +84,11 @@ export function ImportarPorTexto() {
     () => (preview ? avaliarRiscoReconciliacao(preview) : null),
     [preview],
   );
+
+  const trabalhoVivo = texto.trim() !== "" || preview !== null;
+  useEffect(() => {
+    onTrabalhoVivoChange?.(trabalhoVivo);
+  }, [trabalhoVivo, onTrabalhoVivoChange]);
 
   async function analisar() {
     setResultado(null);
