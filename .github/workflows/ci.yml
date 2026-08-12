@@ -49,8 +49,18 @@ jobs:
 
       # Build sem env vars de Sentry — só verifica que compila.
       # `withSentryConfig` é no-op quando SENTRY_DSN não está setado.
+      #
+      # O `rm` antes do build não é supersticao: o tsconfig tem
+      # "incremental": true, e o passo de Typecheck acima roda
+      # `tsc --noEmit` no MESMO job — grava estado em tsconfig.tsbuildinfo
+      # sem emitir nada. Esse buildinfo parcial faz o build seguinte
+      # reaproveitar estado incompleto e acusar erro de tipo fantasma
+      # (build intermitente com `tsc` isolado limpo). Começar do zero
+      # custa segundos e elimina a classe inteira de falha.
       - name: Production build
-        run: npm run build
+        run: |
+          rm -f tsconfig.tsbuildinfo
+          npm run build
         env:
           # Evita Sentry tentar upload de source maps no CI
           SENTRY_AUTH_TOKEN: ""
