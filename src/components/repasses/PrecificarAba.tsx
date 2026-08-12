@@ -262,7 +262,16 @@ export function PrecificarAba() {
   /** Há gasto lançado ⇒ há escolha a fazer ⇒ duas colunas (mesmo que uma esteja off). */
   const doisModos = girarResultado != null;
 
-  // A sugestão que governa prefill, justificativa, alertas e o snapshot.
+  /**
+   * A sugestão que governa prefill, justificativa, alertas e o snapshot.
+   *
+   * ⚠️ O fallback pra `recuperar` quando o girar está indisponível é silencioso
+   * de propósito — mas ele NÃO pode vazar pra tela como divergência: tudo o que
+   * o Marcos vê (rádio marcado, chip do `BlocoAplicar`, textos) deriva de
+   * `sugestao.modo`, nunca deste `modo` de estado. Se derivasse do estado, o
+   * rádio poderia dizer "Girar rápido" enquanto o chip diz "Recuperar tudo" — o
+   * "estado visual mente" que a C19 e a tira de confirmação existem pra impedir.
+   */
   const sugestao: SugestaoPrecoRepasse | null =
     modo === "girar_rapido" && girar != null ? girar : recuperar;
 
@@ -421,6 +430,20 @@ export function PrecificarAba() {
     try {
       await carimbarSnapshotAplicado(carimboPendente.snapshotId, carimboPendente.carimbo);
       setCarimboPendente(null);
+      // C16 — o carimbo é o que torna a linha uma DECISÃO APLICADA. Sem espelhar
+      // isto, num carro girado o alerta seguiria vermelho dizendo "não há
+      // registro de decisão de preço para este valor" logo depois de o registro
+      // ter sido completado — exatamente a frase falsa que o `snapshotFalhou`
+      // existe pra evitar.
+      if (sugestao != null) {
+        setSnapshotRecente({
+          modo: sugestao.modo,
+          minimoAplicado: carimboPendente.carimbo.minimo_aplicado,
+          custoReal: sugestao.custo.custoReal,
+          aplicadoEmData: hojeLocal(new Date(carimboPendente.carimbo.aplicado_em)),
+        });
+        setSnapshotFalhou(false);
+      }
       showSuccessToast("Registro da decisão completado.");
       if (veioDeDeepLink.current) router.push("/repasses");
     } catch (e) {
@@ -540,7 +563,6 @@ export function PrecificarAba() {
                 girar={girar}
                 girarIndisponivel={girarIndisponivel}
                 doisModos={doisModos}
-                modo={modo}
                 selecionada={sugestao}
                 notaGasto={notaGasto}
                 trocaPendente={trocaPendente}
@@ -844,7 +866,7 @@ function AlertaAbaixoDoCusto({
 }) {
   const origem = snapshotIndisponivel
     ? "deriva"
-    : classificarOrigemAbaixoDoCusto(snapshot, valorMinimo);
+    : classificarOrigemAbaixoDoCusto(snapshot, valorMinimo, custoReal);
 
   if (origem === "decisao" && snapshot != null) {
     return (
@@ -882,7 +904,6 @@ function BlocoSugestao({
   girar,
   girarIndisponivel,
   doisModos,
-  modo,
   selecionada,
   notaGasto,
   trocaPendente,
@@ -896,8 +917,12 @@ function BlocoSugestao({
   girar: SugestaoPrecoRepasse | null;
   girarIndisponivel: string | null;
   doisModos: boolean;
-  modo: ModoPreco;
-  /** A sugestão do modo ATIVO — governa justificativa, alertas e confiança. */
+  /**
+   * A sugestão do modo ATIVO — governa justificativa, alertas, confiança **e
+   * qual rádio aparece marcado**. Não existe prop `modo` aqui de propósito: o
+   * modo exibido tem que sair do objeto que produziu os números, senão o rádio
+   * e o chip do `BlocoAplicar` podem divergir.
+   */
   selecionada: SugestaoPrecoRepasse;
   notaGasto: NotaGasto | null;
   trocaPendente: ModoPreco | null;
@@ -953,7 +978,7 @@ function BlocoSugestao({
             <ColunaModo
               modo="recuperar_tudo"
               base={recuperar.custo.custoReal}
-              selecionado={modo === "recuperar_tudo"}
+              selecionado={selecionada.modo === "recuperar_tudo"}
               onSelecionar={onPedirModo}
             >
               <ParDePrecos sugestao={recuperar} rotularModo />
@@ -963,7 +988,7 @@ function BlocoSugestao({
             <ColunaModo
               modo="girar_rapido"
               base={recuperar.custo.valorCompraRepasse}
-              selecionado={modo === "girar_rapido"}
+              selecionado={selecionada.modo === "girar_rapido"}
               indisponivel={girarIndisponivel}
               onSelecionar={onPedirModo}
             >

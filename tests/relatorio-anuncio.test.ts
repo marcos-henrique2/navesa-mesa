@@ -12,6 +12,7 @@ import {
   montarRelatorioAnuncio,
   type CarroAnuncioInput,
 } from "@/lib/repasses/relatorio-anuncio";
+import type { SnapshotRecente } from "@/lib/pricing/origem-abaixo-do-custo";
 
 const HOJE = "2026-08-01";
 
@@ -169,5 +170,127 @@ describe("calcularAlertas", () => {
   it("incompleto nunca entra em prejuízo", () => {
     assert.ok(!a.prejuizoLatente.some((i) => i.id === 5));
     assert.ok(!a.prejuizoNoAnuncio.some((i) => i.id === 5));
+  });
+});
+
+describe("calcularAlertas — C16: carro girado sai do prejuízo latente", () => {
+  // ⚠️ O DEFEITO QUE ISTO CONSERTA (achado do @quinn-qa, 2026-08-12): o painel
+  // "Prejuízo latente" de `/repasses/anuncio` avalia `valor_minimo < custo_real`
+  // SEM QUALIFICAÇÃO, sobre TODOS os carros `status='subido'`. A partir do
+  // primeiro carro girado com g > 6,6% a placa dele passaria a figurar numa
+  // caixa vermelha permanente, para sempre — o Risk #4 verbatim, só que em
+  // `/repasses/anuncio` em vez do `/repasses`.
+  //
+  // PRD2189: compra 80.000 + gastos 6.850 = custo 86.850; girado ⇒ mínimo
+  // 85.300 aplicado. `minimo < custo` é VERDADE, e é DESENHO.
+  const itens = montarRelatorioAnuncio(
+    [
+      carro({
+        id: 10,
+        valor_compra_repasse: 80_000,
+        gastos: [6_850],
+        valor_minimo: 85_300,
+        valor_compre_por: 89_600,
+        data_subido: "2026-07-25",
+      }),
+      // Controle: mesmo predicado, sem registro de decisão nenhum.
+      carro({
+        id: 11,
+        valor_compra_repasse: 70_000,
+        gastos: [],
+        valor_minimo: 65_000,
+        valor_compre_por: 75_000,
+        data_subido: "2026-07-25",
+      }),
+    ],
+    HOJE,
+  );
+
+  const girado: SnapshotRecente = {
+    modo: "girar_rapido",
+    minimoAplicado: 85_300,
+    custoReal: 86_850,
+    aplicadoEmData: "2026-08-12",
+  };
+
+  it("sem os snapshots o comportamento é o DE ANTES — os dois entram", () => {
+    // Isto é a rede de degradação: se a leitura da 030 falhar, o relatório volta
+    // ao que era, nunca quebra.
+    const a = calcularAlertas(itens);
+    assert.deepEqual(a.prejuizoLatente.map((i) => i.id).sort(), [10, 11]);
+  });
+
+  it("com o snapshot de DECISÃO, o carro girado sai da caixa vermelha", () => {
+    const a = calcularAlertas(itens, new Map([[10, girado]]));
+    assert.deepEqual(a.prejuizoLatente.map((i) => i.id), [11]);
+  });
+
+  it("o carro SEM registro de decisão continua vermelho", () => {
+    const a = calcularAlertas(itens, new Map([[10, girado]]));
+    assert.ok(a.prejuizoLatente.some((i) => i.id === 11));
+  });
+
+  it("girado + gasto TARDIO volta pro vermelho — o custo subiu depois da escolha", () => {
+    // O snapshot congelou custo 86.850; hoje o custo é outro porque entrou gasto
+    // novo. A parte a mais NÃO foi decisão dele.
+    const comGastoTardio = montarRelatorioAnuncio(
+      [
+        carro({
+          id: 10,
+          valor_compra_repasse: 80_000,
+          gastos: [6_850, 1_600],
+          valor_minimo: 85_300,
+          valor_compre_por: 89_600,
+          data_subido: "2026-07-25",
+        }),
+      ],
+      HOJE,
+    );
+    const a = calcularAlertas(comGastoTardio, new Map([[10, girado]]));
+    assert.deepEqual(a.prejuizoLatente.map((i) => i.id), [10]);
+  });
+
+  it("o preço sobrescrito pelo import volta pro vermelho (aplicado não bate)", () => {
+    const importado = montarRelatorioAnuncio(
+      [
+        carro({
+          id: 10,
+          valor_compra_repasse: 80_000,
+          gastos: [6_850],
+          valor_minimo: 84_000, // o portal mandou outro número
+          valor_compre_por: 89_600,
+          data_subido: "2026-07-25",
+        }),
+      ],
+      HOJE,
+    );
+    const a = calcularAlertas(importado, new Map([[10, girado]]));
+    assert.deepEqual(a.prejuizoLatente.map((i) => i.id), [10]);
+  });
+
+  it("`prejuizoNoAnuncio` NÃO é filtrado pela C16 — decisão do Marcos", () => {
+    // O gatilho dele é `compre_por < custo_real` (g > 11,97%), caso mais raro, e
+    // ficou de fora desta fatia de propósito. Se um dia entrar, é aqui.
+    const anuncioNoPrejuizo = montarRelatorioAnuncio(
+      [
+        carro({
+          id: 12,
+          valor_compra_repasse: 80_000,
+          gastos: [12_000],
+          valor_minimo: 85_280,
+          valor_compre_por: 89_580,
+          data_subido: "2026-07-25",
+        }),
+      ],
+      HOJE,
+    );
+    const snap: SnapshotRecente = {
+      modo: "girar_rapido",
+      minimoAplicado: 85_280,
+      custoReal: 92_000,
+      aplicadoEmData: "2026-08-12",
+    };
+    const a = calcularAlertas(anuncioNoPrejuizo, new Map([[12, snap]]));
+    assert.deepEqual(a.prejuizoNoAnuncio.map((i) => i.id), [12]);
   });
 });

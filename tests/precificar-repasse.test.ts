@@ -1101,8 +1101,8 @@ describe("3.1c C16 — classificarOrigemAbaixoDoCusto", () => {
     aplicadoEmData: "2026-08-12",
   };
 
-  it("DECISÃO — snapshot girar e o aplicado bate com o preço de hoje", () => {
-    assert.equal(classificarOrigemAbaixoDoCusto(girado, 85_300), "decisao");
+  it("DECISÃO — girar, o aplicado bate, e o custo NÃO se moveu desde então", () => {
+    assert.equal(classificarOrigemAbaixoDoCusto(girado, 85_300, 86_850), "decisao");
   });
 
   it("DERIVA — snapshot recuperar que bate: o custo subiu depois (gasto tardio)", () => {
@@ -1114,34 +1114,51 @@ describe("3.1c C16 — classificarOrigemAbaixoDoCusto", () => {
       custoReal: 100_000,
       aplicadoEmData: "2026-08-12",
     };
-    assert.equal(classificarOrigemAbaixoDoCusto(recuperado, 106_600), "deriva");
+    assert.equal(classificarOrigemAbaixoDoCusto(recuperado, 106_600, 108_000), "deriva");
+  });
+
+  it("DERIVA vence DECISÃO — carro GIRADO que recebeu gasto TARDIO", () => {
+    // ⚠️ ESTE É O TESTE QUE O CAMPO `custoReal` EXISTE PRA SUSTENTAR, e é a
+    // única coisa que separa "ele escolheu isso" de "o custo subiu depois que
+    // ele escolheu". Sem a comparação, o carro seria rotulado "decisão" e a nota
+    // neutra diria "R$ 3.150 de gastos não são recuperados — foi uma decisão",
+    // com um valor que INCLUI os R$ 1.600 de gasto que ele não decidiu.
+    // O custo saiu de 86.850 (congelado no snapshot) pra 88.450 hoje.
+    assert.equal(classificarOrigemAbaixoDoCusto(girado, 85_300, 88_450), "deriva");
+    // …e o mesmo carro, sem o gasto tardio, continua sendo DECISÃO.
+    assert.equal(classificarOrigemAbaixoDoCusto(girado, 85_300, 86_850), "decisao");
+  });
+
+  it("custo que ABAIXOU não vira deriva — deriva é o custo SUBIR", () => {
+    // Gasto estornado depois da decisão: o preço continua sendo o que ele
+    // escolheu, e o modo girar continua explicando por que está abaixo.
+    assert.equal(classificarOrigemAbaixoDoCusto(girado, 85_300, 85_500), "decisao");
   });
 
   it("FORA DO SISTEMA — não há snapshot nenhum", () => {
-    assert.equal(classificarOrigemAbaixoDoCusto(null, 85_300), "fora_do_sistema");
+    assert.equal(classificarOrigemAbaixoDoCusto(null, 85_300, 86_850), "fora_do_sistema");
   });
 
   it("FORA DO SISTEMA — o preço de hoje NÃO é o que foi aplicado (import/inline)", () => {
     // O import do portal ou uma edição inline sobrescreveram o preço: a decisão
     // registrada não explica o número que está no ar.
-    assert.equal(classificarOrigemAbaixoDoCusto(girado, 84_000), "fora_do_sistema");
+    assert.equal(classificarOrigemAbaixoDoCusto(girado, 84_000, 86_850), "fora_do_sistema");
   });
 
   it("FORA DO SISTEMA — linha 'sugeriu e não aplicou' (carimbo nunca veio)", () => {
     assert.equal(
-      classificarOrigemAbaixoDoCusto({ ...girado, minimoAplicado: null }, 85_300),
+      classificarOrigemAbaixoDoCusto({ ...girado, minimoAplicado: null }, 85_300, 86_850),
       "fora_do_sistema",
     );
   });
 
   it("a comparação do aplicado é CENTAVO-PERFECT, não por tolerância", () => {
-    assert.equal(classificarOrigemAbaixoDoCusto(girado, 85_300.0), "decisao");
-    assert.equal(classificarOrigemAbaixoDoCusto(girado, 85_300.01), "fora_do_sistema");
+    assert.equal(classificarOrigemAbaixoDoCusto(girado, 85_300.0, 86_850), "decisao");
+    assert.equal(classificarOrigemAbaixoDoCusto(girado, 85_300.01, 86_850), "fora_do_sistema");
   });
 
-  it("girar que bate continua DECISÃO mesmo com o custo de hoje bem acima", () => {
-    // Gasto tardio num carro JÁ girado não converte a decisão em erro: o preço
-    // no ar continua sendo exatamente o que ele mandou pro portal.
-    assert.equal(classificarOrigemAbaixoDoCusto(girado, 85_300), "decisao");
+  it("a comparação de CUSTO também é centavo-perfect", () => {
+    assert.equal(classificarOrigemAbaixoDoCusto(girado, 85_300, 86_850.0), "decisao");
+    assert.equal(classificarOrigemAbaixoDoCusto(girado, 85_300, 86_850.01), "deriva");
   });
 });

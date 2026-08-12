@@ -445,19 +445,27 @@ export async function buscarUltimoSnapshotPrecificacao(
     .maybeSingle();
   if (error) throw new Error(`Falha ao ler o registro da última decisão: ${error.message}`);
   if (data == null) return null;
+  return toSnapshotRecente(data as SnapshotRow);
+}
 
-  const row = data as {
-    modo: string;
-    minimo_aplicado: number | string | null;
-    custo_real: number | string | null;
-    aplicado_em: string | null;
-  };
+/** Linha crua da 030, no formato que as duas leituras compartilham. */
+type SnapshotRow = {
+  repasse_id?: number;
+  modo: string;
+  minimo_aplicado: number | string | null;
+  custo_real: number | string | null;
+  aplicado_em: string | null;
+};
+
+/**
+ * Normaliza uma linha da 030. `null` quando a linha não serve pra classificar —
+ * tratar dado quebrado como "sem snapshot" é mais honesto que classificar uma
+ * origem em cima dele.
+ */
+function toSnapshotRecente(row: SnapshotRow): SnapshotRecente | null {
   const custoReal = num(row.custo_real);
-  // `custo_real` é NOT NULL na 030; se vier lixo, tratar como "sem snapshot" é
-  // mais honesto que classificar uma origem em cima de dado quebrado.
   if (custoReal == null) return null;
   if (row.modo !== "recuperar_tudo" && row.modo !== "girar_rapido") return null;
-
   return {
     modo: row.modo,
     minimoAplicado: num(row.minimo_aplicado),
@@ -468,6 +476,45 @@ export async function buscarUltimoSnapshotPrecificacao(
     // antes de virar data (o alerta da própria `data-local.ts`).
     aplicadoEmData: row.aplicado_em != null ? hojeLocal(new Date(row.aplicado_em)) : null,
   };
+}
+
+/**
+ * C16 — leitura DE LISTA: o snapshot mais recente de CADA repasse informado.
+ *
+ * Autorizada por escrito no IN da story 3.1c. Existe porque a C16 vale também
+ * no painel de "prejuízo latente" do `/repasses/anuncio`, que é renderizado
+ * sobre TODOS os carros `status='subido'` (~59 hoje) — sem ela, o primeiro carro
+ * girado com `g > 6,6%` passa a figurar como prejuízo numa caixa vermelha
+ * permanente, que é o Risk #4 verbatim.
+ *
+ * Uma query só, ordenada, reduzida no cliente: `idx_rep_prec_repasse_recente`
+ * (`repasse_id, criado_em DESC`) já entrega as linhas agrupadas na ordem certa,
+ * então **a primeira ocorrência de cada `repasse_id` é a mais recente**. Dezenas
+ * de linhas por ano — não vale um `DISTINCT ON` no banco (ADR-003 §12.6, mesmo
+ * argumento que dispensou índice novo na 032).
+ */
+export async function buscarUltimosSnapshotsPrecificacao(
+  repasseIds: ReadonlyArray<number>,
+): Promise<Map<number, SnapshotRecente>> {
+  const mapa = new Map<number, SnapshotRecente>();
+  if (repasseIds.length === 0) return mapa;
+
+  const sb = getSupabase();
+  const { data, error } = await sb
+    .from("repasse_precificacao_sugerida")
+    .select("repasse_id, modo, minimo_aplicado, custo_real, aplicado_em")
+    .in("repasse_id", repasseIds as number[])
+    .order("repasse_id", { ascending: true })
+    .order("criado_em", { ascending: false });
+  if (error) throw new Error(`Falha ao ler os registros de decisão de preço: ${error.message}`);
+
+  for (const row of (data ?? []) as SnapshotRow[]) {
+    const id = row.repasse_id;
+    if (id == null || mapa.has(id)) continue; // já pegamos a mais recente deste repasse
+    const snap = toSnapshotRecente(row);
+    if (snap != null) mapa.set(id, snap);
+  }
+  return mapa;
 }
 
 /** 1º passo: insere o snapshot SEM carimbo. Devolve o id da linha. */
