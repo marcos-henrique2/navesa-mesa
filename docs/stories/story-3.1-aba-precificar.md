@@ -9,6 +9,11 @@
 > factuais da v1 aplicadas: Amarok era % da FIPE (não da Ref. AA); "3,85%" era prêmio, não razão;
 > `valor_subir` **não** é alternativa de persistência.
 >
+> **v4 (12/ago/2026)** — **AC16 revisada durante a 3.1a**: o ajuste de km saiu (decisão do
+> Marcos, 2026-08-12) por double-count contra a própria régua, medido em placas reais. A régua é
+> plana em quilometragem; dias parados e `qtde_anuncios` seguem como ajuste. Ver o bloco sob a
+> AC16 e o item aberto em Risk #14. Nenhuma outra AC muda.
+>
 > **v3 (12/ago/2026)** — 5 fixes de redação do `@pax-po` (GO 8/10, sem revalidação). Explicitada a
 > **invariante das AC13–AC15** (referência não entra no preço — era o caminho pelo qual G1-b dispararia
 > sem ninguém perceber); seam de parâmetros na AC10 que torna a AC31 testável; **030 é o snapshot,
@@ -111,7 +116,32 @@ REGUA_COMPRE_POR_PCT          = REGUA_MINIMO_PCT / RAZAO_MINIMO_SOBRE_COMPRE_POR
     - `TETO_REF_AA_PCT = 1.05` marcado no código como **heurística NÃO calibrada**, no mesmo tom de `DEPRECIACAO_MENSAL_PCT`, com o motivo registrado: a razão `minimo_que_vendeu ÷ Ref.AA` só tem **n=4** (mediana 87,7%, faixa 76,0–97,8%), porque os vendidos saem do relatório de ofertas.
 14. **AC14** — GIVEN um carro **sem** Ref. AA (campo vem de relatório importado e pode faltar) WHEN o motor calcula THEN **os dois preços continuam saindo de `custo_real × régua`, inalterados**, e o que muda é só a referência do alerta: passa a usar a **FIPE ajustada por km como referência do alerta de teto**, marca `confianca = "baixa"` e emite alerta em pt-BR avisando que a FIPE ignora quilometragem (o Amarok fechou a 58,8% dela).
 15. **AC15** — GIVEN um carro sem Ref. AA **e** sem FIPE WHEN o motor calcula THEN **não há referência para alerta** — nenhum alerta de teto é emitido —, a régua sobre o custo é **a mesma dos demais casos** (o preço não muda por faltar referência), `confianca = "muito_baixa"` e alerta correspondente informando que não há referência de mercado pra checar a sugestão.
-16. **AC16** — GIVEN um carro com km alto vs. o ano, ou parado há muitos dias (`calcularDiasNoRepasse`), ou com `qtde_anuncios` > 1 WHEN o motor calcula THEN aplica ajustes **limitados por constantes nomeadas** (teto de ajuste explícito) e cada ajuste aplicado gera uma linha na `justificativa` dizendo quanto mexeu e por quê.
+16. **AC16** *(revisada em 2026-08-12 — ver bloco abaixo)* — GIVEN um carro parado há muitos dias (`calcularDiasNoRepasse`) ou com `qtde_anuncios` > 1 WHEN o motor calcula THEN aplica ajustes **limitados por constantes nomeadas** (teto por ajuste + teto explícito da soma) e cada ajuste aplicado gera uma linha na `justificativa` dizendo quanto mexeu e por quê. **A régua é PLANA em quilometragem: km NÃO gera ajuste de preço.**
+
+> **Remoção do ajuste de km — decisão do Marcos, 2026-08-12.** A v3 desta AC pedia
+> ajuste por "km alto vs. o ano". Ele foi implementado, medido contra placas reais e
+> **removido**.
+>
+> **Por quê:** cobrava **duas vezes pelo mesmo sinal**. `REGUA_MINIMO_PCT` (106,6%) é a
+> mediana do mínimo que vendeu numa amostra que **já é** desta frota de picape rodada —
+> descontar km por cima dessa mediana subestima sistematicamente.
+>
+> **A medição que fechou a decisão** (3 placas reais, PRD2189 / QEZ8J18 / TIU1F38): o
+> ajuste mordia em **todas** e derrubava o mínimo de 106,6% para ~103–105% do custo,
+> **abaixo do que o Marcos tinha pedido nos três carros**.
+>
+> **Reintroduzir exige recalibrar a base junto.** Com n=16 não dá pra separar o efeito
+> do km do efeito geral. Ou a referência de km/ano vira a mediana observada da própria
+> frota — e aí `REGUA_MINIMO_PCT` tem que ser recomputado sobre o resíduo —, ou o ajuste
+> não entra. Uma coisa não vem sem a outra.
+>
+> **km continua sendo lido**, só que fora do preço: alimenta a FIPE ajustada por km, que
+> é a **referência do alerta de teto** quando falta Ref. AA (AC14). Isso não conflita com
+> a invariante das AC13–AC15 — referência não é preço.
+>
+> Trava contra regressão: `tests/precificar-repasse.test.ts`, bloco *"a régua é PLANA em
+> quilometragem"* — dois carros idênticos com km muito diferente têm que receber o mesmo
+> preço.
 17. **AC17** — GIVEN qualquer sugestão produzida WHEN vejo o resultado THEN vem acompanhada de `justificativa` (texto curto em pt-BR) e `alertas: string[]` — mesmo contrato de saída de `@/lib/pricing/suggest.ts`, que serve de **referência de estilo** (constantes no topo, bandas, justificativa, alertas) e **não** deve ser reaproveitado como implementação, já que mira varejo e só aceita `VeiculoParsed` do NBS.
 18. **AC18** — GIVEN a sugestão exibida WHEN olho os números THEN os preços são arredondados pra múltiplo de R$ 100 **na apresentação**, e o valor efetivamente gravado no banco é centavo-perfect (`numeric(12,2)`), sem drift de ponto flutuante.
 
@@ -209,6 +239,18 @@ REGUA_COMPRE_POR_PCT          = REGUA_MINIMO_PCT / RAZAO_MINIMO_SOBRE_COMPRE_POR
 11. **`TETO_REF_AA_PCT` vai pra produção sem calibração.** Aceitável **só enquanto ele apenas alerta** — a pior falha é um aviso a mais ou a menos, nunca um preço diferente. Deixa de ser aceitável no instante em que a Ref. AA mexer no número (G1-b).
 12. **Depreciação mensal do "custo de recusar" é chute** — não saiu da análise. Rotulada como estimativa, nunca número duro.
 13. **Marcos ignorar a sugestão.** Se a tela só mostrar um número sem o porquê, ele volta a digitar no olho. A `justificativa` não é enfeite — é o que faz a aba ser usada. E "ignorar" sem aplicar **não deixa rastro**: só o clique de aplicar vira snapshot.
+14. **Os dois ajustes que sobraram (dias parados e `qtde_anuncios`) seguem NÃO calibrados — decisão pendente do Marcos.** Depois de remover o km, medi os dois contra a frota ativa real (59 carros com custo e mínimo preenchidos, 2026-08-12):
+
+    | | n | Marcos pede (mediana `mínimo ÷ custo`) | Régua plana | Régua c/ ajuste de dias |
+    |---|---|---|---|---|
+    | Até 30 dias | 38 | **1,0716** | 1,066 | 1,066 (não dispara) |
+    | Parado > 30 dias | 21 | **1,0513** | 1,066 | ~1,058 (média do grupo) |
+
+    - **Dias parados: o ajuste tem suporte empírico e é conservador.** O próprio Marcos já pede **2,0 pontos a menos** nos carros parados (1,0716 → 1,0513). O ajuste do motor tira em média **0,77 pt** no grupo afetado (teto 3 pt) — ou seja, ele **corrige cerca de metade** do que o Marcos já faz à mão, e na direção certa. É o oposto do caso do km. Sobre a frota inteira o ajuste tira em média R$ 1.263 dos 21 carros afetados; o delta médio da sugestão contra o pedido vai de **+R$ 214 (plana)** para **−R$ 235 (com dias)**.
+    - **Contra-argumento a considerar:** `REGUA_MINIMO_PCT` é a mediana do mínimo que **vendeu** — população que por definição girou rápido —, então o sinal "está parado" pode ser informação genuinamente nova, e não algo que a mediana já absorveu. A assimetria: km é **característica** do carro; dias e reanúncio são **estado**.
+    - **`qtde_anuncios`: não é mensurável hoje.** Os **59/59** carros ativos estão com o campo `NULL` — o ajuste de reanúncio **nunca dispara** na frota atual. O campo só se popula pelo import do arquivo (migration 029). Enquanto estiver assim, ele é código sem efeito: não faz mal, mas também não foi validado contra nada.
+
+    **Decisão do Marcos, não do dev.** As duas opções são "manter como está" (a plana já fica praticamente centrada no hábito dele, +R$ 214 de delta médio) ou "manter o ajuste de dias" (aproxima do comportamento dele nos parados, ao custo de sair do centro na frota toda).
 
 ## Complexity (T-shirt)
 

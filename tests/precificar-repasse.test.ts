@@ -211,10 +211,7 @@ describe("fallback Ref. AA → FIPE → sem referência (AC13/14/15)", () => {
 
   it("FIPE ajustada por km desconta o excesso — e mesmo assim não toca no preço", () => {
     const rodado = exigirSugestao(
-      sugerirPrecoRepasse(
-        entrada({ valorFipe: 130_000, km: 249_000, anoModelo: 2018 }),
-        { ...REGUA_PADRAO, AJUSTE_TOTAL_MAX: 0 }, // zera ajustes pra isolar a referência
-      ),
+      sugerirPrecoRepasse(entrada({ valorFipe: 130_000, km: 249_000, anoModelo: 2018 })),
     );
     assert.ok(rodado.referenciaTeto != null && rodado.referenciaTeto < 130_000);
     assert.equal(rodado.minimoSugerido, 106_600);
@@ -314,7 +311,7 @@ describe("custo_real decomposto (AC5–AC8)", () => {
 // AJUSTES (AC16) — limitados por teto explícito e sempre justificados
 // ═════════════════════════════════════════════════════════════════════════════
 
-describe("ajustes por km / dias parados / reanúncio (AC16)", () => {
+describe("ajustes por dias parados / reanúncio (AC16)", () => {
   const s = exigirSugestao(
     sugerirPrecoRepasse(
       entrada({ km: 200_000, anoModelo: 2018, diasNoRepasse: 90, qtdeAnuncios: 3 }),
@@ -322,30 +319,91 @@ describe("ajustes por km / dias parados / reanúncio (AC16)", () => {
   );
 
   it("cada ajuste aplicado vira uma linha na justificativa", () => {
-    assert.deepEqual(
-      s.ajustes.map((a) => a.codigo).sort(),
-      ["dias_parado", "km_alto", "reanuncio"],
-    );
+    assert.deepEqual(s.ajustes.map((a) => a.codigo).sort(), ["dias_parado", "reanuncio"]);
     for (const a of s.ajustes) assert.ok(s.justificativa.includes(a.label));
   });
 
-  it("a soma dos ajustes é limitada pelo teto explícito AJUSTE_TOTAL_MAX", () => {
-    const bruto = s.ajustes.reduce((t, a) => t + a.pontos, 0);
-    assert.ok(bruto < -REGUA_PADRAO.AJUSTE_TOTAL_MAX); // pediram mais que o teto
-    assert.equal(s.minimoSugerido, 100_600); // 1,066 − 0,06 = 1,006 sobre 100.000
-    assert.equal(s.comprePorSugerido, 105_672.27);
+  it("cada ajuste é limitado pela sua própria constante nomeada", () => {
+    const dias = s.ajustes.find((a) => a.codigo === "dias_parado");
+    const rean = s.ajustes.find((a) => a.codigo === "reanuncio");
+    // 90 dias: (90−30)/30 × 1pt = −2pt, dentro do teto de 3pt.
+    assert.equal(dias?.pontos, -0.02);
+    // 3 anúncios: 2 extras × 1pt = −2pt, exatamente no teto de 2pt.
+    assert.equal(rean?.pontos, -REGUA_PADRAO.AJUSTE_REANUNCIO_MAX);
+    assert.equal(s.minimoSugerido, 102_600); // 1,066 − 0,04 = 1,026 sobre 100.000
   });
 
-  it("carro sem km/dias/anúncios não sofre ajuste nenhum", () => {
+  it("com a régua padrão os tetos individuais já limitam antes do total", () => {
+    // 3pt (dias) + 2pt (reanúncio) = 5pt < AJUSTE_TOTAL_MAX (6pt). Ou seja: hoje
+    // o teto total NÃO chega a morder — ele é a guarda externa, não o limitador.
+    const muito = exigirSugestao(
+      sugerirPrecoRepasse(entrada({ diasNoRepasse: 400, qtdeAnuncios: 9 })),
+    );
+    const bruto = muito.ajustes.reduce((t, a) => t + a.pontos, 0);
+    assert.ok(Math.abs(bruto - -0.05) < 1e-12);
+    assert.ok(Math.abs(bruto) < REGUA_PADRAO.AJUSTE_TOTAL_MAX);
+    assert.equal(muito.minimoSugerido, 101_600); // 1,066 − 0,05 = 1,016
+  });
+
+  it("AJUSTE_TOTAL_MAX morde quando os tetos individuais são afrouxados", () => {
+    // É pra isso que a guarda externa existe: alguém subir um teto individual
+    // não deve conseguir derrubar a régua sem limite.
+    const muito = exigirSugestao(
+      sugerirPrecoRepasse(entrada({ diasNoRepasse: 400, qtdeAnuncios: 9 }), {
+        ...REGUA_PADRAO,
+        AJUSTE_DIAS_MAX: 0.5,
+        AJUSTE_REANUNCIO_MAX: 0.5,
+      }),
+    );
+    const bruto = muito.ajustes.reduce((t, a) => t + a.pontos, 0);
+    assert.ok(bruto < -REGUA_PADRAO.AJUSTE_TOTAL_MAX); // pediram mais que o teto
+    assert.equal(muito.minimoSugerido, 100_600); // travou em 1,066 − 0,06 = 1,006
+    assert.equal(muito.comprePorSugerido, 105_672.27);
+  });
+
+  it("carro sem dias/anúncios não sofre ajuste nenhum", () => {
     const limpo = exigirSugestao(sugerirPrecoRepasse(entrada()));
     assert.deepEqual(limpo.ajustes, []);
     assert.equal(limpo.minimoSugerido, 106_600);
   });
+});
 
-  it("km BAIXO não vira prêmio — não há dado que sustente prêmio", () => {
-    const novo = exigirSugestao(sugerirPrecoRepasse(entrada({ km: 10_000, anoModelo: 2024 })));
+describe("a régua é PLANA em quilometragem (decisão do Marcos, 2026-08-12)", () => {
+  // O ajuste de km existiu e foi removido: cobrava duas vezes pelo mesmo sinal,
+  // porque REGUA_MINIMO_PCT já é a mediana de uma amostra desta frota rodada.
+  // Este teste é a trava contra readicionar o ajuste achando que foi esquecimento.
+  it("dois carros idênticos com km MUITO diferente recebem o MESMO preço", () => {
+    const rodado = exigirSugestao(
+      sugerirPrecoRepasse(entrada({ km: 260_000, anoModelo: 2017 })),
+    );
+    const novo = exigirSugestao(sugerirPrecoRepasse(entrada({ km: 5_000, anoModelo: 2026 })));
+    assert.equal(rodado.minimoSugerido, novo.minimoSugerido);
+    assert.equal(rodado.comprePorSugerido, novo.comprePorSugerido);
+    assert.equal(rodado.minimoSugerido, 106_600);
+    assert.deepEqual(rodado.ajustes, []);
     assert.deepEqual(novo.ajustes, []);
-    assert.equal(novo.minimoSugerido, 106_600);
+  });
+
+  it("nenhum ajuste do motor tem código de km", () => {
+    const s = exigirSugestao(
+      sugerirPrecoRepasse(entrada({ km: 500_000, anoModelo: 2010, diasNoRepasse: 200 })),
+    );
+    assert.ok(!s.ajustes.some((a) => String(a.codigo).includes("km")));
+  });
+
+  it("km continua valendo pra FIPE ajustada — que é referência de ALERTA, não preço", () => {
+    const rodado = exigirSugestao(
+      sugerirPrecoRepasse(entrada({ valorFipe: 130_000, km: 249_000, anoModelo: 2018 })),
+    );
+    const novo = exigirSugestao(
+      sugerirPrecoRepasse(entrada({ valorFipe: 130_000, km: 5_000, anoModelo: 2018 })),
+    );
+    // A referência do alerta muda…
+    assert.ok(rodado.referenciaTeto != null && rodado.referenciaTeto < 130_000);
+    assert.equal(novo.referenciaTeto, 130_000);
+    // …e o preço, não.
+    assert.equal(rodado.minimoSugerido, novo.minimoSugerido);
+    assert.equal(rodado.minimoSugerido, 106_600);
   });
 });
 

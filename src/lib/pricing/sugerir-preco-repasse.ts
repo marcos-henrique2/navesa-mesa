@@ -46,7 +46,7 @@ export const VERSAO_REGUA = "repasse_regua_v1_n16_jun_ago_2026";
 
 /** Ajuste nomeado que mexeu na razão do mínimo (AC16). `pontos` em razão, não %. */
 export type AjusteRegua = {
-  codigo: "km_alto" | "dias_parado" | "reanuncio";
+  codigo: "dias_parado" | "reanuncio";
   label: string;
   /** Negativo = puxou o preço pra baixo. 0.01 = 1 ponto percentual de razão. */
   pontos: number;
@@ -115,28 +115,25 @@ export type ReguaPrecoRepasse = {
   BANDA_MINIMO_P75_PCT: number;
 
   // ── Ajustes por sinal do carro (AC16) — todos NÃO CALIBRADOS ─────────────
-  /**
-   * ⚠️ NÃO calibrada. Km/ano "normal" usado pra medir excesso de rodagem.
-   *
-   * ⚠️⚠️ RISCO DE DOUBLE-COUNT, medido em 3 placas reais em 2026-08-12
-   * (PRD2189, QEZ8J18, TIU1F38): a frota é de picape rodada e praticamente todo
-   * carro fica acima de 15.000 km/ano, então o ajuste morde quase sempre e
-   * derruba o mínimo de 106,6% pra ~103–105% do custo — abaixo do que o Marcos
-   * de fato pediu nesses três carros.
-   *
-   * A causa provável é conceitual, não de valor: `REGUA_MINIMO_PCT` é a mediana
-   * de uma amostra que JÁ É dessa frota rodada. Descontar km de novo por cima
-   * cobra duas vezes pelo mesmo sinal.
-   *
-   * RECALIBRAR JUNTO, nunca em separado: ou a referência de km/ano vira a
-   * mediana observada da própria frota, ou o ajuste de km sai e a régua fica só
-   * na mediana. Decisão do Marcos — o número não sai de dado que exista hoje.
-   */
-  KM_POR_ANO_REFERENCIA: number;
-  /** ⚠️ NÃO calibrada. A cada N km ACIMA do esperado, tira 1 ponto do mínimo. */
-  KM_EXCESSO_POR_PONTO: number;
-  /** Teto do ajuste de km, em pontos de razão. */
-  AJUSTE_KM_MAX: number;
+  //
+  // ┌─ NÃO EXISTE AJUSTE DE KM AQUI, E ISSO É DECISÃO ─────────────────────────┐
+  // │ Decisão do Marcos, 2026-08-12: a régua é PLANA em quilometragem.         │
+  // │                                                                          │
+  // │ O ajuste de km existiu e foi removido porque cobrava DUAS VEZES pelo     │
+  // │ mesmo sinal: `REGUA_MINIMO_PCT` (106,6%) é a mediana do mínimo que       │
+  // │ vendeu numa amostra que JÁ É desta frota de picape rodada. Descontar km  │
+  // │ por cima dessa mediana subestima sistematicamente.                       │
+  // │                                                                          │
+  // │ Medido em 3 placas reais antes de remover (PRD2189, QEZ8J18, TIU1F38):   │
+  // │ o ajuste mordia em todas e derrubava o mínimo pra ~103–105% do custo —   │
+  // │ ABAIXO do que o Marcos tinha pedido nos três carros.                     │
+  // │                                                                          │
+  // │ ⚠️ REINTRODUZIR EXIGE RECALIBRAR A BASE JUNTO. Com n=16 não dá pra       │
+  // │ separar o efeito do km do efeito geral. Ou a referência de km/ano vira a │
+  // │ mediana observada da própria frota (e aí `REGUA_MINIMO_PCT` tem que ser  │
+  // │ recomputado sobre o resíduo), ou o ajuste não entra. Uma coisa não vem   │
+  // │ sem a outra. Isto NÃO foi esquecimento.                                  │
+  // └──────────────────────────────────────────────────────────────────────────┘
   /** ⚠️ NÃO calibrada. Dias no repasse a partir dos quais o carro "pesa". */
   DIAS_PARADO_LIMIAR: number;
   /** ⚠️ NÃO calibrada. Cada ciclo de N dias além do limiar tira 1 ponto. */
@@ -151,6 +148,15 @@ export type ReguaPrecoRepasse = {
   AJUSTE_TOTAL_MAX: number;
 
   // ── FIPE ajustada por km (AC14) — SÓ referência de alerta ────────────────
+  //
+  // Estas quatro constantes são o ÚNICO lugar em que km aparece, e elas NÃO
+  // tocam o preço: alimentam só a referência do alerta de teto quando não há
+  // Ref. AA. O double-count que matou o ajuste de km não se aplica aqui —
+  // a FIPE é externa e realmente ignora quilometragem.
+  /** Km/ano "normal", pra medir excesso de rodagem CONTRA A FIPE. */
+  KM_POR_ANO_REFERENCIA: number;
+  /** A cada N km acima do esperado, desconta `FIPE_DESCONTO_POR_EXCESSO` da FIPE. */
+  KM_EXCESSO_POR_PONTO: number;
   /**
    * ⚠️ NÃO calibrada. Desconto na FIPE por cada `KM_EXCESSO_POR_PONTO` acima do
    * esperado. A FIPE ignora quilometragem: o Amarok com 249 mil km fechou a
@@ -180,15 +186,14 @@ export const REGUA_PADRAO: ReguaPrecoRepasse = {
   TETO_REF_AA_PCT: 1.05,
   BANDA_MINIMO_P25_PCT: 1.042,
   BANDA_MINIMO_P75_PCT: 1.107,
-  KM_POR_ANO_REFERENCIA: 15_000,
-  KM_EXCESSO_POR_PONTO: 20_000,
-  AJUSTE_KM_MAX: 0.04,
   DIAS_PARADO_LIMIAR: 30,
   DIAS_PARADO_POR_PONTO: 30,
   AJUSTE_DIAS_MAX: 0.03,
   REANUNCIO_PONTOS_POR_EXTRA: 0.01,
   AJUSTE_REANUNCIO_MAX: 0.02,
   AJUSTE_TOTAL_MAX: 0.06,
+  KM_POR_ANO_REFERENCIA: 15_000,
+  KM_EXCESSO_POR_PONTO: 20_000,
   FIPE_DESCONTO_POR_EXCESSO: 0.02,
   FIPE_DESCONTO_MAX: 0.4,
 };
@@ -399,10 +404,16 @@ function limitarAjuste(pontos: number, teto: number): number {
 
 /**
  * Ajustes do AC16 — cada um limitado por constante nomeada, e a soma limitada
- * pelo teto explícito `AJUSTE_TOTAL_MAX`. Todos puxam PRA BAIXO: km alto, carro
- * parado e reanúncio são sinais de que o carro vende mais difícil. Km baixo
- * NÃO gera prêmio — não há dado que sustente prêmio, e inventar um seria
- * requisito novo.
+ * pelo teto explícito `AJUSTE_TOTAL_MAX`. Ambos puxam PRA BAIXO: carro parado e
+ * carro reanunciado são sinais de que o preço atual não está fechando.
+ *
+ * ⚠️ NÃO existe ajuste de km (decisão do Marcos, 2026-08-12) — ver o bloco em
+ * `ReguaPrecoRepasse`. A régua é PLANA em quilometragem.
+ *
+ * A diferença que sustenta manter estes dois: km é CARACTERÍSTICA do carro, e a
+ * mediana da amostra já a absorveu; dias parados e reanúncio são ESTADO, e
+ * "esse carro já voltou N vezes" é sinal novo de que o preço está alto.
+ * Isso é argumento, não medição — os dois seguem NÃO CALIBRADOS.
  */
 function calcularAjustes(
   entrada: EntradaSugestaoRepasse,
@@ -410,25 +421,7 @@ function calcularAjustes(
 ): AjusteRegua[] {
   const ajustes: AjusteRegua[] = [];
 
-  // 1) Km alto vs. o ano
-  const idade = idadeAnos(entrada.anoModelo, entrada.anoReferencia);
-  if (idade != null && isNumFinito(entrada.km) && params.KM_EXCESSO_POR_PONTO > 0) {
-    const esperado = idade * params.KM_POR_ANO_REFERENCIA;
-    const excesso = entrada.km - esperado;
-    if (excesso > 0) {
-      const bruto = -(excesso / params.KM_EXCESSO_POR_PONTO) * 0.01;
-      const pontos = limitarAjuste(bruto, params.AJUSTE_KM_MAX);
-      if (pontos < 0) {
-        ajustes.push({
-          codigo: "km_alto",
-          label: `${Math.round(excesso).toLocaleString("pt-BR")} km acima do esperado pro ano (${Math.round(esperado).toLocaleString("pt-BR")} km)`,
-          pontos,
-        });
-      }
-    }
-  }
-
-  // 2) Parado há muitos dias
+  // 1) Parado há muitos dias
   if (
     isNumFinito(entrada.diasNoRepasse) &&
     entrada.diasNoRepasse > params.DIAS_PARADO_LIMIAR &&
@@ -446,7 +439,7 @@ function calcularAjustes(
     }
   }
 
-  // 3) Reanúncio (pressão competitiva do próprio carro)
+  // 2) Reanúncio (pressão competitiva do próprio carro)
   if (isNumFinito(entrada.qtdeAnuncios) && entrada.qtdeAnuncios > 1) {
     const extras = entrada.qtdeAnuncios - 1;
     const bruto = -extras * params.REANUNCIO_PONTOS_POR_EXTRA;
