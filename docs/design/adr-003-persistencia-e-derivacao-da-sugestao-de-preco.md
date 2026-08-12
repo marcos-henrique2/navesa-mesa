@@ -2,6 +2,7 @@
 
 - **Status:** Aceito. Dos 3 pontos devolvidos ao Marcos, **2 decididos por ele em 2026-08-12** (§7.1 razão = 95,2%; §7.2 sugestão editável); resta **§7.3** (`TETO_REF_AA_PCT`), que não bloqueia o dev.
 - **⚠️ EMENDADA em 2026-08-12 pela §12** (story 3.1c, dois modos de preço). A §12 **não supersede** esta ADR: ela acrescenta uma segunda derivação à §4 e **reescreve a invariante da §11** (`compre_por ≥ mínimo ≥ custo_real` passa a ser função da **base do modo**). Leia a §12 antes de tratar qualquer afirmação sobre `custo_real` como piso universal.
+- **⚠️ EMENDADA em 2026-08-12 pela §13** (T5 reavaliado). A §13 **corrige uma premissa factualmente errada** desta ADR e da migration 030: repasses **são apagados no fluxo normal**, não só mudam de status. O `ON DELETE CASCADE` de `030:61` **muda para `SET NULL` + congelamento do desfecho** (migration 035). Qualquer afirmação nesta ADR ou na 030 de que "`repasses` na prática muda de status em vez de ser apagada" está **morta** — leia a §13.0 antes de confiar nela.
 - **Data:** 2026-08-12
 - **Autora:** Aria (arquitetura)
 - **Contexto de decisão:** decisões D1/D2/D3 abertas em `docs/stories/story-3.1-aba-precificar.md` (linhas 120-123)
@@ -276,7 +277,8 @@ Precisa de um número que ninguém tem (§5). Encaminhar pro `@alex-analyst`: di
 - **T2** — n de vendas passar de ~40. Aí a régua recalibra de verdade, a tabela ganha leitor, e a decisão 2 volta pra mesa com dado em vez de hábito — inclusive a âncora própria pro compre-por (opção 4 da §4), hoje rejeitada só por falta de amostra.
 - **T3** — G1-b: a Ref. AA passar a ter efeito numérico na sugestão ⇒ migration 031 vira bloqueante de verdade (§6).
 - **T4** — mais de um usuário no sistema. Aí procedência por campo deixa de ser overkill, e ADR-002 §4.5 e §3 desta ADR precisam ser reabertas juntas. (A coluna `criado_por` da 030 já nasceu preparada pra isso — ver §11.)
-- **T5 — rotina de expurgo de repasses antigos.** O vínculo é `repasse_id` FK `ON DELETE CASCADE` (`030:61`), e a perna "o que vendeu" do trio mora em `repasses.valor_vendido`/`data_vendido`, não no snapshot. Isso está certo — a venda é fato que chega depois —, mas significa que **um hard-delete de repasse leva o histórico de calibração junto**. Hoje é risco teórico: `repasses` muda de status, não é apagada. **No dia em que entrar qualquer limpeza de repasses antigos, esta linha tem que ser revista *antes* de rodar** — a alternativa é `ON DELETE RESTRICT` ou desnormalizar o desfecho pro snapshot, e as duas só se decidem com a rotina de expurgo na mão. Fica como gatilho e não como comentário na migration de propósito: quem escrever o expurgo vai estar lendo uma story, não a 030.
+- ~~**T5 — rotina de expurgo de repasses antigos.**~~ **DISPARADO E FECHADO em 2026-08-12 pela §13.** A premissa que sustentava este gatilho ("hoje é risco teórico: `repasses` muda de status, não é apagada") era **falsa quando foi escrita** — o hard-delete já era o fluxo corrente. Texto original preservado abaixo para o registro; **a decisão vigente é a da §13.4**, não esta.
+  > *"O vínculo é `repasse_id` FK `ON DELETE CASCADE` (`030:61`), e a perna 'o que vendeu' do trio mora em `repasses.valor_vendido`/`data_vendido`, não no snapshot. Isso está certo — a venda é fato que chega depois —, mas significa que **um hard-delete de repasse leva o histórico de calibração junto**. Hoje é risco teórico: `repasses` muda de status, não é apagada. **No dia em que entrar qualquer limpeza de repasses antigos, esta linha tem que ser revista antes de rodar** — a alternativa é `ON DELETE RESTRICT` ou desnormalizar o desfecho pro snapshot, e as duas só se decidem com a rotina de expurgo na mão. Fica como gatilho e não como comentário na migration de propósito: quem escrever o expurgo vai estar lendo uma story, não a 030."*
 
 ---
 
@@ -561,3 +563,172 @@ Os três são **derivados**. A §3 recusou coluna de procedência (opção 6) e 
 ### 12.11 Gatilho novo
 
 - **T6 — um terceiro modo de preço.** No dia em que existir ("preço de showroom", política de classes A–E), esta §12 volta inteira: `base(modo)` deixa de ser escolha binária, o CHECK de `modo` muda, os cruzamentos da §12.1 deixam de ser três, e a pergunta que hoje não precisa de resposta — *o piso é sempre `base(modo)`, ou existe modo cujo piso é de outra grandeza?* — passa a precisar. Registrado como gatilho e deliberadamente não resolvido agora: resolver hoje seria inventar requisito.
+
+---
+
+## 13. Emenda — T5 reavaliado. A premissa estava errada: repasses **são apagados** no fluxo normal
+
+- **Status:** Aceita. **Emenda, não supersessão.** Data: 2026-08-12. Autora: Aria.
+- **Origem:** o T5 (§10) disparou. Não por rotina de expurgo — por **evidência direta de que o hard-delete já era o fluxo corrente quando o T5 foi escrito**.
+- **O que muda:** a FK `repasse_precificacao_sugerida.repasse_id` deixa de ser `ON DELETE CASCADE`; a tabela ganha identidade própria do carro e um **carimbo de desfecho congelado no instante da perda**; o trigger de append-only da 030 é reescrito. **Migration 035.**
+- **O que NÃO muda:** §3 (onde persistir, ordem de escrita, sem coluna de procedência), §4, §5, §6, §7, §12 inteira. Nenhuma decisão de preço é tocada. O motor não muda uma linha.
+- **Consequência de processo:** DDL é da `@dara-data-engineer` (035). O `@dex-dev` tem impacto pequeno e localizado (§13.8). A story 3.1a **não muda de escopo** — isto é correção de schema, não feature.
+
+### 13.0 A correção da premissa — eu estava errada, e o registro disso vale tanto quanto a decisão nova
+
+O T5 dizia, palavra por palavra:
+
+> *"Hoje é risco teórico: `repasses` muda de status, não é apagada."*
+
+**É falso.** Era falso no momento em que escrevi, não passou a ser falso depois. Repasses são apagados por `DELETE` físico, no uso corrente e por decisão deliberada do Marcos, por **dois caminhos que já existem no código**:
+
+| Caminho | Código | Natureza |
+|---|---|---|
+| Botão "Remover" / remoção em lote da lista | `src/lib/repasses/queries.ts:557` (`deleteRepasse`) e `:563` (`deleteRepasses`), chamados de `src/components/repasses/RepassesLista.tsx:440` e `:464` | `DELETE` físico, sem soft-delete, sem desfazer |
+| Painel "saíram do arquivo" (frente paralela `feat/sumidos-auto-avaliar`) | `SumidosDoArquivoPainel.tsx`, `removerSelecionados()` → `deleteRepasses` | mesma coisa, em lote, como parte do fluxo de sincronizar com o arquivo do Auto Avaliar |
+
+**A evidência que fechou o caso**, na sessão de 2026-08-12: a placa **PRD2189** — a mesma com que o `@dex-dev` validou o motor, e a mesma que a §12.1 usa como caso canônico (compra 80.000 · gastos 6.850 · custo 86.850 · Ref. AA 90.378) — existia no projeto `mesa` com `status='subido'` por volta das 13h e **não existia mais poucas horas depois**. Não mudou de status: a linha sumiu. O Marcos confirmou que a remoção é intencional e esperada — *"a quantidade só mudou quando eu subi o novo arquivo e aí ficou o valor que eu queria"*.
+
+E o próprio código da frente paralela **já documentava a consequência** que eu classifiquei como teórica (`SumidosDoArquivoPainel.tsx:86-87`):
+
+> *"o DELETE já levou junto `repasse_gastos` e `repasse_interessados` por CASCADE"*
+
+**Portanto: a linha `030:61` (`ON DELETE CASCADE`) não protege um cenário futuro. Ela destrói dado no fluxo de todo dia.** O único motivo de ainda não ter destruído nada é que a 3.1a não está em produção e a tabela tem **zero linhas**.
+
+### 13.1 Por que eu errei — e por que o erro não ficou contido na ADR
+
+Registro o mecanismo do erro porque ele é reprodutível e vai acontecer de novo se ficar sem nome.
+
+1. **Inferi o fluxo a partir do schema.** `repasses.status` tem quatro valores (`subido`, `vendido`, `nao_vendido`, `cancelado`, `008:38-39`), incluindo dois que são exatamente "o carro saiu do ciclo". Máquina de estados completa é evidência **de que dá pra não apagar**, nunca de que **não se apaga**. Eu tratei uma como a outra.
+2. **Não procurei o call site.** `deleteRepasse` está **40 linhas abaixo** do `updateRepasse` que eu li pra escrever a §2.2. Um `grep delete()` resolvia.
+3. **O fato estava escrito, em outra branch.** O comentário do `SumidosDoArquivoPainel` afirma o CASCADE em voz alta. Decidir sobre `repasses` lendo só a branch da story é o mesmo erro de escopo que a §12.6 evitou por sorte (consultar o projeto `mesa` foi o que revelou a tabela vazia).
+4. **E o erro vazou pro schema.** A premissa não ficou só na ADR: está escrita na migration **aplicada**, em `030:270-272` — *"Repasse apagado leva seus snapshots junto; `repasses` na prática muda de status em vez de ser apagada"* — como **justificativa** para não haver guarda de DELETE. É exatamente a falha que a §12.7 nomeia: **COMMENT errado é pior que COMMENT nenhum**, porque quem lê confia e não tem como saber. A 035 tem que corrigir os COMMENTs em banco (§13.5).
+
+**A lição de processo, que é a parte generalizável:** o T5 foi formulado como *"no dia em que entrar rotina de limpeza"* e justificado com *"quem escrever o expurgo vai estar lendo uma story, não a 030"*. Os dois pressupõem que a deleção **chegaria como um evento anunciado**. Ela chegou como **um botão que já estava lá**. Gatilho que depende de alguém reparar num evento só dispara se alguém reparar — este só disparou porque uma placa sumiu entre duas consultas na mesma sessão, por acaso. **Onde der pra transformar o gatilho em constraint, transforma-se** — e aqui dá (§13.5, o CHECK de órfão-com-desfecho). Onde não der, o gatilho precisa de uma verificação com dono, não de boa vontade.
+
+### 13.2 O que se perde de fato — e o que eu não posso afirmar
+
+O que morre junto com a linha de `repasses`, hoje: os snapshots da 030 (CASCADE), `repasse_gastos`, `repasse_interessados`, `repasse_documentos`, `repasse_fotos` (`008:61,75,91`) — e, **para a calibração**, a perna "o que vendeu" do trio, que mora em `repasses.valor_vendido` / `data_vendido` (`008:30,34`).
+
+**O viés é o problema, não o volume.** Não é perda aleatória: a remoção é **correlacionada com o desfecho** — só se remove carro que saiu do anúncio. Amostra em que a probabilidade de sobreviver depende do resultado é a pior espécie possível pra recalibrar uma régua, e sobra exatamente o subconjunto que menos ensina (o que continua parado no anúncio).
+
+**O que eu NÃO vou afirmar, porque não está medido:** *qual* metade some primeiro. O fluxo desenhado no painel de sumidos manda **"marcar como vendido" antes de remover** — e essa ação preserva a linha (vira `status='vendido'`). Se ele for seguido, o que o CASCADE apaga são majoritariamente os **negativos** ("sugeriu, anunciou, não vendeu") — que são justamente os que dizem *"a régua está alta"*, e que nenhuma outra fonte tem. Se não for seguido — e o caso PRD2189 sugere que nem sempre é —, apaga os dois. **Nos dois cenários o dano é real e o argumento da decisão não muda**, então não preciso da medição pra decidir. Registro a incerteza pra que ninguém cite aqui um número que não existe.
+
+### 13.3 Opções
+
+| # | Opção | Prós | Contras | Veredito |
+|---|---|---|---|---|
+| 1 | **Manter `ON DELETE CASCADE`** | Zero trabalho; a tabela nunca tem órfão | Destrói o histórico de calibração no fluxo de todo dia (§13.0), com viés correlacionado ao desfecho (§13.2). O único dado que a tabela existe pra guardar é irrecuperável (§2.3) | **Rejeitado — a premissa que o sustentava é falsa** |
+| 2 | **`ON DELETE RESTRICT` / `NO ACTION`** | Protege o histórico com uma palavra; garantia forte de banco | **Trava o fluxo que o Marcos acabou de descrever como normal e desejado.** Todo carro já precificado passaria a ser inapagável, e a remoção falharia com erro cru de FK — nenhum dos dois call sites (`queries.ts:557,563`) trata isso. E o contorno natural do usuário é apagar o snapshot antes, ou parar de usar o "Aplicar": **a guarda destrói o dado por outro caminho.** É o mesmo erro da §11 desvio 1 — banco que recusa a ação legítima do usuário | **Rejeitado** |
+| 3 | **`ON DELETE SET NULL` + identidade do carro no snapshot + desfecho congelado no instante da perda** | O snapshot sobrevive sozinho; a remoção **nunca falha**; a desnormalização ocorre **só nos órfãos**, não nas dezenas de linhas com repasse vivo; é o padrão que o projeto já escolheu na 033 pro mesmo problema; o "órfão obrigatoriamente tem desfecho" vira **CHECK**, não convenção | 1 migration; o trigger de append-only da 030 tem que ser reescrito (§13.7); um trigger `BEFORE DELETE` em `repasses` que **não pode falhar nunca** (§13.6) | **Adotado** |
+| 4 | **Tabela-arquivo separada** (mover o snapshot pra `…_arquivo` no delete) | Mantém a tabela viva 100% referencial | Parte a população em duas: toda query de recalibração vira `UNION`, e "esqueci de olhar a outra tabela" é silencioso. É precisamente o defeito de **população fantasma** que a §12.6 gastou uma migration pra evitar no campo `modo` | **Rejeitado** |
+| 5 | **Desacoplar de vez** (sem FK; chave por chassi + ciclo) | Imune a qualquer deleção | Ciclo de repasse **não tem chave natural** (`030:44-51`, e é o motivo de a FK ser `repasse_id` e não placa). Perde o join nos ~99% dos casos em que o repasse existe, inclusive o leitor da C16 | **Rejeitado** |
+| 6 | **Soft-delete em `repasses`** (`removido_em`, filtrado em toda leitura) | Resolve de uma vez para **todas** as filhas — gastos, interessados, documentos, fotos — e tornaria a 033 desnecessária. Arquiteturalmente o mais correto | Toca **todas** as queries do domínio (`queries.ts`, KPIs, exports, sync 029, o índice parcial `repasses_chassi_subido_uniq` da 009), no meio da 3.1a, com risco de regressão desproporcional. E exige, depois, uma story de "exclusão definitiva" que reabre esta mesma decisão | **Rejeitado agora — vira o gatilho T7** (§13.10) |
+| 7 | **Só UX: desencorajar "Remover" em favor de `nao_vendido`** | Zero schema. E é **tecnicamente viável**: `presenca-arquivo-auto-avaliar.ts:135,153` já ignora `nao_vendido`/`cancelado`, então mudar o status tira o carro da comparação do arquivo — que é o efeito que o Marcos quer | Convenção pura: nada impede o clique. Não é garantia, é hábito | **Complementar, nunca substituto** — encaminhado (§13.9) |
+
+### 13.4 Decisão
+
+**`ON DELETE SET NULL`, com o snapshot ganhando autonomia em duas frentes: identidade do carro congelada na escrita, desfecho congelado na deleção.**
+
+Quatro pontos, e a ordem importa:
+
+1. **A FK vira `ON DELETE SET NULL`.** `repasse_id` passa a ser nullable. `repasse_id IS NULL` tem **um** significado, fechado: *"o ciclo de repasse a que esta decisão pertencia foi removido do sistema"*. Nunca "ainda não sei" — não existe caminho que insira sem repasse.
+2. **A identidade do carro é congelada na INSERÇÃO**, não na deleção: `placa`, `chassi` e `modelo` copiados do repasse no clique de "Aplicar". Na inserção porque é quando o app já tem os três na mão, e porque congelar ali também protege de edição posterior do repasse. É o padrão **`modelo_snapshot` da 033** (`018:69`), com o argumento textual dela: *"um interesse sem `repasse_id` ainda diz 'fulano se interessou na Ranger 3.2 XLT' — degrada o vínculo, não o fato"*.
+   - ⚠️ **Isso não revoga o `030:44-51`.** Aquele parágrafo recusou placa/chassi **como chave**, e continua certo: agrupar por placa mistura ciclos. Aqui elas entram como **rótulo**, com nome (`_snapshot`) e COMMENT que dizem isso. A chave do ciclo continua sendo `repasse_id`; quando ele é `NULL`, o que acabou foi o ciclo, não o registro.
+3. **O desfecho é congelado no instante da perda**, por trigger `BEFORE DELETE` em `repasses` que copia pros snapshots daquele repasse o que está prestes a sumir. **Só nos órfãos**: enquanto o repasse existe, o desfecho se lê por join e as colunas ficam `NULL`. Isso responde ao custo que a reavaliação levantou — **a duplicação não é da tabela inteira, é das poucas linhas que perdem o pai**, e acontece no único instante em que o dado ainda existe (é o mesmíssimo argumento da §2.3, aplicado ao outro ponto do ciclo de vida).
+4. **"Órfão sem desfecho" vira impossível por CHECK**, não por convenção: `repasse_id IS NOT NULL OR desfecho_congelado_em IS NOT NULL`. É o que converte o T5 de gatilho-que-alguém-precisa-notar em invariante de banco — e é o princípio da §12.6 (*"nenhuma garantia semântica depende de convenção"*) aplicado ao ponto que a 030 deixou de fora.
+
+**Por que agora e não depois:** o mesmo argumento que tornou a coluna `modo` gratuita (§12.6). A tabela tem **zero linhas**. Trocar a ação da FK e acrescentar colunas numa tabela vazia é instantâneo e **dispensa backfill**. Depois da primeira decisão real gravada, "qual era o desfecho daquele carro que já foi apagado" é uma pergunta sem resposta possível — e a linha órfã que sobraria seria pior que não ter nada, porque teria aparência de dado.
+
+### 13.5 Forma dos dados — para a `@dara-data-engineer` (DDL é dela, §3)
+
+**Migration 035.** A 031 segue reservada pro `COALESCE` da 028 e continua não aplicada; 032 é minha; 033 e 034 são da frente de leads e já estão commitadas.
+
+**Na FK:**
+- `repasse_id` → `NULL`-able, `REFERENCES repasses(id) ON DELETE SET NULL`. Constraint **nomeada** (a atual é anônima, `030:61`) pra que o drop/recreate seja idempotente.
+- O índice `idx_rep_prec_repasse_recente (repasse_id, criado_em DESC)` **fica e continua sendo o motivo não-especulativo** (`030:238-241`): com `SET NULL` o `DELETE` no pai vira um `UPDATE` na filha e a busca pela coluna filha continua sendo a mesma.
+
+**Identidade do carro — congelada no INSERT, NOT NULL:**
+- `placa_snapshot`, `chassi_snapshot`, `modelo_snapshot` — `TEXT NOT NULL`, copiados de `repasses` no momento da escrita. `NOT NULL` mas **sem CHECK de não-vazio**: `repasses.placa`/`chassi` são `NOT NULL` mas admitem string vazia no uso real (o painel de sumidos trata "sem placa legível" e testa `chassi !== ""`), e um CHECK aqui abortaria o clique de "Aplicar" num carro que o resto do sistema aceita.
+
+**Desfecho — preenchido só no congelamento, tudo nullable:**
+- `desfecho_congelado_em` `TIMESTAMPTZ` — o sinalizador. Instante técnico, `now()`, coerente com a §5 da 030.
+- `desfecho_status` `TEXT` — o `repasses.status` naquele instante. **Sem CHECK de domínio** (§13.6).
+- `desfecho_valor_vendido` `NUMERIC(12,2)`, `desfecho_data_vendido` `DATE`.
+  - ⚠️ **`desfecho_data_vendido` é a primeira e única coluna `date` desta tabela**, e a §5 da 030 afirma que não existe nenhuma. A afirmação **precisa ser emendada no COMMENT** em vez de virar mentira. O que a torna aceitável: é **cópia** de `repasses.data_vendido`, um `date` já corrigido pela 028 — transporta um valor pronto, **não calcula data nenhuma**. O contrato da 030 (*"jamais `current_date`"*) continua valendo com força total pro trigger da 035.
+- **Recomendadas, e a decisão de cortar é do Marcos/Dara** (numeradas pra escolha):
+  1. `desfecho_custo_real` `NUMERIC(12,2)` — `valor_compra_repasse + Σ repasse_gastos` no instante da perda. Fecha a pergunta que `gastos_qtde` só levanta (*"o custo estava completo quando a régua rodou?"*), e é irrecuperável pelo mesmo motivo de sempre: `repasse_gastos` cascateia junto. **Recomendo incluir.**
+  2. `desfecho_valor_minimo` `NUMERIC(12,2)` — o `repasses.valor_minimo` final. É o que preserva, post-mortem, a classificação da C16 (§12.8): comparar com `minimo_aplicado` diz se o Marcos mudou o preço no portal depois. **Recomendo incluir**; se cair, cai junto a capacidade de classificar origem em carro removido.
+  - As **linhas** itemizadas de `repasse_gastos` continuam morrendo. Aceito: o snapshot já congela `gastos_total` e `gastos_qtde` na decisão, e o item 1 fecha o total no fim. Reconstituir a lista não recalibra régua nenhuma.
+
+**A invariante do órfão, como CHECK:**
+```
+CHECK (repasse_id IS NOT NULL OR desfecho_congelado_em IS NOT NULL)
+```
+Nomeado. É a única constraint nova, e ela **nunca pode disparar num `DELETE`** porque o trigger de congelamento roda antes da ação da FK (§13.6).
+
+**Trigger `BEFORE DELETE ... FOR EACH ROW ON repasses`** — copia o desfecho pros snapshots de `OLD.id`. `BEFORE` é obrigatório: a ação `SET NULL` da FK roda **depois** do delete, e a partir dali não há mais como achar as linhas.
+
+**COMMENTs a corrigir na mesma 035** (o erro da §13.1 está no banco, não só no arquivo):
+- `COMMENT ON TABLE` e `COMMENT ON COLUMN …repasse_id` — hoje dizem que a chave é o ciclo e nada sobre órfão. Passam a dizer: *ciclo de repasse; `NULL` = ciclo removido do sistema, e o desfecho está congelado nas colunas `desfecho_*`*.
+- **A frase de `030:270-272` está errada e é a origem do problema.** Não dá pra editar comentário de bloco de migration aplicada, mas dá pra sobrescrever o COMMENT em banco e **recomendo um banner no topo do arquivo 030 apontando pra 035** — comentário apenas, sem tocar DDL. Deixar `"repasses na prática muda de status em vez de ser apagada"` de pé, num arquivo que alguém vai ler primeiro, é repetir a §12.7 de propósito.
+
+### 13.6 A regra que a opção 3 obriga: nada no caminho do `DELETE` pode falhar
+
+**Se qualquer coisa no congelamento puder abortar, a opção 3 vira a opção 2 pela porta dos fundos** — e pior, de forma intermitente, num botão que hoje sempre funciona. Três regras, e elas são de arquitetura, não de estilo:
+
+1. **Nenhuma constraint nas colunas `desfecho_*`.** Nada de CHECK de domínio em `desfecho_status`, nada de `>= 0` nos valores, nada de `NOT NULL`. Estas colunas copiam um estado que já existe e já foi validado no pai; validar de novo só cria uma forma de o `DELETE` do usuário falhar. **É a §11 desvio 1 outra vez** — banco que recusa a ação legítima do usuário destrói o dado que a tabela existe pra capturar.
+2. **O trigger tem que ser total.** Sem `RAISE` de negócio, sem depender de linha em outra tabela existir, sem `strict`. Zero snapshots pro repasse ⇒ zero linhas atualizadas ⇒ sucesso.
+3. **Nenhuma regra nova que impeça a atualização.** Ver §13.7 — é onde isso quase deu errado.
+
+**Furo conhecido, registrado e aceito:** `TRUNCATE repasses` não dispara trigger de linha. Ninguém trunca esta tabela e não há caminho no app que o faça. Fica escrito pra não ser descoberto do jeito que este bug foi.
+
+### 13.7 O guard de append-only da 030 **tem que ser reescrito** — senão o `DELETE` passa a abortar sempre
+
+Este é o ponto que mais fácil se deixa passar, e ele sozinho transformaria a decisão em regressão.
+
+O trigger `repasse_precificacao_guarda_append_only` (`030:278-306`) faz duas coisas:
+
+```
+IF OLD.aplicado_em IS NOT NULL THEN RAISE …           -- carimbo de mão única
+IF (to_jsonb(OLD) - v_mutaveis) IS DISTINCT FROM …    -- só o carimbo muda
+```
+
+com `v_mutaveis = {minimo_aplicado, compre_por_aplicado, aplicado_em}`.
+
+**Consequência se a 035 não o tocar:** toda linha já aplicada tem `aplicado_em IS NOT NULL`. O `UPDATE` do congelamento — e o `UPDATE` que a própria FK faz pra zerar `repasse_id` — bateriam na primeira cláusula e **abortariam o `DELETE` do usuário**. Ou seja: sem esta parte, `SET NULL` se comporta **exatamente como `RESTRICT`**, só que com mensagem de erro incompreensível. E o mecanismo `to_jsonb(OLD) - v_mutaveis` foi desenhado pra que **coluna nova nasça imutável** (`030:267-268`) — é o default certo, e aqui é justamente o que precisa de exceção explícita.
+
+**Forma da reescrita** (regra é minha, implementação é da Dara): a guarda deixa de ser *"a linha congela depois do carimbo"* e passa a ser **dois carimbos independentes, cada um de mão única**:
+
+| Grupo | Colunas mutáveis | Só enquanto | Depois disso |
+|---|---|---|---|
+| **A — aplicado** | `minimo_aplicado`, `compre_por_aplicado`, `aplicado_em` | `aplicado_em IS NULL` **e** `repasse_id IS NOT NULL` | imutável |
+| **B — desfecho** | `desfecho_*`, e `repasse_id` **só** de valor → `NULL` | `desfecho_congelado_em IS NULL` | imutável |
+| **resto** | — | — | imutável **sempre**, inclusive coluna futura |
+
+Três detalhes que precisam estar no código, não só aqui:
+- `repasse_id` é mutável **em um único sentido**: `NOT NULL → NULL`. Nunca o inverso, nunca pra outro `id`. Órfão não se readota — o ciclo acabou, e reconectar seria inventar um vínculo.
+- **Depois de órfã, não há mais carimbo de aplicado.** A cláusula `repasse_id IS NOT NULL` no grupo A é o que garante isso.
+- Uma linha pode ser congelada **sem nunca ter sido carimbada** (`aplicado_em IS NULL`): é o carro cujo repasse foi removido entre a sugestão e a aplicação. Estado legítimo, mesma família do *"sugeriu e não aplicou"* da §3 — **é sinal, não lixo**. O `rep_prec_carimbo_coerente_chk` (`030:219-231`) continua valendo intocado sobre o trio do aplicado.
+
+### 13.8 Impacto no código existente — pequeno, e enumerado
+
+- **Leitores da 030 (C16) não mudam.** `buscarSnapshotRecente` (`precificar-queries.ts:440-448`) filtra `.eq("repasse_id", …)` e `buscarUltimosSnapshotsPrecificacao` (`:511-516`) filtra `.in("repasse_id", …)`: órfão tem `NULL` e **nunca casa**, que é o comportamento certo — carro removido não tem alerta de abaixo-do-custo pra desambiguar, porque não tem tela.
+- **O teto `LIMITE_LINHAS_SNAPSHOT` (2.000) não fica mais apertado por causa dos órfãos**: eles são excluídos no servidor pelo próprio filtro. O sensor de truncamento (`:536-540`) continua medindo o que se propôs a medir.
+- **Escrita:** o `@dex-dev` passa a mandar `placa_snapshot`/`chassi_snapshot`/`modelo_snapshot` no insert — os três já estão carregados na tela de precificar. Nada mais muda na ordem de escrita da §3.
+- **Tipos:** `repasse_id` vira nullable nos tipos gerados. O `SnapshotRow` de `precificar-queries.ts:459-465` já declara `repasse_id?: number` e já ignora linha sem id (`:543`).
+- **Nenhuma mudança em** `sugerir-preco-repasse.ts`, `margem-repasse.ts`, `origem-abaixo-do-custo.ts`, 028, 029, 032. **Nenhuma decisão de preço é tocada.**
+
+### 13.9 Custos aceitos, explicitamente
+
+1. **Três colunas de identidade duplicadas em toda linha**, não só nos órfãos. Aceito: são dezenas de linhas por ano, e congelar no insert é o que evita um trigger maior e protege de edição posterior. O risco real não é espaço — é alguém agrupar por `placa_snapshot` e misturar ciclos; mitigado por nome e COMMENT, não por ausência da coluna.
+2. **Um trigger em `repasses`, tabela que esta ADR até aqui não tocava.** Aceito, com a distinção que a sustenta: a 030 recusou CHECKs porque eles **recusam a ação do usuário**; este trigger **não recusa nada** — grava e sai do caminho. São categorias diferentes, e a §13.6 existe pra que continuem sendo.
+3. **Órfãos acumulam numa tabela que nasceu write-only.** Aceito: eles são o dado, não resíduo. E o CHECK garante que órfão sem desfecho não existe, então nenhuma linha degrada pra "lixo com aparência de dado" (`030:107-109`).
+4. **A perna do desfecho continua chegando por join nos carros vivos.** Aceito e desejado: desnormalizar sempre seria duplicar estado mutável — que é o defeito que a §3 evitou ao recusar a opção 3 (colunas em `repasses`). Aqui a cópia acontece no instante em que o join deixa de existir, e nunca antes.
+5. **A opção 7 (UX) fica de fora desta decisão.** Vale encaminhar pra `@uma-ux`/`@morgan-pm` que "marcar como `nao_vendido`" já tira o carro da comparação do arquivo (`presenca-arquivo-auto-avaliar.ts:135,153`) e preserva **tudo** — gastos e interessados inclusive, que esta emenda **não** salva. Mas é hábito, não garantia: entra como melhoria, jamais como o motivo de não mexer no schema.
+
+### 13.10 Gatilhos
+
+- **T5 — fechado.** Substituído por esta §13. Não reabrir com a formulação antiga.
+- **T7 — soft-delete de `repasses` (novo).** Esta é a **segunda** tabela filha em uma semana a precisar de tratamento especial pra sobreviver ao `DELETE` de um repasse: a 033 (`lead_interesses`, `SET NULL` + `modelo_snapshot`) foi a primeira, e a decisão do Marcos lá foi a mesma daqui — *preservar o histórico sem travar o fluxo*. Duas ocorrências ainda são coincidência tratável caso a caso; **na terceira, o defeito deixa de ser da filha e passa a ser a semântica de deleção de `repasses`** (opção 6, §13.3). Gatilho com limiar explícito, e não com "quando incomodar": **terceira tabela filha a precisar de sobrevivência ao `DELETE` ⇒ soft-delete vira decisão a tomar, não gatilho a registrar.** O que ele obrigaria a reabrir: `queries.ts` inteiro, os KPIs, os exports, o sync 029 e o índice parcial da 009.
+- **T8 — o dia em que `repasses` ganhar deleção em massa automática** (rotina agendada, limpeza por idade, expurgo por LGPD). Aí muda a **frequência**, não o mecanismo: o congelamento continua correto, mas o volume de órfãos passa a ser a maioria da tabela, e a pergunta *"a recalibração deve pesar órfão e vivo igual?"* — hoje irrelevante — passa a valer. Registrado e deliberadamente não resolvido: resolver agora seria inventar requisito, que foi como o T5 nasceu errado.

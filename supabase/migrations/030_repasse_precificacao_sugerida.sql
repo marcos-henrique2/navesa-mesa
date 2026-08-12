@@ -1,3 +1,23 @@
+-- =====================================================================================
+-- ⚠️⚠️  ERRATA — LEIA ANTES DE CONFIAR NESTE ARQUIVO  ⚠️⚠️
+-- =====================================================================================
+-- O `ON DELETE CASCADE` da linha 61 e a justificativa dele nas linhas 270-272 ESTÃO
+-- ERRADOS. A frase "`repasses` na prática muda de status em vez de ser apagada" era FALSA
+-- JÁ QUANDO FOI ESCRITA: repasses são apagados por DELETE físico no fluxo de todo dia
+-- (`queries.ts:557,563` ← `RepassesLista.tsx:440,464`, e o painel de sumidos do arquivo AA).
+-- O CASCADE não protegia um cenário futuro — ele destruiria, todo dia, o único dado que
+-- esta tabela existe pra guardar, e com viés correlacionado ao desfecho (ADR-003 §13.2).
+--
+-- CORRIGIDO PELA **MIGRATION 035** (`035_snapshot_sobrevive_remocao_repasse.sql`):
+--   • a FK virou `ON DELETE SET NULL` (constraint `rep_prec_repasse_fk`);
+--   • a tabela ganhou identidade do carro (`*_snapshot`) e desfecho congelado (`desfecho_*`);
+--   • a guarda de append-only da §4 (linhas 278-306) FOI REESCRITA — a versão abaixo
+--     abortaria o DELETE do usuário. NÃO a use como referência.
+-- Onde este arquivo e a 035 discordarem, **A 035 VENCE**. Nada foi apagado daqui de
+-- propósito: o erro fica visível porque a lição (ADR-003 §13.1 — COMMENT errado é pior que
+-- COMMENT nenhum) é tão parte do registro quanto a correção.
+-- =====================================================================================
+
 -- Navesa Mesa — Migration 030: snapshot da sugestão de preço de repasse
 -- =====================================================================================
 -- Implementa a §3 da ADR-003 (`docs/design/adr-003-persistencia-e-derivacao-da-sugestao-
@@ -270,6 +290,11 @@ CREATE INDEX IF NOT EXISTS idx_rep_prec_repasse_recente
 -- NÃO existe guarda de DELETE, de propósito: bloquear DELETE quebraria o
 -- `ON DELETE CASCADE` do `repasse_id` que a própria ADR pediu. Repasse apagado leva seus
 -- snapshots junto; `repasses` na prática muda de status em vez de ser apagada.
+--   ⚠️ ERRATA — A FRASE ACIMA É FALSA. Ver o banner no topo deste arquivo e a migration 035.
+--   Repasses SÃO apagados por DELETE físico no uso corrente; a FK virou `ON DELETE SET NULL`
+--   e o desfecho passa a ser congelado por trigger `BEFORE DELETE` em `repasses`. E o trigger
+--   logo abaixo FOI REESCRITO pela 035 — a versão deste arquivo abortaria o DELETE do usuário
+--   em toda linha já carimbada (ADR-003 §13.7).
 --
 -- Não há `atualizado_em` nesta tabela (desvio consciente do padrão de 003/008/016/018):
 -- aquela coluna serve a tabelas mutáveis. Aqui a única mutação permitida JÁ tem timestamp

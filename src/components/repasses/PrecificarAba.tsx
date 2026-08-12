@@ -352,7 +352,9 @@ export function PrecificarAba() {
     setAplicando(true);
     try {
       const { insert, carimbo } = montarSnapshotPrecificacao({
-        repasseId: carro.repasseId,
+        // O objeto do carro inteiro, não campos avulsos: id e rótulos vêm da
+        // MESMA fonte que alimentou o motor (migration 035 §9).
+        carro,
         sugestao,
         aplicado: { minimo: minimoAplicar, comprePor: comprePorAplicar },
       });

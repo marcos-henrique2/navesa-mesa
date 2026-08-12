@@ -63,6 +63,27 @@ import {
 export type SnapshotPrecificacaoInsert = {
   repasse_id: number;
   /**
+   * IDENTIDADE DO CARRO, congelada no INSERT (migration 035, ADR-003 §13).
+   *
+   * ⚠️ **RÓTULO, NUNCA CHAVE.** O sufixo `_snapshot` está no nome de propósito:
+   * a chave do ciclo continua sendo `repasse_id`, e agrupar por `placa_snapshot`
+   * **misturaria ciclos** — a mesma placa volta num segundo repasse. Isto NÃO
+   * revoga o `030:44-51`, que recusou placa como chave e segue certo.
+   *
+   * Existem porque a 030 pôs `ON DELETE CASCADE` sobre uma premissa falsa
+   * ("repasses muda de status em vez de ser apagada"): repasses **são** apagados
+   * no fluxo de todo dia. Com `SET NULL`, a linha órfã ainda diz DE QUE CARRO se
+   * tratava — degrada o VÍNCULO, não o FATO. Congelar no insert (e não na
+   * deleção) também protege de edição posterior do repasse.
+   *
+   * Podem ser string vazia: `repasses.placa`/`chassi` são NOT NULL mas aceitam
+   * `""` no uso real (carro sem placa legível), e recusar aqui abortaria o
+   * "Aplicar" de um carro que o resto do sistema aceita.
+   */
+  placa_snapshot: string;
+  chassi_snapshot: string;
+  modelo_snapshot: string;
+  /**
    * DISCRIMINADOR DE POPULAÇÃO (migration 032, `rep_prec_modo_chk`).
    * `TEXT NOT NULL` sem DEFAULT: um insert sem esta coluna estoura 23502.
    *
@@ -116,8 +137,31 @@ export type SnapshotPrecificacaoMontado = {
   houveEdicao: boolean;
 };
 
-export type MontarSnapshotArgs = {
+/**
+ * A identidade do ciclo, em UM objeto só.
+ *
+ * ⚠️ **Não é conveniência — é o mesmo argumento da C19 aplicado à identidade.**
+ * Se `repasseId`, `placa`, `chassi` e `modelo` chegassem como quatro parâmetros
+ * independentes, "id de um carro com a placa de outro" seria um estado
+ * representável, e o banco **não pegaria**: os três `_snapshot` são NOT NULL,
+ * não são verificados contra `repasses`, e a linha resultante passaria em todos
+ * os CHECKs mentindo sobre qual carro produziu a decisão. O banco fecha o
+ * NOT NULL, não a VERDADE (migration 035 §9).
+ *
+ * Estruturalmente compatível com `CarroPrecificar`, de propósito: a tela passa
+ * **o próprio objeto do carro** que alimentou o motor, e não uma cópia montada
+ * à parte.
+ */
+export type IdentidadeRepasse = {
   repasseId: number;
+  placa: string;
+  chassi: string;
+  modelo: string;
+};
+
+export type MontarSnapshotArgs = {
+  /** O carro que produziu a sugestão — fonte única de id E rótulos. */
+  carro: IdentidadeRepasse;
   /**
    * A sugestão que produziu os números. **Fonte única do `modo`** — ver o bloco
    * C19 no topo do arquivo.
@@ -155,7 +199,7 @@ function exigirNumero(v: unknown, campo: string): number {
 export function montarSnapshotPrecificacao(
   args: MontarSnapshotArgs,
 ): SnapshotPrecificacaoMontado {
-  const { repasseId, sugestao } = args;
+  const { carro, sugestao } = args;
   const { custo, contexto } = sugestao;
 
   const minimoAplicado = arredondarCentavos(exigirNumero(args.aplicado.minimo, "minimo aplicado"));
@@ -164,7 +208,11 @@ export function montarSnapshotPrecificacao(
   );
 
   const insert: SnapshotPrecificacaoInsert = {
-    repasse_id: repasseId,
+    // Os quatro saem do MESMO objeto: o id e os três rótulos não podem divergir.
+    repasse_id: carro.repasseId,
+    placa_snapshot: carro.placa,
+    chassi_snapshot: carro.chassi,
+    modelo_snapshot: carro.modelo,
     // C19 — os dois saem do MESMO objeto que produziu os preços. `versaoRegua`
     // já vem do motor com o sufixo do modo: não se monta o sufixo aqui, senão
     // haveria duas fontes pra mesma verdade.

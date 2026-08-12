@@ -31,7 +31,10 @@ import {
   type ModoPreco,
   type SugestaoPrecoRepasse,
 } from "@/lib/pricing/sugerir-preco-repasse";
-import { montarSnapshotPrecificacao } from "@/lib/pricing/snapshot-precificacao";
+import {
+  montarSnapshotPrecificacao,
+  type IdentidadeRepasse,
+} from "@/lib/pricing/snapshot-precificacao";
 import {
   classificarOrigemAbaixoDoCusto,
   type SnapshotRecente,
@@ -87,6 +90,17 @@ function cent(v: number): number {
 
 /** Os DOIS modos, e só dois — mesmo domínio do `rep_prec_modo_chk` da 032. */
 const MODOS: readonly ModoPreco[] = ["recuperar_tudo", "girar_rapido"];
+
+/**
+ * Identidade do ciclo (migration 035). É o MESMO objeto que a tela passa — em
+ * produção, o próprio `CarroPrecificar`, não uma cópia montada à parte.
+ */
+const CARRO: IdentidadeRepasse = {
+  repasseId: 42,
+  placa: "PRD2189",
+  chassi: "9BFZR5ED0LB123456",
+  modelo: "Ranger 3.2 XLT CD 4x4",
+};
 
 // ═════════════════════════════════════════════════════════════════════════════
 // A RÉGUA — mediana no mínimo, compre-por DERIVADO da razão
@@ -538,7 +552,7 @@ describe("montarSnapshotPrecificacao (AC21/AC22)", () => {
 
   it("aplicar exatamente o sugerido grava sugerido == aplicado", () => {
     const { insert, carimbo, houveEdicao } = montarSnapshotPrecificacao({
-      repasseId: 42,
+      carro: CARRO,
       sugestao,
       aplicado: { minimo: sugestao.minimoSugerido, comprePor: sugestao.comprePorSugerido },
       agora: AGORA,
@@ -553,7 +567,7 @@ describe("montarSnapshotPrecificacao (AC21/AC22)", () => {
     // Decisão do Marcos, 2026-08-12: grava-se o que foi de fato ao ar, não o
     // centavo da régua. Quem recalibrar tem que olhar a MAGNITUDE, não a flag.
     const { insert, carimbo, houveEdicao } = montarSnapshotPrecificacao({
-      repasseId: 42,
+      carro: CARRO,
       sugestao,
       aplicado: { minimo: sugestao.minimoArredondado, comprePor: sugestao.comprePorArredondado },
       agora: AGORA,
@@ -567,7 +581,7 @@ describe("montarSnapshotPrecificacao (AC21/AC22)", () => {
 
   it("editar antes de aplicar preserva OS DOIS PARES — a correção é o rótulo", () => {
     const { insert, carimbo, houveEdicao } = montarSnapshotPrecificacao({
-      repasseId: 42,
+      carro: CARRO,
       sugestao,
       aplicado: { minimo: 105_000, comprePor: 110_000 },
       agora: AGORA,
@@ -582,7 +596,7 @@ describe("montarSnapshotPrecificacao (AC21/AC22)", () => {
     // ADR-003 §11: o banco deliberadamente não recusa; testar ordenação no
     // aplicado viraria proibição de corrigir a régua.
     const { insert, carimbo } = montarSnapshotPrecificacao({
-      repasseId: 42,
+      carro: CARRO,
       sugestao,
       aplicado: { minimo: 90_000, comprePor: 80_000 },
       agora: AGORA,
@@ -598,7 +612,7 @@ describe("montarSnapshotPrecificacao (AC21/AC22)", () => {
 
   it("honra o contrato centavo-perfect da rep_prec_custo_decomposto_chk", () => {
     const { insert } = montarSnapshotPrecificacao({
-      repasseId: 42,
+      carro: CARRO,
       sugestao,
       aplicado: { minimo: sugestao.minimoSugerido, comprePor: sugestao.comprePorSugerido },
       agora: AGORA,
@@ -610,7 +624,7 @@ describe("montarSnapshotPrecificacao (AC21/AC22)", () => {
 
   it("congela o CONTEXTO DO MOMENTO — é o que muda depois e não volta", () => {
     const { insert } = montarSnapshotPrecificacao({
-      repasseId: 42,
+      carro: CARRO,
       sugestao,
       aplicado: { minimo: sugestao.minimoSugerido, comprePor: sugestao.comprePorSugerido },
       agora: AGORA,
@@ -637,7 +651,7 @@ describe("montarSnapshotPrecificacao (AC21/AC22)", () => {
   it("referências ausentes viram NULL no snapshot — ausência é dado, nunca chute", () => {
     const semRef = exigirSugestao(sugerirPrecoRepasse(entrada()));
     const { insert } = montarSnapshotPrecificacao({
-      repasseId: 7,
+      carro: { ...CARRO, repasseId: 7 },
       sugestao: semRef,
       aplicado: { minimo: semRef.minimoSugerido, comprePor: semRef.comprePorSugerido },
       agora: AGORA,
@@ -652,7 +666,7 @@ describe("montarSnapshotPrecificacao (AC21/AC22)", () => {
     assert.throws(
       () =>
         montarSnapshotPrecificacao({
-          repasseId: 1,
+          carro: { ...CARRO, repasseId: 1 },
           sugestao,
           aplicado: { minimo: Number.NaN, comprePor: 1 },
           agora: AGORA,
@@ -1008,7 +1022,7 @@ describe("3.1c C12/C19 — o snapshot e o modo que o produziu", () => {
   function montar(modo: ModoPreco) {
     const s = exigirSugestao(sugerirPrecoRepasse(entrada(PRD2189), REGUA_PADRAO, modo));
     return montarSnapshotPrecificacao({
-      repasseId: 42,
+      carro: CARRO,
       sugestao: s,
       aplicado: { minimo: s.minimoArredondado, comprePor: s.comprePorArredondado },
       agora: AGORA_3_1C,
@@ -1023,7 +1037,7 @@ describe("3.1c C12/C19 — o snapshot e o modo que o produziu", () => {
   it("C19 — a assinatura NÃO aceita `modo` em separado (fix de TIPO, não de teste)", () => {
     const s = exigirSugestao(girar(PRD2189));
     montarSnapshotPrecificacao({
-      repasseId: 42,
+      carro: CARRO,
       sugestao: s,
       // @ts-expect-error C19: "girar com modo recuperar" tem que ser INEXPRIMÍVEL.
       // Se o tsc passar a acusar este `@ts-expect-error` como "unused", alguém
@@ -1160,5 +1174,100 @@ describe("3.1c C16 — classificarOrigemAbaixoDoCusto", () => {
   it("a comparação de CUSTO também é centavo-perfect", () => {
     assert.equal(classificarOrigemAbaixoDoCusto(girado, 85_300, 86_850.0), "decisao");
     assert.equal(classificarOrigemAbaixoDoCusto(girado, 85_300, 86_850.01), "deriva");
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// MIGRATION 035 — A IDENTIDADE DO CARRO, CONGELADA NO INSERT (ADR-003 §13)
+// ═════════════════════════════════════════════════════════════════════════════
+//
+// ⚠️ POR QUE ESTAS COLUNAS EXISTEM: a 030 pos `ON DELETE CASCADE` sobre uma
+// premissa FALSA — "repasses na pratica muda de status em vez de ser apagada".
+// Repasses SAO apagados no fluxo de todo dia (`deleteRepasse`/`deleteRepasses`,
+// e o painel de sumidos). Pior: a remocao e CORRELACIONADA COM O DESFECHO — so
+// se remove carro que saiu do anuncio —, entao o CASCADE apagaria
+// majoritariamente os NEGATIVOS ("sugeriu, anunciou, nao vendeu"), que sao
+// exatamente o sinal de que a regua esta alta. A base sobrevivente pareceria
+// confirmar a regua porque os erros foram apagados.
+//
+// Com `ON DELETE SET NULL` + estes tres rotulos, a linha orfa ainda diz DE QUE
+// CARRO se tratava: degrada o VINCULO, nao o FATO.
+
+describe("035 — identidade do carro no snapshot", () => {
+  const AGORA_035 = new Date("2026-08-12T15:30:00.000Z");
+
+  const sugestao035 = exigirSugestao(recuperar(PRD2189));
+
+  function montar(carro: IdentidadeRepasse) {
+    return montarSnapshotPrecificacao({
+      carro,
+      sugestao: sugestao035,
+      aplicado: {
+        minimo: sugestao035.minimoArredondado,
+        comprePor: sugestao035.comprePorArredondado,
+      },
+      agora: AGORA_035,
+    });
+  }
+
+  it("os tres `_snapshot` saem do objeto do carro, congelados no insert", () => {
+    const { insert } = montar(CARRO);
+    assert.equal(insert.repasse_id, 42);
+    assert.equal(insert.placa_snapshot, "PRD2189");
+    assert.equal(insert.chassi_snapshot, "9BFZR5ED0LB123456");
+    assert.equal(insert.modelo_snapshot, "Ranger 3.2 XLT CD 4x4");
+  });
+
+  it("id e rotulos NAO PODEM DIVERGIR — vem do mesmo objeto", () => {
+    // ⚠️ Mesmo argumento da C19 aplicado a identidade. Se `repasseId` e os tres
+    // rotulos fossem parametros independentes, "id de um carro com a placa de
+    // outro" seria um estado representavel — e o banco NAO pegaria: os tres
+    // `_snapshot` sao NOT NULL, nao sao verificados contra `repasses`, e a linha
+    // passaria em todos os CHECKs mentindo sobre qual carro produziu a decisao.
+    const outro = montar({ ...CARRO, repasseId: 77, placa: "QEZ8J18" });
+    assert.equal(outro.insert.repasse_id, 77);
+    assert.equal(outro.insert.placa_snapshot, "QEZ8J18");
+  });
+
+  it("a assinatura NAO aceita `repasseId` avulso (fix de TIPO, nao de teste)", () => {
+    montarSnapshotPrecificacao({
+      carro: CARRO,
+      // @ts-expect-error 035: identidade vem do objeto do carro, nunca de campos
+      // soltos. Se o tsc passar a acusar este `@ts-expect-error` como "unused",
+      // alguem reabriu a possibilidade de id e rotulo virem de fontes diferentes.
+      repasseId: 77,
+      sugestao: sugestao035,
+      aplicado: {
+        minimo: sugestao035.minimoArredondado,
+        comprePor: sugestao035.comprePorArredondado,
+      },
+      agora: AGORA_035,
+    });
+  });
+
+  it("placa/chassi VAZIOS sao aceitos — carro sem placa legivel existe", () => {
+    // ⚠️ NAO acrescentar guarda de nao-vazio aqui nem CHECK no banco:
+    // `repasses.placa`/`chassi` sao NOT NULL mas admitem "" no uso real (o painel
+    // de sumidos testa `chassi !== ""`). Recusar abortaria o "Aplicar" de um carro
+    // que o resto do sistema aceita — o erro de banco recusando acao legitima.
+    const { insert } = montar({ ...CARRO, placa: "", chassi: "" });
+    assert.equal(insert.placa_snapshot, "");
+    assert.equal(insert.chassi_snapshot, "");
+  });
+
+  it("a identidade e do CARRO, nao do modo — igual nos dois", () => {
+    const girado = exigirSugestao(girar(PRD2189));
+    const base = {
+      carro: CARRO,
+      aplicado: { minimo: 85_300, comprePor: 89_600 },
+      agora: AGORA_035,
+    };
+    const r = montarSnapshotPrecificacao({ ...base, sugestao: sugestao035 });
+    const g = montarSnapshotPrecificacao({ ...base, sugestao: girado });
+    assert.equal(r.insert.placa_snapshot, g.insert.placa_snapshot);
+    assert.equal(r.insert.chassi_snapshot, g.insert.chassi_snapshot);
+    assert.equal(r.insert.modelo_snapshot, g.insert.modelo_snapshot);
+    // …e o `modo`, esse sim, difere.
+    assert.notEqual(r.insert.modo, g.insert.modo);
   });
 });
