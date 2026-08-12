@@ -3,8 +3,9 @@
  * — Story 2.2 (Fatia 3a).
  *
  * Segue o contrato dos outros parsers de upload deste diretório
- * (`parseX(buf: ArrayBuffer, fileName: string)`), para entrar como mais um modo
- * do `UploadDropzone` ao lado dos quatro do NBS.
+ * (`parseX(buf: ArrayBuffer, fileName: string)`), mas o call site NÃO é o
+ * `UploadDropzone` de `/upload`: é o `ImportarPorArquivo`, a aba de arquivo de
+ * `/repasses/importar`.
  *
  * ⚠️ DIFERENÇA IMPORTANTE em relação aos parsers do NBS: os quatro do NBS
  * terminam num store local do navegador. Este aqui alimenta uma escrita em
