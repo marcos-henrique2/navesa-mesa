@@ -1,47 +1,57 @@
 "use client";
 
 /**
- * Casca de `/repasses/importar`: as DUAS formas de trazer o Auto Avaliar pro
+ * Casca de `/repasses/importar`: as TRÊS formas de trazer o Auto Avaliar pro
  * sistema, lado a lado.
  *
  * Elas NÃO são intercambiáveis, e a tela existe pra deixar isso explícito:
- *   • Colar texto  → CRIA carro novo (km, cor, gastos). Único caminho que cria
- *                    repasse e único que reconcilia quem sumiu da lista.
- *   • Arquivo .xls → SÓ ATUALIZA valores de quem já existe. Único que traz
- *                    maior oferta recebida e qtde de anúncios. Nunca cria carro.
+ *   • Colar texto       → CRIA carro novo no ar (km, cor, gastos). Único que
+ *                         reconcilia quem sumiu da lista.
+ *   • Arquivo .xls      → SÓ ATUALIZA valores de quem já existe. Único que traz
+ *                         maior oferta recebida e qtde de anúncios. Nunca cria.
+ *   • Vendas concluídas → REGISTRA A VENDA (marca vendido, data e valor) e cria
+ *                         o carro que nunca passou pelo sistema, já como vendido.
  *
- * Toda a lógica mora nas duas abas; aqui é só a escolha e o texto que explica.
+ * Toda a lógica mora nas três abas; aqui é só a escolha e o texto que explica.
  *
  * Duas decisões de implementação que não são cosméticas:
  *
- * 1. Só a aba ativa fica MONTADA (não é `hidden`), pra `ImportarPorArquivo`
- *    poder ser lazy de verdade. O preço é que trocar de aba mata o estado da
+ * 1. Só a aba ativa fica MONTADA (não é `hidden`), pras abas de planilha
+ *    poderem ser lazy de verdade. O preço é que trocar de aba mata o estado da
  *    outra — por isso a troca é guardada quando há colagem/preview em pé.
- * 2. `ImportarPorArquivo` entra por `next/dynamic`: ele puxa o SheetJS (~460 KB
- *    minificado), e sem isso todo carregamento de /repasses/importar pagaria
- *    esse chunk mesmo pra quem só vai colar texto.
+ * 2. `ImportarPorArquivo` e `ImportarVendasConcluidas` entram por
+ *    `next/dynamic`: as duas puxam o SheetJS (~460 KB minificado), e sem isso
+ *    todo carregamento de /repasses/importar pagaria esse chunk mesmo pra quem
+ *    só vai colar texto.
  */
 
 import { useRef, useState } from "react";
 import dynamic from "next/dynamic";
-import { ClipboardPaste, FileUp, Loader2 } from "lucide-react";
+import { ClipboardPaste, FileUp, Loader2, ReceiptText } from "lucide-react";
 import { ImportarPorTexto } from "@/components/repasses/ImportarPorTexto";
 import { cn } from "@/lib/utils";
+
+const CarregandoPlanilha = () => (
+  <p className="flex items-center gap-2 rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-5 text-sm text-[var(--text-muted)]">
+    <Loader2 className="h-4 w-4 animate-spin" /> Carregando o leitor de planilha…
+  </p>
+);
 
 const ImportarPorArquivo = dynamic(
   () =>
     import("@/components/repasses/ImportarPorArquivo").then((m) => m.ImportarPorArquivo),
-  {
-    ssr: false,
-    loading: () => (
-      <p className="flex items-center gap-2 rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] p-5 text-sm text-[var(--text-muted)]">
-        <Loader2 className="h-4 w-4 animate-spin" /> Carregando o leitor de planilha…
-      </p>
-    ),
-  },
+  { ssr: false, loading: CarregandoPlanilha },
 );
 
-type Aba = "texto" | "arquivo";
+const ImportarVendasConcluidas = dynamic(
+  () =>
+    import("@/components/repasses/ImportarVendasConcluidas").then(
+      (m) => m.ImportarVendasConcluidas,
+    ),
+  { ssr: false, loading: CarregandoPlanilha },
+);
+
+type Aba = "texto" | "arquivo" | "vendas";
 
 type InfoAba = {
   rotulo: string;
@@ -50,8 +60,11 @@ type InfoAba = {
   detalhe: React.ReactNode;
 };
 
-/** Ordem de exibição das abas — "texto" primeiro porque é o que cria carro. */
-const ORDEM: ReadonlyArray<Aba> = ["texto", "arquivo"];
+/**
+ * Ordem de exibição — "texto" primeiro porque é o que cria carro no ar, que é a
+ * operação do dia a dia. "vendas" por último porque é a de fim de ciclo.
+ */
+const ORDEM: ReadonlyArray<Aba> = ["texto", "arquivo", "vendas"];
 
 const ABAS: Record<Aba, InfoAba> = {
   texto: {
@@ -78,6 +91,21 @@ const ABAS: Record<Aba, InfoAba> = {
         ignorado. É o único que traz <strong>maior oferta recebida</strong> e{" "}
         <strong>qtde de anúncios</strong>, que aparecem em /repasses. Se o carro ainda
         não existe, importe antes pela aba de colar texto.
+      </>
+    ),
+  },
+  vendas: {
+    rotulo: "Vendas concluídas",
+    resumo: "registra as vendas fechadas",
+    icone: <ReceiptText className="h-4 w-4" />,
+    detalhe: (
+      <>
+        <strong>Use quando o Auto Avaliar fechar vendas.</strong> Marca{" "}
+        <strong>vendido</strong> com data e valor da venda, e lança os gastos previstos.
+        É a <strong>única aba que cria carro já vendido</strong>: venda é fato
+        consumado, e o carro pode ter subido e vendido sem nunca passar pelo sistema —
+        não criar seria perder a venda e a margem junto. Nunca sobrescreve valor de
+        compra que já existe. O TAC aparece na conferência, mas não vira custo do carro.
       </>
     ),
   },
@@ -125,7 +153,7 @@ export function ImportarAutoAvaliar() {
         role="tablist"
         aria-label="Forma de importar"
         onKeyDown={navegarPorTeclado}
-        className="grid gap-3 sm:grid-cols-2"
+        className="grid gap-3 sm:grid-cols-3"
       >
         {ORDEM.map((id) => {
           const a = ABAS[id];
@@ -180,8 +208,10 @@ export function ImportarAutoAvaliar() {
 
         {aba === "texto" ? (
           <ImportarPorTexto onTrabalhoVivoChange={setTextoComTrabalhoVivo} />
-        ) : (
+        ) : aba === "arquivo" ? (
           <ImportarPorArquivo />
+        ) : (
+          <ImportarVendasConcluidas />
         )}
       </div>
     </div>
