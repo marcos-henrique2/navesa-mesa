@@ -40,6 +40,8 @@ export function venda(over: Partial<VendaParsed> = {}): VendaParsed {
     comissao_vendedor: 500,
     dias_estoque: 20,
     placa_troca: null,
+    financiado: null,
+    financeira: null,
     ...over,
   } as VendaParsed;
 }

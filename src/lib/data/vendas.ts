@@ -46,6 +46,8 @@ function toRow(v: VendaParsed): Record<string, unknown> {
     comissao_vendedor: v.comissao_vendedor,
     dias_estoque: v.dias_estoque,
     placa_troca: v.placa_troca,
+    financiado: v.financiado,
+    financeira: v.financeira,
   };
 }
 
@@ -85,6 +87,8 @@ function fromRow(r: VendaRow): VendaParsed {
     comissao_vendedor: r.comissao_vendedor,
     dias_estoque: r.dias_estoque,
     placa_troca: r.placa_troca,
+    financiado: r.financiado,
+    financeira: r.financeira,
   };
 }
 

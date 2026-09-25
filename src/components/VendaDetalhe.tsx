@@ -93,6 +93,9 @@ export function VendaDetalhe({ chassi }: { chassi: string }) {
           <Row label="Dias até venda" value={venda.dias_estoque !== null ? `${formatInt(venda.dias_estoque)} dias` : "—"} tone={diasTone(venda.dias_estoque)} bold />
           <Row label="Vendedor" value={venda.vendedor_nome || venda.vendedor_codigo || "—"} />
           {venda.vendedor_cpf && <Row label="CPF vendedor" value={venda.vendedor_cpf} muted />}
+          {venda.financiado !== null && (
+            <Row label="Financiado" value={venda.financiado ? `Sim${venda.financeira ? " · " + venda.financeira : ""}` : "Não"} />
+          )}
         </Card>
       </div>
 

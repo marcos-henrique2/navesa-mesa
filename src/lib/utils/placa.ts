@@ -17,6 +17,14 @@ export function normalizarPlaca(p: string | null | undefined): string {
 }
 
 /**
+ * Alias de `normalizarPlaca` pra uso com CHASSI (ou qualquer outro identificador
+ * alfanumérico que precise da mesma normalização — maiúsculas, só alfanumérico).
+ * Mesma função; só o nome, pra não confundir quem lê "normalizarPlaca(chassi)" achando
+ * que é bug.
+ */
+export const normalizarIdentificador = normalizarPlaca;
+
+/**
  * Busca parcial de placa: normaliza ambos os lados (maiúsculas, sem hífen/
  * espaço) e testa substring. Tolerante a formato — "QKF2016" casa com
  * "QKF-2016" e "qkf" casa com ambos.

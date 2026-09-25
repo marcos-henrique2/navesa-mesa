@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { normalizarPlaca } from "@/lib/utils/placa";
 
 export type VendaParsed = {
   // Identidade
@@ -48,6 +49,10 @@ export type VendaParsed = {
   // Giro / troca
   dias_estoque: number | null;
   placa_troca: string | null;
+
+  // Financiamento
+  financiado: boolean | null;
+  financeira: string | null;
 };
 
 export type VendasSnapshotMeta = {
@@ -106,6 +111,8 @@ const FIELD_HEADERS: Record<string, string[]> = {
   despesas_gerais: ["Desp. Gerais", "Desp.Gerais"],
   placa_troca: ["Placa veic. troca", "Placa Veic. Troca"],
   margem_pct: ["Margem%", "Margem Final"],
+  financiado: ["FINANCIADO"],
+  financeira: ["Financeira"],
 };
 
 /**
@@ -176,6 +183,14 @@ function asNum(v: unknown): number | null {
 function asInt(v: unknown): number | null {
   const n = asNum(v);
   return n === null ? null : Math.trunc(n);
+}
+
+function asBoolSN(v: unknown): boolean | null {
+  const s = asStr(v)?.toUpperCase();
+  if (!s) return null;
+  if (s === "S" || s === "SIM") return true;
+  if (s === "N" || s === "NÃO" || s === "NAO") return false;
+  return null;
 }
 
 function parseAnoM(value: unknown): { fab: number | null; mod: number | null } {
@@ -319,6 +334,13 @@ export async function parseNbsVendasXlsx(
     const vendedor_codigo = asStr(get(row, cols, "vendedor_codigo"));
     if (vendedor_codigo) vendedoresSet.add(vendedor_codigo);
 
+    // Bug de dado do NBS: às vezes "Placa veic. troca" vem igual à placa do próprio
+    // carro vendido (auto-referência), o que não é uma troca real. Descarta nesse caso.
+    let placa_troca = asStr(get(row, cols, "placa_troca"));
+    if (placa_troca && normalizarPlaca(placa_troca) === normalizarPlaca(placa)) {
+      placa_troca = null;
+    }
+
     vendas.push({
       chassi,
       placa,
@@ -359,7 +381,10 @@ export async function parseNbsVendasXlsx(
       comissao_vendedor: asNum(get(row, cols, "comissao_vendedor")),
 
       dias_estoque: asInt(get(row, cols, "media_dias")),
-      placa_troca: asStr(get(row, cols, "placa_troca")),
+      placa_troca,
+
+      financiado: asBoolSN(get(row, cols, "financiado")),
+      financeira: asStr(get(row, cols, "financeira")),
     });
 
     lojasSet.add(codEmpresa);
