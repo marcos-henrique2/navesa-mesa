@@ -2,6 +2,7 @@
 
 import type { VeiculoParsed, SnapshotMeta } from "@/lib/parsers/nbs-xlsx";
 import { getSupabase, chunk, selectAll, parseDate } from "./supabase";
+import { normalizarIdentificador } from "@/lib/utils/placa";
 
 type VeiculoRow = Omit<VeiculoParsed, "data_entrada"> & {
   snapshot_id: number;
@@ -149,4 +150,32 @@ export async function contarVeiculosAtual(): Promise<number> {
   const { count, error } = await sb.from("veiculos_atual").select("*", { count: "exact", head: true });
   if (error) throw new Error(`contarVeiculosAtual: ${error.message}`);
   return count ?? 0;
+}
+
+/**
+ * Loja de ORIGEM de cada chassi (cod_empresa do snapshot mais antigo em que o veículo
+ * apareceu — migration 038, view `veiculos_origem`). Diferente de "loja que vendeu":
+ * um carro pode ter entrado no estoque de uma loja e sido repassado/vendido por outra.
+ *
+ * Chave do Map normalizada (`normalizarIdentificador` — alias de `normalizarPlaca` pra
+ * uso com chassi: só maiúsculas + remove não-alfanumérico) pra tolerar variação de
+ * formatação entre a fonte que gerou `vendas.chassi` e a que gerou `veiculos.chassi`.
+ *
+ * Chassis sem snapshot conhecido (nunca capturados num upload de estoque) simplesmente
+ * não aparecem no Map — origem desconhecida, não "loja 0".
+ */
+export async function listLojaOrigemPorChassis(chassis: string[]): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  const unicos = [...new Set(chassis.filter((c) => c.length > 0))];
+  if (unicos.length === 0) return out;
+
+  const sb = getSupabase();
+  for (const lote of chunk(unicos, 500)) {
+    const { data, error } = await sb.from("veiculos_origem").select("chassi, cod_empresa").in("chassi", lote);
+    if (error) throw new Error(`listLojaOrigemPorChassis: ${error.message}`);
+    for (const row of (data ?? []) as { chassi: string; cod_empresa: number }[]) {
+      out.set(normalizarIdentificador(row.chassi), row.cod_empresa);
+    }
+  }
+  return out;
 }

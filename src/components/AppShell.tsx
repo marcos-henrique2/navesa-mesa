@@ -8,7 +8,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Car, TrendingUp, Building2, Upload, Menu, X, Sparkles, History, ChevronLeft, ChevronRight, LogOut, Loader2, Search, LineChart, Repeat, Users, Calculator } from "lucide-react";
+import { LayoutDashboard, Car, TrendingUp, Building2, Upload, Menu, X, Sparkles, History, ChevronLeft, ChevronRight, LogOut, Loader2, Search, LineChart, Repeat, Users, Calculator, FileSpreadsheet } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { DataGate } from "./DataGate";
@@ -30,7 +30,10 @@ type NavItem = {
 const NAV: NavItem[] = [
   { href: "/", label: "Dashboard", icon: <LayoutDashboard className="h-4 w-4" />, match: (p) => p === "/" },
   { href: "/veiculos", label: "Estoque", icon: <Car className="h-4 w-4" />, match: (p) => p.startsWith("/veiculos") },
-  { href: "/vendas", label: "Análise de Vendas", icon: <TrendingUp className="h-4 w-4" />, match: (p) => p.startsWith("/vendas") },
+  // "/vendas" precisa de match exato/subpath (não startsWith puro) — senão colide com
+  // "/vendas-usados-matriz" e os dois itens acendem juntos.
+  { href: "/vendas", label: "Análise de Vendas", icon: <TrendingUp className="h-4 w-4" />, match: (p) => p === "/vendas" || p.startsWith("/vendas/") },
+  { href: "/vendas-usados-matriz", label: "Vendas Usados Matriz", icon: <FileSpreadsheet className="h-4 w-4" />, match: (p) => p.startsWith("/vendas-usados-matriz") },
   { href: "/insights", label: "Insights", icon: <Sparkles className="h-4 w-4" />, match: (p) => p.startsWith("/insights") },
   { href: "/analise", label: "Análise", icon: <LineChart className="h-4 w-4" />, match: (p) => p.startsWith("/analise") },
   { href: "/repasses", label: "Repasses", icon: <Repeat className="h-4 w-4" />, match: (p) => p.startsWith("/repasses") },

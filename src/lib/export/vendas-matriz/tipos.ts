@@ -1,0 +1,146 @@
+/**
+ * VENDAS USADOS MATRIZ — tipos compartilhados.
+ *
+ * `LinhaVendaMatriz` é a linha "achatada" que alimenta as abas 1 e 2 (o mesmo
+ * renderer é usado pelas duas — a única diferença é o subconjunto de linhas).
+ * Os campos aqui são os valores BRUTOS (K, L, N, O, S, U, W, Y…); as colunas
+ * calculadas (M, P, Q, R, T, V, X, Z, AA, AB) são sempre fórmulas de verdade
+ * escritas pelo renderer — nunca persistidas aqui.
+ */
+
+export type LinhaVendaMatriz = {
+  /** Join key (não normalizado — é o valor bruto do NBS, só pra rastreio). */
+  chassi: string;
+  placa: string;
+
+  // C — Loja de Origem (via veiculos_origem + mapa cod_empresa→nome)
+  lojaOrigemNome: string;
+  /** `null` quando o chassi não tem snapshot de estoque conhecido (origem desconhecida). */
+  lojaOrigemCodEmpresa: number | null;
+
+  // D..H — identidade do veículo
+  descricaoVeiculo: string;
+  cor: string | null;
+  marca: string | null;
+  /** Formatado "AA/AA" (ano_fabricacao/ano_modelo), ou "" se algum dos dois faltar. */
+  anoModelo: string;
+
+  // I..J
+  km: number | null;
+  diasEstoque: number | null;
+
+  // K..L — entrada
+  nfEntrada: number | null;
+  valoriza: number | null;
+
+  // N — FIPE (só preenchido quando fipe_batch.plausibilidade_verificada === true)
+  valorFipe: number | null;
+
+  // O — venda
+  valorVenda: number | null;
+
+  // S, U, W, Y — custos
+  despesaGeral: number | null;
+  forplan: number | null;
+  impostos: number | null;
+  comissao: number | null;
+
+  // AC..AG — flags e identificação
+  usadoNaTroca: boolean;
+  /** `null` = não sabemos (nunca tratar como "não financiou"). */
+  financiou: boolean | null;
+  clienteNome: string;
+  /** `true` = PJ ("SIM"), `false` = PF ("NÃO"), `null` = tipo desconhecido (célula vazia). */
+  lojista: boolean | null;
+  vendedorNome: string | null;
+};
+
+/** Resultado de M (Custo Real), Q (Lucro Bruto) e AA (Margem Líquida) pra uma linha. */
+export type DerivadosLinha = {
+  custoReal: number | null;
+  lucroBruto: number | null;
+  margemLiquida: number | null;
+};
+
+/**
+ * Replica exatamente as fórmulas de M, Q e AA (ver colunas.ts) em JS, pra cachear
+ * o `result` de cada célula de fórmula e pra alimentar os totais das abas de
+ * margens sem duplicar a regra de cálculo em três lugares.
+ */
+export function calcularDerivadosLinha(l: LinhaVendaMatriz): DerivadosLinha {
+  // M = K - L (só existe quando há NF de entrada — sem isso "custo real" seria só -L,
+  // o que exibiria custo negativo sem sentido; mesma guarda usada em analise-navesa.ts).
+  const custoReal = l.nfEntrada != null ? l.nfEntrada - (l.valoriza ?? 0) : null;
+
+  // Q = O - M
+  const lucroBruto = l.valorVenda != null && custoReal != null ? l.valorVenda - custoReal : null;
+
+  // AA = Q - S - U - W - Y
+  const margemLiquida =
+    lucroBruto != null
+      ? lucroBruto - (l.despesaGeral ?? 0) - (l.forplan ?? 0) - (l.impostos ?? 0) - (l.comissao ?? 0)
+      : null;
+
+  return { custoReal, lucroBruto, margemLiquida };
+}
+
+export type ColetarVendasMatrizInput = {
+  /** Loja "dona" do relatório (ex: 2 = Ford Aeroporto). Nunca hardcode — sempre parâmetro. */
+  codEmpresa: number;
+  /** 1-12 */
+  mes: number;
+  ano: number;
+};
+
+const NOMES_MESES = [
+  "JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO",
+  "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO",
+] as const;
+
+/** Nome do mês por extenso, maiúsculo, PT-BR (1=JANEIRO .. 12=DEZEMBRO). */
+export function nomeMesExtenso(mes: number): string {
+  if (!Number.isInteger(mes) || mes < 1 || mes > 12) {
+    throw new Error(`Mês inválido: ${mes}`);
+  }
+  return NOMES_MESES[mes - 1];
+}
+
+export type NomesAbasVendaMatriz = {
+  /** "VENDAS USADOS {MES} MATRIZ" */
+  aba1: string;
+  /** "VENDAS {MES} SÓ ESTOQUE" */
+  aba2: string;
+  /** "RESUMO VENDAS MATRIZ {MES}" */
+  aba3: string;
+  aba4: string;
+  aba5: string;
+  aba6: string;
+  aba7: string;
+  aba8: string;
+  aba9: string;
+};
+
+/**
+ * Nomes das 9 abas do relatório, RESOLVIDO com o Marcos — nunca montar o nome de
+ * uma aba na mão em outro lugar, sempre chamar esta função.
+ *
+ * `aba7`/`aba8`/`aba9` são nomes FIXOS (não dependem de mes/ano) — reproduzem
+ * literalmente as abas do arquivo modelo, inclusive o espaço inicial de aba7.
+ */
+export function nomesAbas(mes: number, ano: number): NomesAbasVendaMatriz {
+  if (!Number.isInteger(ano) || ano < 2000 || ano > 2100) {
+    throw new Error(`Ano inválido: ${ano}`);
+  }
+  const nomeMes = nomeMesExtenso(mes);
+  return {
+    aba1: `VENDAS USADOS ${nomeMes} MATRIZ`,
+    aba2: `VENDAS ${nomeMes} SÓ ESTOQUE`,
+    aba3: `RESUMO VENDAS MATRIZ ${nomeMes}`,
+    aba4: "MARGENS",
+    aba5: "MARGENS VENDAS LOJISTAS",
+    aba6: "MARGENS VENDAS CLIENTES",
+    aba7: " MÉDIA VENDEDOR 2025",
+    aba8: "MEDIA 2026",
+    aba9: "PLAY PLAN VENDEDOR INFLUENCER",
+  };
+}
