@@ -10,6 +10,7 @@ import { PageHeader } from "./AppShell";
 import { AlertasOperacionais } from "./AlertasOperacionais";
 import { ComparativoMesAnterior } from "./ComparativoMesAnterior";
 import { HeatmapLojas } from "./HeatmapLojas";
+import { ParticipacaoLojas } from "./ParticipacaoLojas";
 import { UltimosDiasCard } from "./UltimosDiasCard";
 import { RepassesWidget } from "./dashboard/RepassesWidget";
 
@@ -165,6 +166,13 @@ export function DashboardHome() {
             {isHydrated && veiculos.length > 0 && (
               <section>
                 <HeatmapLojas />
+              </section>
+            )}
+
+            {/* Participação de vendas por loja — quem está vendendo mais no período */}
+            {isHydrated && vendas.length > 0 && (
+              <section>
+                <ParticipacaoLojas />
               </section>
             )}
 

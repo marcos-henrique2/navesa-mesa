@@ -8,7 +8,8 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Car, TrendingUp, Building2, Upload, Menu, X, Sparkles, History, ChevronLeft, ChevronRight, LogOut, Loader2, Search, LineChart, Repeat, Users, Calculator, FileSpreadsheet, ClipboardCheck } from "lucide-react";
+// Calculator (ícone do item "Precificar") removido daqui junto com o item de nav comentado abaixo — reimporte se reativar.
+import { LayoutDashboard, Car, TrendingUp, Building2, Upload, Menu, X, Sparkles, History, ChevronLeft, ChevronRight, LogOut, Loader2, Search, LineChart, Repeat, Users, FileSpreadsheet, ClipboardCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { DataGate } from "./DataGate";
@@ -38,7 +39,10 @@ const NAV: NavItem[] = [
   { href: "/analise", label: "Análise", icon: <LineChart className="h-4 w-4" />, match: (p) => p.startsWith("/analise") },
   { href: "/repasses", label: "Repasses", icon: <Repeat className="h-4 w-4" />, match: (p) => p.startsWith("/repasses") },
   { href: "/conferencia-auto-avaliar", label: "Conferência Auto Avaliar", icon: <ClipboardCheck className="h-4 w-4" />, match: (p) => p.startsWith("/conferencia-auto-avaliar") },
-  { href: "/precificar", label: "Precificar", icon: <Calculator className="h-4 w-4" />, match: (p) => p.startsWith("/precificar") },
+  // Precificar removido do menu a pedido do Marcos (29/09/2026) — código e rota
+  // seguem intactos, só não aparece na navegação. Pra reativar: descomente e
+  // reimporte `Calculator` de "lucide-react" acima.
+  // { href: "/precificar", label: "Precificar", icon: <Calculator className="h-4 w-4" />, match: (p) => p.startsWith("/precificar") },
   { href: "/leads", label: "Leads", icon: <Users className="h-4 w-4" />, match: (p) => p.startsWith("/leads") },
   { href: "/historico", label: "Histórico", icon: <History className="h-4 w-4" />, match: (p) => p.startsWith("/historico") },
   // Chat IA desativado temporariamente — providers gratuitos não suportam volume real e Anthropic paga
