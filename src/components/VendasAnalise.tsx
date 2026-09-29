@@ -9,6 +9,7 @@ import { ArrowUpDown, ArrowUp, ArrowDown, Search, Trophy, TrendingDown, Trending
 import { useRouter } from "next/navigation";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
 import { ComposicaoCustos } from "./ComposicaoCustos";
+import { MixClientes } from "./MixClientes";
 import { chaveCliente, tierRecorrencia } from "@/lib/analytics/clientes";
 import { calcMargemVenda } from "@/lib/analytics/margem";
 import { ExportDropdown } from "./ui/ExportDropdown";
@@ -167,6 +168,8 @@ export function VendasAnalise() {
       </div>
 
       <ComposicaoCustos vendas={filtered} />
+
+      <MixClientes vendas={filtered} clientesIndex={clientesIndex} />
 
       <div className="space-y-3 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] p-4">
         <div className="flex flex-wrap items-center gap-3">

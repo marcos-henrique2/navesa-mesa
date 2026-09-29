@@ -260,9 +260,9 @@ function observacaoRecorrencia(totalCompras: number): string {
 // COMPRAS POR ANO (pré-cálculo O(n) — evita O(n²) no loop principal)
 // ═══════════════════════════════════════════════════════════════════════════
 
-type ComprasPorAno = Map<string /*chaveCliente*/, Map<number /*ano*/, number>>;
+export type ComprasPorAno = Map<string /*chaveCliente*/, Map<number /*ano*/, number>>;
 
-function calcularComprasPorAno(todasVendas: VendaParsed[]): ComprasPorAno {
+export function calcularComprasPorAno(todasVendas: VendaParsed[]): ComprasPorAno {
   const map: ComprasPorAno = new Map();
   for (const v of todasVendas) {
     if (!v.data_venda) continue;
