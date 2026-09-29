@@ -21,7 +21,7 @@
 import ExcelJS from "exceljs";
 import type { VendaParsed } from "@/lib/parsers/nbs-vendas-xlsx";
 import type { CustoDetalhado } from "@/lib/parsers/nbs-custos-xls";
-import { indexarClientes, chaveCliente } from "@/lib/analytics/clientes";
+import { indexarClientes, chaveCliente, detectarLojista } from "@/lib/analytics/clientes";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TIPOS
@@ -253,39 +253,8 @@ function observacaoRecorrencia(totalCompras: number): string {
 // DETECÇÃO DE LOJISTA
 // ═══════════════════════════════════════════════════════════════════════════
 
-/**
- * Regras (qualquer match → "SIM"):
- *   1. PJ com 4+ compras totais no dataset (recorrência típica de revenda).
- *   2. Nome contém termos clássicos de razão social de revenda.
- */
-const TERMOS_LOJISTA = [
-  "LTDA",
-  "VEICULOS",
-  "AUTOMOVEIS",
-  "AUTOMÓVEIS",
-  "MOTORS",
-  "COMERCIO",
-  "COMÉRCIO",
-  "LOCACAO",
-  "LOCAÇÃO",
-  "RODOCAR",
-  "AUTOFINANCE",
-  "MULTIMARCAS",
-] as const;
-
-type LojistaFlag = "SIM" | "NÃO";
-
-function detectarLojista(v: VendaParsed, qtCompras: number): LojistaFlag {
-  const nome = (v.cliente_nome ?? "").toUpperCase();
-  const nomeIndicaRevenda = TERMOS_LOJISTA.some((t) => nome.includes(t));
-
-  // SIM: lojista real (nome típico de revenda OU PJ recorrente)
-  if (nomeIndicaRevenda) return "SIM";
-  if (v.cliente_tipo === "PJ" && qtCompras >= 4) return "SIM";
-
-  // NÃO: tudo o mais (consumidor comum, PF — independentemente da recorrência)
-  return "NÃO";
-}
+// detectarLojista/TERMOS_LOJISTA/LojistaFlag vivem em @/lib/analytics/clientes
+// (compartilhado com src/lib/analytics/insights.ts, sem puxar `exceljs` pro bundle client).
 
 // ═══════════════════════════════════════════════════════════════════════════
 // COMPRAS POR ANO (pré-cálculo O(n) — evita O(n²) no loop principal)

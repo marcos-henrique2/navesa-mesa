@@ -14,6 +14,7 @@ import {
   Package,
   Award,
   Flame,
+  Store,
 } from "lucide-react";
 import { useInventory } from "@/lib/store/inventory";
 import {
@@ -24,6 +25,7 @@ import {
   margemPorModelo,
   trocasVsSem,
   margemPorVendedor,
+  mixLojistaPorVendedor,
   outliers,
   estoqueEmRisco,
   clientesRecorrentes,
@@ -50,6 +52,7 @@ export function InsightsDashboard() {
         .reverse()
         .slice(0, 10),
       vendedoresTop: margemPorVendedor(vendas, custosPorPlaca, { minVendas: 5 }).slice(0, 10),
+      mixLojista: mixLojistaPorVendedor(vendas, { minVendas: 5 }),
       outliersLucro: outliers(vendas, custosPorPlaca, { top: 5, modo: "lucro" }),
       outliersPrejuizo: outliers(vendas, custosPorPlaca, { top: 5, modo: "prejuizo" }),
       estoque: veiculos.length > 0 ? estoqueEmRisco(veiculos, vendas, custosPorPlaca, { topPiores: 15 }) : null,
@@ -127,6 +130,11 @@ export function InsightsDashboard() {
           <TabelaVendedores dados={dados.vendedoresTop} titulo="🏆 Top 10 por margem" highlight="positivo" />
           <TabelaVendedores dados={dados.vendedoresPiores} titulo="🔴 10 piores por margem" highlight="negativo" />
         </div>
+      </Section>
+
+      {/* 8.1 Mix Lojista × Consumidor Final por vendedor */}
+      <Section title="Mix Lojista × Consumidor Final por vendedor" icon={<Store className="h-4 w-4" />}>
+        <TabelaMixLojista dados={dados.mixLojista} />
       </Section>
 
       {/* 9. Outliers */}
@@ -565,6 +573,51 @@ function TabelaVendedores({
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function TabelaMixLojista({ dados }: { dados: ReturnType<typeof mixLojistaPorVendedor> }) {
+  return (
+    <div className="space-y-3">
+      <div className="overflow-x-auto rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface)] shadow-[var(--shadow-sm)]">
+        <table className="w-full text-sm">
+          <thead className="bg-[var(--bg-muted)] text-left text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+            <tr>
+              <th className="px-4 py-2">Vendedor</th>
+              <th className="px-4 py-2 text-right">Vendas</th>
+              <th className="px-4 py-2 text-right">Lojista</th>
+              <th className="px-4 py-2 text-right">Consumidor final</th>
+              <th className="px-4 py-2 text-right">% Lojista</th>
+            </tr>
+          </thead>
+          <tbody>
+            {dados.ranking.map((r) => (
+              <tr key={r.vendedor} className="border-t border-[var(--border-soft)] hover:bg-[var(--bg-muted)]">
+                <td className="px-4 py-2 font-medium text-[var(--text-strong)]">{r.vendedor}</td>
+                <td className="px-4 py-2 text-right tabular-nums">{formatInt(r.qt)}</td>
+                <td className="px-4 py-2 text-right tabular-nums text-[var(--text-body)]">{formatInt(r.qtLojista)}</td>
+                <td className="px-4 py-2 text-right tabular-nums text-[var(--text-body)]">{formatInt(r.qtNaoLojista)}</td>
+                <td className="px-4 py-2 text-right tabular-nums font-semibold text-[var(--text-strong)]">
+                  {r.pctLojista.toFixed(1)}%
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {dados.insuficientes.length > 0 && (
+        <div className="rounded-xl border border-dashed border-[var(--border-soft)] bg-[var(--bg-surface)] p-4 text-xs text-[var(--text-muted)]">
+          <p className="mb-2 font-semibold text-[var(--text-body)]">Volume insuficiente (mín. 5 vendas)</p>
+          <ul className="flex flex-wrap gap-x-4 gap-y-1">
+            {dados.insuficientes.map((v) => (
+              <li key={v.vendedor}>
+                {v.vendedor} <span className="tabular-nums">({formatInt(v.qt)})</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

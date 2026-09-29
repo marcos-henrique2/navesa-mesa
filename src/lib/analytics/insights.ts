@@ -17,6 +17,7 @@ import { calcularDesvioFipe, precoFipeConfiavel } from "@/lib/fipe/batch";
 import { calcMargemVenda } from "./margem";
 import { classificarVeiculo } from "@/lib/pricing/classificacao";
 import type { StatusCautelar } from "@/lib/inventory/cautelar";
+import { indexarClientes, chaveCliente, detectarLojista } from "./clientes";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -376,6 +377,60 @@ export function margemPorVendedor(
       comissao: r.comissao,
     }))
     .sort((a, b) => b.margem - a.margem);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// G.1) MIX LOJISTA × CONSUMIDOR FINAL POR VENDEDOR
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type MixLojistaVendedor = {
+  vendedor: string;
+  qt: number;
+  qtLojista: number;
+  qtNaoLojista: number;
+  pctLojista: number;
+};
+
+export type MixLojistaVendedorResumo = {
+  /** Vendedores com qt >= minVendas, ordenados desc por % Lojista. */
+  ranking: MixLojistaVendedor[];
+  /** Vendedores abaixo do piso mínimo — sem % (amostra pequena demais). */
+  insuficientes: { vendedor: string; qt: number }[];
+};
+
+export function mixLojistaPorVendedor(
+  vendas: VendaParsed[],
+  opts: { minVendas?: number } = {},
+): MixLojistaVendedorResumo {
+  const minQt = opts.minVendas ?? 5;
+  // Índice de recorrência sobre o MESMO dataset recebido — precisa bater com a
+  // classificação usada em gerarAnaliseNavesa()/analise-navesa.ts (clientesIndex.totalCompras).
+  const clientesIndex = indexarClientes(vendas);
+
+  const map = new Map<string, { qt: number; qtLojista: number }>();
+  for (const v of vendas) {
+    const k = v.vendedor_nome || v.vendedor_codigo || "—";
+    if (!map.has(k)) map.set(k, { qt: 0, qtLojista: 0 });
+    const r = map.get(k)!;
+    r.qt++;
+    const totalCompras = clientesIndex.get(chaveCliente(v))?.totalCompras ?? 1;
+    if (detectarLojista(v, totalCompras) === "SIM") r.qtLojista++;
+  }
+
+  const entries: MixLojistaVendedor[] = [...map.entries()].map(([vendedor, r]) => ({
+    vendedor,
+    qt: r.qt,
+    qtLojista: r.qtLojista,
+    qtNaoLojista: r.qt - r.qtLojista,
+    pctLojista: pctSafe(r.qtLojista, r.qt),
+  }));
+
+  return {
+    ranking: entries.filter((e) => e.qt >= minQt).sort((a, b) => b.pctLojista - a.pctLojista),
+    insuficientes: entries
+      .filter((e) => e.qt < minQt)
+      .map((e) => ({ vendedor: e.vendedor, qt: e.qt })),
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

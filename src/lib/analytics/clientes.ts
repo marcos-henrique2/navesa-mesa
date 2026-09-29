@@ -115,3 +115,41 @@ export const TIER_LABEL: Record<RecorrenciaTier, string> = {
   recorrente: "Cliente recorrente",
   "lojista-suspeito": "Padrão de revenda (possível lojista)",
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DETECÇÃO DE LOJISTA
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Regras (qualquer match → "SIM"):
+ *   1. PJ com 4+ compras totais no dataset (recorrência típica de revenda).
+ *   2. Nome contém termos clássicos de razão social de revenda.
+ */
+export const TERMOS_LOJISTA = [
+  "LTDA",
+  "VEICULOS",
+  "AUTOMOVEIS",
+  "AUTOMÓVEIS",
+  "MOTORS",
+  "COMERCIO",
+  "COMÉRCIO",
+  "LOCACAO",
+  "LOCAÇÃO",
+  "RODOCAR",
+  "AUTOFINANCE",
+  "MULTIMARCAS",
+] as const;
+
+export type LojistaFlag = "SIM" | "NÃO";
+
+export function detectarLojista(v: VendaParsed, qtCompras: number): LojistaFlag {
+  const nome = (v.cliente_nome ?? "").toUpperCase();
+  const nomeIndicaRevenda = TERMOS_LOJISTA.some((t) => nome.includes(t));
+
+  // SIM: lojista real (nome típico de revenda OU PJ recorrente)
+  if (nomeIndicaRevenda) return "SIM";
+  if (v.cliente_tipo === "PJ" && qtCompras >= 4) return "SIM";
+
+  // NÃO: tudo o mais (consumidor comum, PF — independentemente da recorrência)
+  return "NÃO";
+}
