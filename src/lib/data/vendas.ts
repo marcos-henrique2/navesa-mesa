@@ -10,7 +10,8 @@ type VendaRow = Omit<VendaParsed, "data_venda" | "data_faturamento" | "data_entr
   atualizado_em?: string;
 };
 
-function toRow(v: VendaParsed): Record<string, unknown> {
+/** Exportado pra reuso em `scripts/sync-nbs/gravar.ts` (client Node/service-role, sem sessão de browser). */
+export function toRow(v: VendaParsed): Record<string, unknown> {
   return {
     chassi: v.chassi,
     placa: v.placa,

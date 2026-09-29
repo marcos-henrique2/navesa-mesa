@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { normalizarPlaca } from "@/lib/utils/placa";
+import { parseAnoModelo } from "./ano-modelo";
 
 export type VendaParsed = {
   // Identidade
@@ -193,15 +194,6 @@ function asBoolSN(v: unknown): boolean | null {
   return null;
 }
 
-function parseAnoM(value: unknown): { fab: number | null; mod: number | null } {
-  const s = asStr(value);
-  if (!s) return { fab: null, mod: null };
-  const m = s.match(/^(\d{2})\/(\d{2})$/);
-  if (!m) return { fab: null, mod: null };
-  const yy = (n: number) => (n >= 50 ? 1900 + n : 2000 + n);
-  return { fab: yy(parseInt(m[1], 10)), mod: yy(parseInt(m[2], 10)) };
-}
-
 function asDate(v: unknown): Date | null {
   if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v;
   if (typeof v === "number") {
@@ -322,7 +314,7 @@ export async function parseNbsVendasXlsx(
       continue;
     }
 
-    const { fab, mod } = parseAnoM(get(row, cols, "ano_modelo"));
+    const { fab, mod } = parseAnoModelo(asStr(get(row, cols, "ano_modelo")));
     const cliente_codigo = asStr(get(row, cols, "cliente_codigo"));
     const data_venda = asDate(get(row, cols, "data_venda"));
 

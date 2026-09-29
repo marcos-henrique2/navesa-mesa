@@ -9,7 +9,8 @@ type VeiculoRow = Omit<VeiculoParsed, "data_entrada"> & {
   data_entrada: string | null;
 };
 
-function toRow(v: VeiculoParsed, snapshotId: number): Record<string, unknown> {
+/** Exportado pra reuso em `scripts/sync-nbs/gravar.ts` (client Node/service-role, sem sessão de browser). */
+export function toRow(v: VeiculoParsed, snapshotId: number): Record<string, unknown> {
   return {
     snapshot_id: snapshotId,
     cod_empresa: v.cod_empresa,
