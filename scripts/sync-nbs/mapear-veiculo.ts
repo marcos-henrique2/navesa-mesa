@@ -44,7 +44,13 @@ const CANDIDATOS: Record<keyof VeiculoParsed, string[]> = {
   preco_venda: ["PRECO_VENDA", "VALOR_VENDA"],
   valor_aquisicao: ["TOTAL_NOTA_FABRICA", "VALOR_AQUISICAO"],
   custo_total: ["CUSTO_TOTAL", "CUSTO_TOTAL_FINAL"],
-  dias_patio: ["DIAS_PATIO", "DPT"],
+  // DIAS_PATIO/DPT NÃO existem em NBS.VEICULOS (confirmado via
+  // ALL_TAB_COLUMNS) — existiam só no Excel manual antigo, como valor
+  // pré-calculado pelo próprio NBS. Dias de pátio = dias desde a entrada do
+  // carro em qualquer loja (confirmado com o Marcos), então é derivado de
+  // DATA_ENTRADA (ver mapearVeiculo abaixo), sem coluna própria — mesma
+  // lógica de dias_estoque em mapear-venda.ts.
+  dias_patio: [],
   data_entrada: ["DATA_ENTRADA"],
   // VENDEDOR_QUE_RECEBEU confirmado contra o Oracle real (não estava na
   // lista original de candidatos).
@@ -60,8 +66,12 @@ const CANDIDATOS: Record<keyof VeiculoParsed, string[]> = {
   cod_proposta: ["COD_PROPOSTA_INTERNET"],
 };
 
-/** Colunas que são join opcional (loja atual, cor/combustível resolvidos) — não fazem parte do VeiculoParsed cru. */
-const CAMPOS_COMPUTADOS = new Set(["loja_atual"]);
+/**
+ * Colunas que são join opcional (loja atual, cor/combustível resolvidos) ou
+ * campos derivados sem coluna própria — não fazem parte do VeiculoParsed cru,
+ * então a ausência de coluna correspondente não é reportada em camposSemFonte.
+ */
+const CAMPOS_COMPUTADOS = new Set(["loja_atual", "dias_patio"]);
 
 export type LookupsVeiculo = {
   /** COD_MODELO (ou equivalente) -> descrição do modelo, via NBS.PRODUTOS_MODELOS (se existir). */
@@ -149,6 +159,15 @@ export function mapearVeiculo(row: Record<string, unknown>, lookups: LookupsVeic
   if (!anoModeloAchado) camposSemFonte.push("ano_fabricacao", "ano_modelo");
   const { fab: ano_fabricacao, mod: ano_modelo } = parseAnoModelo(anoModeloAchado?.valor);
 
+  // dias_patio = dias desde a entrada do carro em qualquer loja (definição de
+  // negócio confirmada) = hoje - data_entrada, em dias corridos. Não existe
+  // coluna DIAS_PATIO/DPT em NBS.VEICULOS (só existia no Excel manual antigo,
+  // pré-calculada pelo NBS) — mesma lógica de dias_estoque em
+  // mapear-venda.ts, mas com "hoje" no lugar de data_venda porque o veículo
+  // ainda está em estoque. Sem data_entrada, não dá pra calcular.
+  const data_entrada = asDate(get("data_entrada"));
+  const dias_patio = data_entrada ? Math.floor((Date.now() - data_entrada.getTime()) / 86_400_000) : null;
+
   const veiculo: VeiculoParsed = {
     cod_empresa: asInt(get("cod_empresa")) ?? 0,
     chassi: asStr(get("chassi")) ?? "",
@@ -165,8 +184,8 @@ export function mapearVeiculo(row: Record<string, unknown>, lookups: LookupsVeic
     preco_venda: asNum(get("preco_venda")),
     valor_aquisicao: asNum(get("valor_aquisicao")),
     custo_total: asNum(get("custo_total")),
-    dias_patio: asInt(get("dias_patio")),
-    data_entrada: asDate(get("data_entrada")),
+    dias_patio,
+    data_entrada,
     vendedor_recebeu: asStr(get("vendedor_recebeu")),
     cod_proposta: asStrCodigoPositivo(get("cod_proposta")),
   };
