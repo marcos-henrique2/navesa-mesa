@@ -39,6 +39,60 @@ export async function gravarVendasNode(
 }
 
 /**
+ * Sanitiza uma lista de chassis antes de usar num DELETE ... WHERE chassi IN
+ * (...): remove null/undefined/vazio, tira espaço, deduplica. Função pura —
+ * separada do I/O do Supabase pra ser testável sem depender de rede/DB.
+ */
+export function sanitizarChassisParaRemocao(chassis: (string | null | undefined)[]): string[] {
+  const vistos = new Set<string>();
+  for (const c of chassis) {
+    const limpo = c?.trim();
+    if (limpo) vistos.add(limpo);
+  }
+  return [...vistos];
+}
+
+/**
+ * Remove de `vendas` (Supabase) qualquer chassi que esteja, HOJE, na lista de
+ * estoque atual (`chassisEmEstoqueAtual` — a mesma lista validada que
+ * `syncVeiculos()` usa pra gravar o snapshot de estoque, ver FILTRO_ESTOQUE
+ * em sync-veiculos.ts, recall 98,7%/precisão 99,9%).
+ *
+ * Por quê: um veículo não pode estar em estoque E em `vendas` ao mesmo tempo.
+ * Se estiver, é uma venda "fantasma" — um upsert antigo que nunca foi
+ * desfeito, porque o sync de vendas só faz UPSERT (nunca DELETE) e a query
+ * de vendas (janela de 90 dias) simplesmente para de encontrar aquele chassi
+ * quando a venda é desfeita no NBS (devolução, financiamento caiu, veículo
+ * reentra como usado numa troca etc — o motivo exato não importa, o que
+ * importa é que ele está em estoque agora). Achado do Marcos testando a tela
+ * de conferência: carros que ele sabia estar em estoque apareciam como
+ * "Vendido" — e também distorcia o relatório "Vendas Usados Matriz", que lê
+ * `vendas` inteira.
+ *
+ * DELETE de verdade (não upsert): o registro não deve existir em `vendas`
+ * enquanto o veículo estiver em estoque.
+ *
+ * `removidos` reflete só os chassis que de fato existiam em `vendas` (não é
+ * o tamanho de `chassisEmEstoqueAtual`) — a maior parte do estoque nunca
+ * esteve em `vendas`.
+ */
+export async function removerVendasFantasma(
+  sb: SupabaseClient,
+  chassisEmEstoqueAtual: (string | null | undefined)[],
+): Promise<{ removidos: number }> {
+  const chassis = sanitizarChassisParaRemocao(chassisEmEstoqueAtual);
+  if (chassis.length === 0) return { removidos: 0 };
+
+  let removidos = 0;
+  for (const lote of chunk(chassis, 500)) {
+    const { error, count } = await sb.from("vendas").delete({ count: "exact" }).in("chassi", lote);
+    if (error) throw new Error(`removerVendasFantasma: ${error.message}`);
+    removidos += count ?? 0;
+  }
+  return { removidos };
+}
+
+/**
  * Gravação real (Node, client de service-role) do snapshot de estoque
  * sincronizado do Oracle. Reaproveita a MESMA lógica de
  * `src/lib/data/veiculos.ts` (`toRow`, modelo "cada rodada = snapshot

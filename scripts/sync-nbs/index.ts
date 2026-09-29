@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { abrirConexaoOracle, modoThinAtivo } from "./conexao-oracle";
 import { syncVeiculos } from "./sync-veiculos";
 import { syncVendas } from "./sync-vendas";
-import { gravarVeiculosNode, gravarVendasNode } from "./gravar";
+import { gravarVeiculosNode, gravarVendasNode, removerVendasFantasma } from "./gravar";
 
 /**
  * Orquestrador da sincronização NBS (Oracle) → Supabase.
@@ -64,6 +64,11 @@ async function main() {
   const conn = await abrirConexaoOracle();
   console.log(`Conectado ao Oracle. Modo: ${modoThinAtivo() ? "THIN" : "THICK"}.\n`);
 
+  // Chassis em estoque HOJE (filtro validado, ver FILTRO_ESTOQUE em
+  // sync-veiculos.ts — recall 98,7% / precisão 99,9%), preenchido no bloco de
+  // VEÍCULOS abaixo e reusado no bloco de VENDAS pra limpar vendas fantasma.
+  let chassisEmEstoqueAtual: string[] = [];
+
   try {
     // ─── VEÍCULOS ─────────────────────────────────────────────────────────
     console.log("--- VEÍCULOS ---");
@@ -86,6 +91,10 @@ async function main() {
       if (resultadoVeiculos.amostra.length > 0) {
         console.log(`\nAmostra (${resultadoVeiculos.amostra.length} de ${resultadoVeiculos.veiculos.length}):`);
         console.log(JSON.stringify(resultadoVeiculos.amostra, null, 2));
+      }
+
+      if (resultadoVeiculos.filtroPlausivel) {
+        chassisEmEstoqueAtual = resultadoVeiculos.veiculos.map((v) => v.chassi);
       }
 
       if (supabaseDisponivel() && resultadoVeiculos.filtroPlausivel && resultadoVeiculos.veiculos.length > 0) {
@@ -152,6 +161,23 @@ async function main() {
         console.log(
           `\nGravação real: ${gravacao.total} venda(s) gravada(s) (upsert por chassi)` +
             (gravacao.duplicatasIgnoradas > 0 ? `, ${gravacao.duplicatasIgnoradas} duplicata(s) de chassi ignorada(s).` : "."),
+        );
+      }
+
+      // Limpeza de vendas fantasma: qualquer chassi que esteja em `vendas`
+      // mas que HOJE está em estoque (chassisEmEstoqueAtual, calculado no
+      // bloco de VEÍCULOS acima) é um upsert antigo que nunca foi desfeito —
+      // o sync normal só faz UPSERT em `vendas` (nunca DELETE), então quando
+      // uma venda é desfeita no NBS (devolução, financiamento caiu, troca
+      // reentra como usado etc) e o chassi volta pro estoque, o registro
+      // antigo em `vendas` fica órfão pra sempre se ninguém remover. Ver
+      // removerVendasFantasma() em gravar.ts.
+      if (supabaseDisponivel() && chassisEmEstoqueAtual.length > 0) {
+        const sbEscrita = criarClienteSupabaseServiceRole();
+        const remocao = await removerVendasFantasma(sbEscrita, chassisEmEstoqueAtual);
+        console.log(
+          `\nLimpeza de vendas fantasma: ${remocao.removidos} chassi(s) removido(s) de \`vendas\` ` +
+            `por estarem em estoque hoje (de ${chassisEmEstoqueAtual.length} chassi(s) em estoque verificados).`,
         );
       }
 
