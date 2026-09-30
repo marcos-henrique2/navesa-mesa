@@ -80,6 +80,7 @@ async function main() {
       console.log(`Contagem filtro "em estoque" (DATA_VENDA NULL/sentinela): ${resultadoVeiculos.contagemFiltroEstoque}`);
       console.log(`Filtro plausível (esperado ~900-1.300): ${resultadoVeiculos.filtroPlausivel ? "SIM" : "NÃO"}`);
       console.log(`Veículos mapeados: ${resultadoVeiculos.veiculos.length}`);
+      console.log(`Tempo da query de valoriza/bônus (NBS.VEICULOS_CUSTOS_ESPECIFICOS, sem JOIN): ${resultadoVeiculos.tempoMsMapaValoriza}ms`);
       console.log(`Tabelas candidatas a lookup de cor/combustível: ${resultadoVeiculos.lookupsEncontrados.tabelasCombustivelOuCor.join(", ") || "(nenhuma encontrada)"}`);
       console.log(`NBS.PRODUTOS_MODELOS existe: ${resultadoVeiculos.lookupsEncontrados.produtosModelosExiste ? "SIM" : "NÃO"}`);
 
@@ -143,6 +144,7 @@ async function main() {
       console.log(`Contagem janela 90 dias: ${resultadoVendas.contagemJanela}`);
       console.log(`Filtro plausível (esperado ~500-1.500): ${resultadoVendas.filtroPlausivel ? "SIM" : "NÃO"}`);
       console.log(`Vendas mapeadas: ${resultadoVendas.vendas.length}`);
+      console.log(`Tempo da query de valoriza/bônus (NBS.VEICULOS_CUSTOS_ESPECIFICOS, sem JOIN): ${resultadoVendas.tempoMsMapaValoriza}ms`);
 
       if (resultadoVendas.warnings.length > 0) {
         console.log(`\n${resultadoVendas.warnings.length} warning(s):`);

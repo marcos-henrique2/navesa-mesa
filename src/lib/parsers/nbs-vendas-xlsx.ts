@@ -54,6 +54,16 @@ export type VendaParsed = {
   // Financiamento
   financiado: boolean | null;
   financeira: string | null;
+
+  /**
+   * Bônus/"Valoriza" da fábrica (CODIGO_CUSTO 620 "Ford Valoriza" ou 462
+   * "Bonus CVP" em NBS.VEICULOS_CUSTOS_ESPECIFICOS, somados por
+   * chassi_resumido+loja atual — ver scripts/sync-nbs/valoriza.ts). Sempre
+   * `number`, nunca `null`: ausência de bônus é um fato conhecido (zero), não
+   * "não sabemos". Só o sync Oracle preenche o valor real; o parser manual de
+   * XLSX (parseNbsVendasXlsx) não tem acesso a essa tabela e grava sempre 0.
+   */
+  valoriza: number;
 };
 
 export type VendasSnapshotMeta = {
@@ -377,6 +387,11 @@ export async function parseNbsVendasXlsx(
 
       financiado: asBoolSN(get(row, cols, "financiado")),
       financeira: asStr(get(row, cols, "financeira")),
+
+      // Parser manual (XLSX de vendas) não tem acesso a
+      // NBS.VEICULOS_CUSTOS_ESPECIFICOS — só o sync Oracle calcula o valor
+      // real (ver scripts/sync-nbs/valoriza.ts).
+      valoriza: 0,
     });
 
     lojasSet.add(codEmpresa);

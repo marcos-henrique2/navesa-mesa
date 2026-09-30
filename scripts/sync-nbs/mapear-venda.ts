@@ -1,5 +1,6 @@
 import type { VendaParsed } from "../../src/lib/parsers/nbs-vendas-xlsx";
 import { parseAnoModelo } from "../../src/lib/parsers/ano-modelo";
+import { buscarValoriza } from "./valoriza";
 
 /**
  * Candidatos de nome de coluna no Oracle NBS.VEICULOS por campo canônico
@@ -68,6 +69,11 @@ const CANDIDATOS: Record<keyof VendaParsed, string[]> = {
 
   financiado: ["FINANCIADO"],
   financeira: ["FINANCEIRA"], // sem fonte confirmada — pendência
+
+  // valoriza é derivado (busca em mapaValoriza por
+  // CHASSI_RESUMIDO+LOJA_ATUAL, ver mapearVenda abaixo) — sem coluna própria
+  // em NBS.VEICULOS.
+  valoriza: [],
 };
 
 function achaColuna(row: Record<string, unknown>, candidatos: string[]): unknown {
@@ -120,12 +126,22 @@ function detectTipoCliente(codigo: string | null): "PF" | "PJ" | null {
   return null;
 }
 
+export type LookupsVenda = {
+  /**
+   * chassi_resumido+loja_atual -> soma de bônus/valoriza, construído por
+   * carregarMapaValoriza() (ver valoriza.ts) a partir de
+   * NBS.VEICULOS_CUSTOS_ESPECIFICOS. Ausente = tratado como Map vazio
+   * (buscarValoriza devolve 0 pra tudo).
+   */
+  mapaValoriza?: Map<string, number>;
+};
+
 export type ResultadoMapeamentoVenda = {
   venda: VendaParsed;
   camposSemFonte: string[];
 };
 
-export function mapearVenda(row: Record<string, unknown>): ResultadoMapeamentoVenda {
+export function mapearVenda(row: Record<string, unknown>, lookups: LookupsVenda = {}): ResultadoMapeamentoVenda {
   const camposSemFonte: string[] = [];
   const get = (campo: keyof VendaParsed) => {
     const candidatos = CANDIDATOS[campo];
@@ -154,6 +170,15 @@ export function mapearVenda(row: Record<string, unknown>): ResultadoMapeamentoVe
   const anoModeloAchado = achaColuna(row, CANDIDATOS.ano_modelo);
   if (anoModeloAchado === undefined) camposSemFonte.push("ano_fabricacao", "ano_modelo");
   const { fab: ano_fabricacao, mod: ano_modelo } = parseAnoModelo(anoModeloAchado);
+
+  // valoriza = busca no Map (chassi_resumido + loja atual) construído por
+  // carregarMapaValoriza() (ver valoriza.ts). CHASSI_RESUMIDO e LOJA_ATUAL
+  // (alias COALESCE(NULLIF(COD_EMPRESA_ATUAL,0), COD_EMPRESA), ver
+  // SQL_SELECT_VENDAS em sync-vendas.ts) vêm direto da row crua — não usa
+  // get()/CANDIDATOS porque é chave de junção, não campo de saída.
+  const chassiResumido = asStr(row["CHASSI_RESUMIDO"]);
+  const lojaAtual = asInt(row["LOJA_ATUAL"]);
+  const valoriza = buscarValoriza(lookups.mapaValoriza ?? new Map(), chassiResumido, lojaAtual);
 
   const venda: VendaParsed = {
     chassi: asStr(get("chassi")) ?? "",
@@ -199,17 +224,22 @@ export function mapearVenda(row: Record<string, unknown>): ResultadoMapeamentoVe
 
     financiado: asBool(get("financiado")),
     financeira: asStr(get("financeira")),
+
+    valoriza,
   };
 
   return { venda, camposSemFonte };
 }
 
-export function mapearVendas(rows: Record<string, unknown>[]): { vendas: VendaParsed[]; warnings: string[] } {
+export function mapearVendas(
+  rows: Record<string, unknown>[],
+  lookups: LookupsVenda = {},
+): { vendas: VendaParsed[]; warnings: string[] } {
   const vendas: VendaParsed[] = [];
   const camposSemFonteVistos = new Set<string>();
 
   for (const row of rows) {
-    const { venda, camposSemFonte } = mapearVenda(row);
+    const { venda, camposSemFonte } = mapearVenda(row, lookups);
     vendas.push(venda);
     for (const c of camposSemFonte) camposSemFonteVistos.add(c);
   }

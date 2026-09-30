@@ -21,6 +21,15 @@ export type VeiculoParsed = {
   vendedor_recebeu: string | null;
   /** Cód. Proposta Internet (col 310). Preenchido = carro tem proposta/reserva ativa. */
   cod_proposta: string | null;
+  /**
+   * Bônus/"Valoriza" da fábrica (CODIGO_CUSTO 620 "Ford Valoriza" ou 462
+   * "Bonus CVP" em NBS.VEICULOS_CUSTOS_ESPECIFICOS, somados por
+   * chassi_resumido+loja atual — ver scripts/sync-nbs/valoriza.ts). Sempre
+   * `number`, nunca `null`: ausência de bônus é um fato conhecido (zero), não
+   * "não sabemos". Só o sync Oracle preenche o valor real; o parser manual de
+   * XLSX (parseNbsXlsx) não tem acesso a essa tabela e grava sempre 0.
+   */
+  valoriza: number;
 };
 
 export type SnapshotMeta = {
@@ -219,6 +228,10 @@ export async function parseNbsXlsx(
       data_entrada: parseDataEntrada(row[COL.entrada]),
       vendedor_recebeu: asStr(row[COL.vendedor_recebeu]),
       cod_proposta,
+      // Parser manual (XLSX de estoque) não tem acesso a
+      // NBS.VEICULOS_CUSTOS_ESPECIFICOS — só o sync Oracle calcula o valor
+      // real (ver scripts/sync-nbs/valoriza.ts).
+      valoriza: 0,
     });
 
     const empresa = parseEmpresaCell(row[COL.empresa_nome]);

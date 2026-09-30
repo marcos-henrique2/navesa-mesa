@@ -1,6 +1,7 @@
 import type { Connection } from "oracledb";
 import type { VendaParsed } from "../../src/lib/parsers/nbs-vendas-xlsx";
-import { mapearVendas } from "./mapear-venda";
+import { mapearVendas, type LookupsVenda } from "./mapear-venda";
+import { carregarMapaValoriza } from "./valoriza";
 
 const JANELA_DIAS = 90;
 
@@ -47,6 +48,7 @@ const FILTRO_VENDAS = `v.DATA_VENDA IS NOT NULL AND v.DATA_VENDA <> TO_DATE('189
  */
 const SQL_SELECT_VENDAS = `
   SELECT v.*,
+    COALESCE(NULLIF(v.COD_EMPRESA_ATUAL, 0), v.COD_EMPRESA) AS LOJA_ATUAL,
     pm.DESCRICAO_MODELO AS JOIN_MODELO,
     mca.DESCRICAO_MARCA AS JOIN_MARCA,
     eu.NOME_COMPLETO AS JOIN_VENDEDOR_NOME,
@@ -69,6 +71,8 @@ export type ResultadoSyncVendas = {
   filtroPlausivel: boolean;
   vendas: VendaParsed[];
   amostra: VendaParsed[];
+  /** Tempo real da query de NBS.VEICULOS_CUSTOS_ESPECIFICOS (sem JOIN, ver valoriza.ts) — monitorar performance. */
+  tempoMsMapaValoriza: number;
   warnings: string[];
 };
 
@@ -92,6 +96,15 @@ export async function syncVendas(conn: Connection): Promise<ResultadoSyncVendas>
     );
   }
 
+  // Mapa de bônus/valoriza (NBS.VEICULOS_CUSTOS_ESPECIFICOS, ver valoriza.ts)
+  // — query separada, SEM JOIN com vendas (JOIN direto no SQL é lento,
+  // 60-150s+ testado). Tempo medido e reportado pra monitorar performance,
+  // já que essa query roda a cada sync (a cada 2h).
+  const inicioMapaValoriza = Date.now();
+  const mapaValoriza = await carregarMapaValoriza(conn);
+  const tempoMsMapaValoriza = Date.now() - inicioMapaValoriza;
+  const lookups: LookupsVenda = { mapaValoriza };
+
   const result = await conn.execute(SQL_SELECT_VENDAS);
 
   const rows = (result.rows ?? []) as Record<string, unknown>[];
@@ -103,7 +116,7 @@ export async function syncVendas(conn: Connection): Promise<ResultadoSyncVendas>
     );
   }
 
-  const { vendas, warnings: warningsMapeamento } = mapearVendas(rows);
+  const { vendas, warnings: warningsMapeamento } = mapearVendas(rows, lookups);
   warnings.push(...warningsMapeamento);
 
   return {
@@ -111,6 +124,7 @@ export async function syncVendas(conn: Connection): Promise<ResultadoSyncVendas>
     filtroPlausivel,
     vendas,
     amostra: vendas.slice(0, 5),
+    tempoMsMapaValoriza,
     warnings,
   };
 }

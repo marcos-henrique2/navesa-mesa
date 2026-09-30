@@ -1,6 +1,7 @@
 import type { Connection } from "oracledb";
 import type { VeiculoParsed } from "../../src/lib/parsers/nbs-xlsx";
 import { mapearVeiculos, type LookupsVeiculo } from "./mapear-veiculo";
+import { carregarMapaValoriza } from "./valoriza";
 
 // Limites de sanidade pra validar o filtro "em estoque hoje". Validado contra
 // export real e completo do estoque de SEMINOVOS (`estoque 2.xlsx`, 1.124
@@ -22,6 +23,8 @@ export type ResultadoSyncVeiculos = {
     tabelasCombustivelOuCor: string[];
     produtosModelosExiste: boolean;
   };
+  /** Tempo real da query de NBS.VEICULOS_CUSTOS_ESPECIFICOS (sem JOIN, ver valoriza.ts) — monitorar performance. */
+  tempoMsMapaValoriza: number;
   warnings: string[];
 };
 
@@ -110,14 +113,22 @@ export async function syncVeiculos(conn: Connection): Promise<ResultadoSyncVeicu
         `NÃO segui pra query completa nem gravação — reporte pro Marcos antes de inventar outro filtro.`,
     );
     const lookupsEncontrados = { tabelasCombustivelOuCor: [], produtosModelosExiste: false };
-    return { contagemFiltroEstoque, filtroPlausivel, veiculos: [], amostra: [], lookupsEncontrados, warnings };
+    return { contagemFiltroEstoque, filtroPlausivel, veiculos: [], amostra: [], lookupsEncontrados, tempoMsMapaValoriza: 0, warnings };
   }
 
   const lookupsEncontrados = await descobrirLookups(conn);
 
+  // Mapa de bônus/valoriza (NBS.VEICULOS_CUSTOS_ESPECIFICOS, ver valoriza.ts)
+  // — query separada, SEM JOIN com veículos (JOIN direto no SQL é lento,
+  // 60-150s+ testado). Tempo medido e reportado pra monitorar performance,
+  // já que essa query roda a cada sync (a cada 2h).
+  const inicioMapaValoriza = Date.now();
+  const mapaValoriza = await carregarMapaValoriza(conn);
+  const tempoMsMapaValoriza = Date.now() - inicioMapaValoriza;
+
   // Lookups de cor/combustível: sem tabela de domínio confirmada ainda, fica
   // como fallback documentado no plano ("código bruto por enquanto").
-  const lookups: LookupsVeiculo = {};
+  const lookups: LookupsVeiculo = { mapaValoriza };
 
   const result = await conn.execute(SQL_SELECT_VEICULOS);
 
@@ -139,6 +150,7 @@ export async function syncVeiculos(conn: Connection): Promise<ResultadoSyncVeicu
     veiculos,
     amostra: veiculos.slice(0, 5),
     lookupsEncontrados,
+    tempoMsMapaValoriza,
     warnings,
   };
 }

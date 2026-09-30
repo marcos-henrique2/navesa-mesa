@@ -35,7 +35,7 @@ yarn-error.log*
 !.env.local.example
 
 # scripts locais (contêm queries/credenciais lidas do .env.local; não publicar)
-scripts/*.local.ts
+scripts/**/*.local.*
 
 # vercel
 .vercel

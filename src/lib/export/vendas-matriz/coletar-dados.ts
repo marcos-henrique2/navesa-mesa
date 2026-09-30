@@ -85,7 +85,10 @@ function mapearLinha(
     diasEstoque: v.dias_estoque,
 
     nfEntrada: custo?.nota_fabrica_taxa_icms ?? (v.total_nota_fabrica ?? null),
-    valoriza: custo?.ganhos_indiretos ?? null,
+    // Valor real do sync Oracle (NBS.VEICULOS_CUSTOS_ESPECIFICOS, CODIGO_CUSTO
+    // 620/462 — ver scripts/sync-nbs/valoriza.ts), não a aproximação antiga via
+    // "Ganhos Indiretos" (custo?.ganhos_indiretos, 27% de erro validado).
+    valoriza: v.valoriza,
 
     valorFipe: fipe?.confirmado ? fipe.precoFipe : null,
 

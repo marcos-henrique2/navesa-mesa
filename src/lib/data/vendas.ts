@@ -49,6 +49,7 @@ export function toRow(v: VendaParsed): Record<string, unknown> {
     placa_troca: v.placa_troca,
     financiado: v.financiado,
     financeira: v.financeira,
+    valoriza: v.valoriza,
   };
 }
 
@@ -90,6 +91,7 @@ function fromRow(r: VendaRow): VendaParsed {
     placa_troca: r.placa_troca,
     financiado: r.financiado,
     financeira: r.financeira,
+    valoriza: r.valoriza ?? 0,
   };
 }
 

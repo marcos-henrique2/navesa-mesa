@@ -32,6 +32,7 @@ export function toRow(v: VeiculoParsed, snapshotId: number): Record<string, unkn
     data_entrada: v.data_entrada?.toISOString() ?? null,
     vendedor_recebeu: v.vendedor_recebeu,
     cod_proposta: v.cod_proposta,
+    valoriza: v.valoriza,
   };
 }
 
@@ -56,6 +57,7 @@ function fromRow(r: VeiculoRow): VeiculoParsed {
     data_entrada: parseDate(r.data_entrada),
     vendedor_recebeu: r.vendedor_recebeu,
     cod_proposta: r.cod_proposta ?? null,
+    valoriza: r.valoriza ?? 0,
   };
 }
 

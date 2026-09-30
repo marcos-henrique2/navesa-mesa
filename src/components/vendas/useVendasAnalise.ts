@@ -245,6 +245,7 @@ export function useVendasAnalise() {
         data_entrada: null,
         vendedor_recebeu: v.vendedor_recebeu,
         cod_proposta: null,
+        valoriza: v.valoriza,
       }));
       const r = await runFipeBatch(veiculos, (p) => setProgressoFipe(p));
       if (r.persistenciaErro) {

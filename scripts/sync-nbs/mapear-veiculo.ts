@@ -1,5 +1,6 @@
 import type { VeiculoParsed } from "../../src/lib/parsers/nbs-xlsx";
 import { parseAnoModelo } from "../../src/lib/parsers/ano-modelo";
+import { buscarValoriza } from "./valoriza";
 
 /**
  * Mapeamento campo canônico (VeiculoParsed) -> candidatos de nome de coluna no
@@ -72,6 +73,9 @@ const CANDIDATOS: Record<keyof VeiculoParsed, string[]> = {
   // veículo em estoque aparecia como RESERVADO na tela. Nunca reintroduzir
   // COD_PROPOSTA aqui.
   cod_proposta: ["COD_PROPOSTA_INTERNET"],
+  // valoriza é derivado (busca em mapaValoriza por CHASSI_RESUMIDO+LOJA_ATUAL,
+  // ver mapearVeiculo abaixo) — sem coluna própria em NBS.VEICULOS.
+  valoriza: [],
 };
 
 /**
@@ -79,7 +83,7 @@ const CANDIDATOS: Record<keyof VeiculoParsed, string[]> = {
  * campos derivados sem coluna própria — não fazem parte do VeiculoParsed cru,
  * então a ausência de coluna correspondente não é reportada em camposSemFonte.
  */
-const CAMPOS_COMPUTADOS = new Set(["loja_atual", "dias_patio"]);
+const CAMPOS_COMPUTADOS = new Set(["loja_atual", "dias_patio", "valoriza"]);
 
 /**
  * Mapa estático COD_PATIO (Oracle) -> nome legível do pátio.
@@ -190,6 +194,13 @@ export type LookupsVeiculo = {
   modeloPorCodigo?: Map<string, string>;
   /** código numérico de combustível -> descrição, se existir tabela de domínio. */
   combustivelPorCodigo?: Map<string, string>;
+  /**
+   * chassi_resumido+loja_atual -> soma de bônus/valoriza, construído por
+   * carregarMapaValoriza() (ver valoriza.ts) a partir de
+   * NBS.VEICULOS_CUSTOS_ESPECIFICOS. Ausente = tratado como Map vazio
+   * (buscarValoriza devolve 0 pra tudo).
+   */
+  mapaValoriza?: Map<string, number>;
 };
 
 function achaColuna(row: Record<string, unknown>, candidatos: string[]): { valor: unknown; coluna: string } | null {
@@ -307,6 +318,15 @@ export function mapearVeiculo(row: Record<string, unknown>, lookups: LookupsVeic
     }
   }
 
+  // valoriza = busca no Map (chassi_resumido + loja atual) construído por
+  // carregarMapaValoriza() (ver valoriza.ts). CHASSI_RESUMIDO e LOJA_ATUAL
+  // (alias COALESCE(NULLIF(COD_EMPRESA_ATUAL,0), COD_EMPRESA), ver
+  // SQL_SELECT_VEICULOS em sync-veiculos.ts) vêm direto da row crua — não
+  // usa get()/CANDIDATOS porque é chave de junção, não campo de saída.
+  const chassiResumido = asStr(row["CHASSI_RESUMIDO"]);
+  const lojaAtual = asInt(row["LOJA_ATUAL"]);
+  const valoriza = buscarValoriza(lookups.mapaValoriza ?? new Map(), chassiResumido, lojaAtual);
+
   const veiculo: VeiculoParsed = {
     cod_empresa: asInt(get("cod_empresa")) ?? 0,
     chassi: asStr(get("chassi")) ?? "",
@@ -327,6 +347,7 @@ export function mapearVeiculo(row: Record<string, unknown>, lookups: LookupsVeic
     data_entrada,
     vendedor_recebeu: asStr(get("vendedor_recebeu")),
     cod_proposta: asStrCodigoPositivo(get("cod_proposta")),
+    valoriza,
   };
 
   return { veiculo, camposSemFonte };
