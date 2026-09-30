@@ -36,6 +36,11 @@ const CANDIDATOS: Record<keyof VeiculoParsed, string[]> = {
   // documentando os candidatos de coluna canônicos pra ambos.
   ano_fabricacao: ["ANO_FABRICACAO", "ANO_FAB"],
   ano_modelo: ["ANO_MODELO", "ANO_MOD"],
+  // COR_EXTERNA em NBS.VEICULOS é só um código numérico (ex: 888, 151662) —
+  // não existe tabela de lookup "nome da cor" acessível no schema Oracle
+  // usado por esse sync (confirmado via ALL_TABLES LIKE '%COR%', vazio). O
+  // valor bruto é traduzido pra nome legível via MAPA_COR em mapearVeiculo()
+  // abaixo, mesmo padrão de COD_PATIO/MAPA_PATIO.
   cor_externa: ["COR_EXTERNA"],
   combustivel: ["COD_COMBUSTIVEL", "COMBUSTIVEL"],
   km: ["KM", "KM_ATUAL", "QUILOMETRAGEM", "KM_USADO"],
@@ -123,11 +128,66 @@ export const MAPA_PATIO: Record<string, string> = {
   "153": "GWM GOIÂNIA",
 };
 
+/**
+ * Mapa estático COR_EXTERNA (Oracle) -> nome legível da cor.
+ *
+ * Origem: NBS.VEICULOS só tem COR_EXTERNA (código numérico); não existe
+ * tabela de lookup "nome da cor" acessível no schema Oracle usado por esse
+ * sync (usuário `comissao`) — confirmado investigando ALL_TABLES (LIKE
+ * '%COR%' devolveu vazio).
+ *
+ * Esse mapa foi construído cruzando um export manual real do estoque (coluna
+ * "Cor Externa", com o nome em texto) com os COR_EXTERNA correspondentes no
+ * Oracle pros MESMOS veículos, por placa. Bateu 1.089 de 1.132 veículos
+ * (96% de match) — 30 códigos distintos no estoque atual — validado em
+ * 30/09/2026.
+ *
+ * Códigos diferentes que mapeiam pro mesmo nome (ex: 14575/1549197195/
+ * 8246719 -> "CINZA") são tons específicos de fabricante que o relatório
+ * manual já simplificava pro nome genérico — mesma perda de detalhe da fonte
+ * original, não é erro nosso.
+ *
+ * Se aparecer um COR_EXTERNA que não está aqui (cor nova, por exemplo),
+ * mapearVeiculo() cai pro fallback "Cor <código> (não mapeada)" e
+ * mapearVeiculos() reporta em `warnings` — adicione a entrada aqui quando
+ * isso acontecer.
+ */
+export const MAPA_COR: Record<string, string> = {
+  "888": "BRANCO",
+  "151662": "PRETO",
+  "80": "PRATA",
+  "14575": "CINZA",
+  "1549197195": "CINZA",
+  "8246719": "CINZA",
+  "89": "AZUL",
+  "84": "VERMELHO",
+  "66988": "VERDE",
+  "151672": "MARROM",
+  "79": "PRETO C/ TETO PRATA",
+  "85": "CINZA STING GRAY",
+  "94": "DOURADO",
+  "67008": "LARANJA",
+  "81": "BRANCO POLAR",
+  "310": "PRATA",
+  "90": "AMARELO",
+  "21": "BRANCO ÁRTICO",
+  "103": "BRANCA CRISTAL",
+  "1549197207": "PRATA",
+  "87": "BEGE",
+  "88": "PRETA",
+  "8246846": "PRETO",
+  "8246813": "PRATA",
+  "8246731": "AMARELO",
+  "1549493807": "CINZA",
+  "8246635": "PRATA",
+  "8246714": "PRETO",
+  "1549543543": "PRETO",
+  "151663": "PRATA",
+};
+
 export type LookupsVeiculo = {
   /** COD_MODELO (ou equivalente) -> descrição do modelo, via NBS.PRODUTOS_MODELOS (se existir). */
   modeloPorCodigo?: Map<string, string>;
-  /** código numérico de cor -> descrição, se existir tabela de domínio. */
-  corPorCodigo?: Map<string, string>;
   /** código numérico de combustível -> descrição, se existir tabela de domínio. */
   combustivelPorCodigo?: Map<string, string>;
 };
@@ -196,9 +256,6 @@ export function mapearVeiculo(row: Record<string, unknown>, lookups: LookupsVeic
     return achado?.valor ?? null;
   };
 
-  const codCor = asStr(get("cor_externa"));
-  const cor_externa = (codCor && lookups.corPorCodigo?.get(codCor)) ?? codCor;
-
   const codComb = asStr(get("combustivel"));
   const combustivel = (codComb && lookups.combustivelPorCodigo?.get(codComb)) ?? codComb;
 
@@ -234,6 +291,22 @@ export function mapearVeiculo(row: Record<string, unknown>, lookups: LookupsVeic
     }
   }
 
+  // cor_externa = nome legível traduzido de COR_EXTERNA via MAPA_COR (ver
+  // comentário acima). Código desconhecido não trava o sync: cai pro
+  // fallback "Cor <código> (não mapeada)" e é reportado em `warnings` de
+  // mapearVeiculos(), pra não mostrar código cru silenciosamente pra sempre.
+  const codigoCor = asStr(get("cor_externa"));
+  let cor_externa: string | null = null;
+  if (codigoCor) {
+    const nomeCor = MAPA_COR[codigoCor];
+    if (nomeCor) {
+      cor_externa = nomeCor;
+    } else {
+      cor_externa = `Cor ${codigoCor} (não mapeada)`;
+      camposSemFonte.push(`cor_nao_mapeada:${codigoCor}`);
+    }
+  }
+
   const veiculo: VeiculoParsed = {
     cod_empresa: asInt(get("cod_empresa")) ?? 0,
     chassi: asStr(get("chassi")) ?? "",
@@ -242,7 +315,7 @@ export function mapearVeiculo(row: Record<string, unknown>, lookups: LookupsVeic
     modelo: asStr(get("modelo")) ?? "",
     ano_fabricacao,
     ano_modelo,
-    cor_externa: cor_externa ? cor_externa.toString().toUpperCase() : null,
+    cor_externa,
     combustivel,
     km: asInt(get("km")),
     patio,
@@ -266,14 +339,18 @@ export function mapearVeiculos(
   const veiculos: VeiculoParsed[] = [];
   const camposSemFonteVistos = new Set<string>();
   const patiosNaoMapeados = new Map<string, number>();
+  const coresNaoMapeadas = new Map<string, number>();
 
   for (const row of rows) {
     const { veiculo, camposSemFonte } = mapearVeiculo(row, lookups);
     veiculos.push(veiculo);
     for (const c of camposSemFonte) {
-      const codigoNaoMapeado = c.match(/^patio_nao_mapeado:(.+)$/)?.[1];
-      if (codigoNaoMapeado) {
-        patiosNaoMapeados.set(codigoNaoMapeado, (patiosNaoMapeados.get(codigoNaoMapeado) ?? 0) + 1);
+      const codigoPatioNaoMapeado = c.match(/^patio_nao_mapeado:(.+)$/)?.[1];
+      const codigoCorNaoMapeado = c.match(/^cor_nao_mapeada:(.+)$/)?.[1];
+      if (codigoPatioNaoMapeado) {
+        patiosNaoMapeados.set(codigoPatioNaoMapeado, (patiosNaoMapeados.get(codigoPatioNaoMapeado) ?? 0) + 1);
+      } else if (codigoCorNaoMapeado) {
+        coresNaoMapeadas.set(codigoCorNaoMapeado, (coresNaoMapeadas.get(codigoCorNaoMapeado) ?? 0) + 1);
       } else {
         camposSemFonteVistos.add(c);
       }
@@ -289,6 +366,9 @@ export function mapearVeiculos(
   }
   for (const [codigo, qtd] of patiosNaoMapeados) {
     warnings.push(`Código de pátio ${codigo} não mapeado (${qtd} veículo(s)) — adicionar em MAPA_PATIO.`);
+  }
+  for (const [codigo, qtd] of coresNaoMapeadas) {
+    warnings.push(`Código de cor ${codigo} não mapeado (${qtd} veículo(s)) — adicionar em MAPA_COR.`);
   }
 
   return { veiculos, warnings };
