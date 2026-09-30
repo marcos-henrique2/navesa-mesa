@@ -37,8 +37,16 @@ const FILTRO_VENDAS = `v.DATA_VENDA IS NOT NULL AND v.DATA_VENDA <> TO_DATE('189
  *   o login curto (ex: "MOZAINIEL") casa com a própria coluna NOME. Sem
  *   filtro de COD_EMPRESA no join (funcionário pode ter empresa "casa"
  *   diferente da loja do carro).
- * - empresa_nome: NBS.EMPRESAS, mesma regra de loja atual usada no filtro
- *   de estoque (COD_EMPRESA_ATUAL com fallback pra COD_EMPRESA).
+ * - empresa_nome: NBS.EMPRESAS via COD_EMPRESA_VENDEDORA — a loja que
+ *   efetivamente vendeu o carro, MESMA coluna que já alimenta cod_empresa
+ *   (ver mapear-venda.ts). NÃO usa COALESCE(COD_EMPRESA_ATUAL, COD_EMPRESA)
+ *   (regra de "loja de origem/estoque" usada em sync-veiculos.ts e na chave
+ *   LOJA_ATUAL do valoriza abaixo) — bug confirmado contra o Oracle real
+ *   (RCI3H10, SDK2B96, SDL8B82): em vendas de repasse (43,4% da amostra de
+ *   1057 vendas/90 dias), a loja de origem difere da loja vendedora, e
+ *   empresa_nome mostrava o nome da loja ERRADA enquanto cod_empresa já
+ *   mostrava a loja certa. COD_EMPRESA_VENDEDORA nunca vem nulo/zero
+ *   (testado em 1057 linhas) — sem necessidade de COALESCE/NULLIF aqui.
  * - cliente_nome/uf: NBS.CLIENTES. cliente_cidade fica de fora — CLIENTES só
  *   tem COD_CID_RES (código) e não há tabela de cidades acessível pro
  *   usuário `comissao`.
@@ -61,7 +69,7 @@ const SQL_SELECT_VENDAS = `
   LEFT JOIN NBS.PRODUTOS p ON p.COD_PRODUTO = v.COD_PRODUTO
   LEFT JOIN NBS.MARCAS mca ON mca.COD_MARCA = p.COD_MARCA
   LEFT JOIN NBS.EMPRESAS_USUARIOS eu ON eu.NOME = v.VENDEDOR
-  LEFT JOIN NBS.EMPRESAS emp ON emp.COD_EMPRESA = COALESCE(NULLIF(v.COD_EMPRESA_ATUAL, 0), v.COD_EMPRESA)
+  LEFT JOIN NBS.EMPRESAS emp ON emp.COD_EMPRESA = v.COD_EMPRESA_VENDEDORA
   LEFT JOIN NBS.CLIENTES cli ON cli.COD_CLIENTE = v.COD_CLIENTE
   WHERE ${FILTRO_VENDAS}
 `;
