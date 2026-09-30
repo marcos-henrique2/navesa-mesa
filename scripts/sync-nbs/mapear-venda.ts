@@ -29,7 +29,12 @@ const CANDIDATOS: Record<keyof VendaParsed, string[]> = {
   km: ["KM", "KM_ATUAL", "QUILOMETRAGEM", "KM_USADO"],
 
   cod_empresa: ["COD_EMPRESA_VENDEDORA", "COD_EMPRESA"],
-  // JOIN_EMPRESA_NOME vem do LEFT JOIN em NBS.EMPRESAS (loja atual).
+  // JOIN_EMPRESA_NOME vem do LEFT JOIN em NBS.EMPRESAS por
+  // COD_EMPRESA_VENDEDORA (loja que efetivamente vendeu — MESMA coluna de
+  // cod_empresa acima), não pela loja de origem/estoque (COD_EMPRESA_ATUAL
+  // com fallback pra COD_EMPRESA, usada em LOJA_ATUAL/valoriza). Bug
+  // corrigido: antes o JOIN usava a loja de origem, divergindo de
+  // cod_empresa em vendas de repasse.
   empresa_nome: ["JOIN_EMPRESA_NOME", "EMPRESA_VENDEDORA", "NOME_EMPRESA"],
   patio: ["PATIO", "DESCRICAO_PATIO"], // sem fonte confirmada — pendência
 
