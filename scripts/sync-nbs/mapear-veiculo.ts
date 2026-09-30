@@ -39,7 +39,10 @@ const CANDIDATOS: Record<keyof VeiculoParsed, string[]> = {
   cor_externa: ["COR_EXTERNA"],
   combustivel: ["COD_COMBUSTIVEL", "COMBUSTIVEL"],
   km: ["KM", "KM_ATUAL", "QUILOMETRAGEM", "KM_USADO"],
-  patio: ["PATIO", "DESCRICAO_PATIO", "COD_PATIO"],
+  // PATIO/DESCRICAO_PATIO não existem de verdade em NBS.VEICULOS (só
+  // COD_PATIO resolve) — o valor bruto de COD_PATIO é traduzido pra nome
+  // legível via MAPA_PATIO em mapearVeiculo() abaixo.
+  patio: ["COD_PATIO"],
   descricao_situacao: ["DESCRICAO_SITUACAO", "SITUACAO", "COD_SITUACAO"],
   preco_venda: ["PRECO_VENDA", "VALOR_VENDA"],
   valor_aquisicao: ["TOTAL_NOTA_FABRICA", "VALOR_AQUISICAO"],
@@ -72,6 +75,53 @@ const CANDIDATOS: Record<keyof VeiculoParsed, string[]> = {
  * então a ausência de coluna correspondente não é reportada em camposSemFonte.
  */
 const CAMPOS_COMPUTADOS = new Set(["loja_atual", "dias_patio"]);
+
+/**
+ * Mapa estático COD_PATIO (Oracle) -> nome legível do pátio.
+ *
+ * Origem: NBS.VEICULOS só tem COD_PATIO (numérico); não existe tabela de
+ * lookup "nome do pátio" acessível no schema Oracle usado por esse sync
+ * (usuário `comissao`) — confirmado investigando ALL_TABLES. O Excel manual
+ * antigo trazia o nome em texto, vindo de algum processo interno do NBS sem
+ * acesso direto via Oracle.
+ *
+ * Esse mapa foi construído cruzando um export manual real do estoque (com o
+ * nome do pátio em texto) com os COD_PATIO correspondentes no Oracle pros
+ * MESMOS veículos, por placa. Bateu 1.090 de 1.133 veículos (96% de match) —
+ * validado em 30/09/2026.
+ *
+ * Se aparecer um COD_PATIO que não está aqui (loja nova, por exemplo),
+ * mapearVeiculo() cai pro fallback "Pátio <código> (não mapeado)" e
+ * mapearVeiculos() reporta em `warnings` — adicione a entrada aqui quando
+ * isso acontecer.
+ */
+export const MAPA_PATIO: Record<string, string> = {
+  "5": "AEROPORTO",
+  "11": "TRÂNSITO (LOCAL)",
+  "17": "CIAASA",
+  "21": "ANÁPOLIS",
+  "57": "POLARIS",
+  "69": "APARECIDA DE GOIÂNIA",
+  "76": "T-63",
+  "152": "PREPARAÇÃO",
+  "159": "GWM RIO VERDE",
+  "160": "GWM ANÁPOLIS",
+  "161": "GWM RIO VERDE",
+  "162": "GWM ANÁPOLIS",
+  "163": "CG VU",
+  "172": "GAC",
+  "173": "GEELY",
+  "177": "PENDÊNCIA DOCUMENTAÇÃO",
+  "178": "NAVESA NORTE (PORANGATU)",
+  "180": "PORANGATU",
+  "4": "CAMINHÕES GOIÂNIA",
+  "54": "AEROPORTO/ACESSÓRIO",
+  "79": "PRO+",
+  "111": "OFICINA NAVESA AEROPORTO",
+  "139": "AUTO HALL",
+  "140": "PÁTIO VALCIMAR",
+  "153": "GWM GOIÂNIA",
+};
 
 export type LookupsVeiculo = {
   /** COD_MODELO (ou equivalente) -> descrição do modelo, via NBS.PRODUTOS_MODELOS (se existir). */
@@ -168,6 +218,22 @@ export function mapearVeiculo(row: Record<string, unknown>, lookups: LookupsVeic
   const data_entrada = asDate(get("data_entrada"));
   const dias_patio = data_entrada ? Math.floor((Date.now() - data_entrada.getTime()) / 86_400_000) : null;
 
+  // patio = nome legível traduzido de COD_PATIO via MAPA_PATIO (ver
+  // comentário acima). Código desconhecido não trava o sync: cai pro
+  // fallback "Pátio <código> (não mapeado)" e é reportado em `warnings` de
+  // mapearVeiculos(), pra não mostrar código cru silenciosamente pra sempre.
+  const codigoPatio = asStr(get("patio"));
+  let patio = "";
+  if (codigoPatio) {
+    const nomePatio = MAPA_PATIO[codigoPatio];
+    if (nomePatio) {
+      patio = nomePatio;
+    } else {
+      patio = `Pátio ${codigoPatio} (não mapeado)`;
+      camposSemFonte.push(`patio_nao_mapeado:${codigoPatio}`);
+    }
+  }
+
   const veiculo: VeiculoParsed = {
     cod_empresa: asInt(get("cod_empresa")) ?? 0,
     chassi: asStr(get("chassi")) ?? "",
@@ -179,7 +245,7 @@ export function mapearVeiculo(row: Record<string, unknown>, lookups: LookupsVeic
     cor_externa: cor_externa ? cor_externa.toString().toUpperCase() : null,
     combustivel,
     km: asInt(get("km")),
-    patio: asStr(get("patio")) ?? "",
+    patio,
     descricao_situacao: asStr(get("descricao_situacao")),
     preco_venda: asNum(get("preco_venda")),
     valor_aquisicao: asNum(get("valor_aquisicao")),
@@ -199,20 +265,31 @@ export function mapearVeiculos(
 ): { veiculos: VeiculoParsed[]; warnings: string[] } {
   const veiculos: VeiculoParsed[] = [];
   const camposSemFonteVistos = new Set<string>();
+  const patiosNaoMapeados = new Map<string, number>();
 
   for (const row of rows) {
     const { veiculo, camposSemFonte } = mapearVeiculo(row, lookups);
     veiculos.push(veiculo);
-    for (const c of camposSemFonte) camposSemFonteVistos.add(c);
+    for (const c of camposSemFonte) {
+      const codigoNaoMapeado = c.match(/^patio_nao_mapeado:(.+)$/)?.[1];
+      if (codigoNaoMapeado) {
+        patiosNaoMapeados.set(codigoNaoMapeado, (patiosNaoMapeados.get(codigoNaoMapeado) ?? 0) + 1);
+      } else {
+        camposSemFonteVistos.add(c);
+      }
+    }
   }
 
-  const warnings =
-    camposSemFonteVistos.size > 0
-      ? [
-          `Campos sem coluna correspondente encontrada em NBS.VEICULOS (candidatos não bateram): ${[...camposSemFonteVistos].join(", ")}. ` +
-            `Confira o nome real da coluna e ajuste CANDIDATOS em mapear-veiculo.ts.`,
-        ]
-      : [];
+  const warnings: string[] = [];
+  if (camposSemFonteVistos.size > 0) {
+    warnings.push(
+      `Campos sem coluna correspondente encontrada em NBS.VEICULOS (candidatos não bateram): ${[...camposSemFonteVistos].join(", ")}. ` +
+        `Confira o nome real da coluna e ajuste CANDIDATOS em mapear-veiculo.ts.`,
+    );
+  }
+  for (const [codigo, qtd] of patiosNaoMapeados) {
+    warnings.push(`Código de pátio ${codigo} não mapeado (${qtd} veículo(s)) — adicionar em MAPA_PATIO.`);
+  }
 
   return { veiculos, warnings };
 }
