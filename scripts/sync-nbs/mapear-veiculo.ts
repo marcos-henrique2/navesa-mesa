@@ -50,7 +50,10 @@ const CANDIDATOS: Record<keyof VeiculoParsed, string[]> = {
   // legível via MAPA_PATIO em mapearVeiculo() abaixo.
   patio: ["COD_PATIO"],
   descricao_situacao: ["DESCRICAO_SITUACAO", "SITUACAO", "COD_SITUACAO"],
-  preco_venda: ["PRECO_VENDA", "VALOR_VENDA"],
+  // PRECO_VENDA/VALOR_VENDA não existem de verdade em NBS.VEICULOS
+  // (confirmado via ALL_TAB_COLUMNS) — a coluna certa é PRECO_TABELA,
+  // validada com 100% de cobertura no estoque atual (1.114/1.114 veículos).
+  preco_venda: ["PRECO_TABELA"],
   valor_aquisicao: ["TOTAL_NOTA_FABRICA", "VALOR_AQUISICAO"],
   custo_total: ["CUSTO_TOTAL", "CUSTO_TOTAL_FINAL"],
   // DIAS_PATIO/DPT NÃO existem em NBS.VEICULOS (confirmado via
