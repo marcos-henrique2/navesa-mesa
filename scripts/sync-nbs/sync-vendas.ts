@@ -50,6 +50,17 @@ const FILTRO_VENDAS = `v.DATA_VENDA IS NOT NULL AND v.DATA_VENDA <> TO_DATE('189
  * - cliente_nome/uf: NBS.CLIENTES. cliente_cidade fica de fora — CLIENTES só
  *   tem COD_CID_RES (código) e não há tabela de cidades acessível pro
  *   usuário `comissao`.
+ * - consignado: NÃO precisou de JOIN nem de entrada nova no SELECT — v.*
+ *   já traz CONSIGNATO (coluna direta de NBS.VEICULOS, mesma usada como
+ *   FILTRO_ESTOQUE em sync-veiculos.ts). Mapeado em mapear-venda.ts.
+ *   ACHADO (validado contra o Oracle real em 02/10/2026, 1.084 vendas/90d e
+ *   4.062/365d): vendas de consignado usam NOVO_USADO='C', não 'U' — o
+ *   FILTRO_VENDAS abaixo (NOVO_USADO='U') exclui 100% delas, então
+ *   `consignado` vem sempre `false` para toda venda sincronizada hoje. Pra
+ *   habilitar o bloco "COM CONSIGNADOS" do relatório seria preciso expandir
+ *   o filtro pra incluir NOVO_USADO='C' também — decisão arquitetural fora
+ *   do escopo desta mudança (consultar @aria-architect: JOINs, campos
+ *   financeiros e faixa de sanidade podem se comportar diferente pra 'C').
  *
  * Todas as colunas joinadas usam alias `JOIN_*` pra nunca colidir com nomes
  * de coluna reais de NBS.VEICULOS (selecionada via `v.*`).

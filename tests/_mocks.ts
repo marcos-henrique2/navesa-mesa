@@ -42,6 +42,8 @@ export function venda(over: Partial<VendaParsed> = {}): VendaParsed {
     placa_troca: null,
     financiado: null,
     financeira: null,
+    valoriza: 0,
+    consignado: false,
     ...over,
   } as VendaParsed;
 }

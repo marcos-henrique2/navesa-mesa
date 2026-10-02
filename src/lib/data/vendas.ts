@@ -50,6 +50,7 @@ export function toRow(v: VendaParsed): Record<string, unknown> {
     financiado: v.financiado,
     financeira: v.financeira,
     valoriza: v.valoriza,
+    consignado: v.consignado,
   };
 }
 
@@ -92,6 +93,9 @@ function fromRow(r: VendaRow): VendaParsed {
     financiado: r.financiado,
     financeira: r.financeira,
     valoriza: r.valoriza ?? 0,
+    // Coluna NOT NULL DEFAULT false (migration 042) — mas o fallback `?? false` protege
+    // contra snapshot de localStorage salvo antes da coluna existir (sem o campo no JSON).
+    consignado: r.consignado ?? false,
   };
 }
 
