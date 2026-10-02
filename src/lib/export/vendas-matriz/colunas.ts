@@ -39,10 +39,17 @@ export const COL = {
   AE_CLIENTE: 31,
   AF_LOJISTA: 32,
   AG_VENDEDOR: 33,
+  /**
+   * CONSIGNADO (SIM/NÃO) — coluna nova, adicionada ao FIM (após AG) pra não deslocar
+   * nenhuma coluna já existente/testada. Necessária pra os blocos de MARGEM (aba-margens.ts
+   * via gerar-workbook.ts) conseguirem excluir consignados com um critério de Excel de
+   * verdade (SUMIFS/COUNTIFS), não só um filtro em JS — ver ressalva em tipos.ts.
+   */
+  AH_CONSIGNADO: 34,
 } as const;
 
-/** Última coluna com dado (AG) — a largura do título mergeado B..AG usa isso. */
-export const ULTIMA_COL = COL.AG_VENDEDOR;
+/** Última coluna com dado (AH) — a largura do título mergeado B..AH usa isso. */
+export const ULTIMA_COL = COL.AH_CONSIGNADO;
 
 /**
  * Linha 1 = espaçador em branco (baixa, sem título — igual ao arquivo original),
@@ -88,6 +95,7 @@ export const HEADERS: Record<number, string> = {
   [COL.AE_CLIENTE]: "CLIENTE",
   [COL.AF_LOJISTA]: "LOJISTA",
   [COL.AG_VENDEDOR]: "VENDEDOR",
+  [COL.AH_CONSIGNADO]: "CONSIGNADO",
 };
 
 export const COL_WIDTHS: Record<number, number> = {
@@ -125,12 +133,15 @@ export const COL_WIDTHS: Record<number, number> = {
   [COL.AE_CLIENTE]: 28,
   [COL.AF_LOJISTA]: 9,
   [COL.AG_VENDEDOR]: 22,
+  [COL.AH_CONSIGNADO]: 12,
 };
 
 // Formatos numéricos (mesma convenção de analise-navesa.ts)
 export const FMT_MONEY = '"R$" #,##0.00';
 export const FMT_PERCENT = "0.00%";
 export const FMT_INT = "#,##0";
+/** 2 casas decimais sem símbolo — médias (KM, DIAS, DELTA) que não são inteiro nem dinheiro. */
+export const FMT_DECIMAL2 = "0.00";
 
 // Negativo em vermelho (Lucro Bruto/Margem Líquida e as % correspondentes) agora é
 // conditional formatting de verdade (`condFormatNegativo` em `estilo.ts`), não

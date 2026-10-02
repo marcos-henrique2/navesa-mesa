@@ -56,7 +56,8 @@ export type AbaMargensOpts = {
   blocos: BlocoMargensOpts[];
 };
 
-function somaCampo(linhas: LinhaVendaMatriz[], campo: (l: LinhaVendaMatriz) => number | null): number {
+/** Exportado — reusado em aba-detalhe.ts pro bloco de totais/médias do rodapé (abas 1/2). */
+export function somaCampo(linhas: LinhaVendaMatriz[], campo: (l: LinhaVendaMatriz) => number | null): number {
   let total = 0;
   for (const l of linhas) {
     const v = campo(l);
@@ -65,7 +66,8 @@ function somaCampo(linhas: LinhaVendaMatriz[], campo: (l: LinhaVendaMatriz) => n
   return total;
 }
 
-function mediaCampo(linhas: LinhaVendaMatriz[], campo: (l: LinhaVendaMatriz) => number | null): number {
+/** Exportado — reusado em aba-detalhe.ts pro bloco de totais/médias do rodapé (abas 1/2). */
+export function mediaCampo(linhas: LinhaVendaMatriz[], campo: (l: LinhaVendaMatriz) => number | null): number {
   const valores = linhas.map(campo).filter((v): v is number => v != null);
   if (valores.length === 0) return 0;
   return valores.reduce((s, v) => s + v, 0) / valores.length;

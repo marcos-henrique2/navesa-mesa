@@ -79,6 +79,13 @@ const CANDIDATOS: Record<keyof VendaParsed, string[]> = {
   // CHASSI_RESUMIDO+LOJA_ATUAL, ver mapearVenda abaixo) — sem coluna própria
   // em NBS.VEICULOS.
   valoriza: [],
+
+  // CONSIGNATO já vem de graça no `v.*` de SQL_SELECT_VENDAS (sync-vendas.ts)
+  // — mesma coluna usada como FILTRO (não como dado) em FILTRO_ESTOQUE de
+  // sync-veiculos.ts. 'S'/'N' mapeado pra boolean via asBool() abaixo. Ver
+  // doc completo (inclusive achado de NOVO_USADO='C' excluindo consignados
+  // do filtro atual de vendas) no campo `consignado` de VendaParsed.
+  consignado: ["CONSIGNATO"],
 };
 
 function achaColuna(row: Record<string, unknown>, candidatos: string[]): unknown {
@@ -231,6 +238,11 @@ export function mapearVenda(row: Record<string, unknown>, lookups: LookupsVenda 
     financeira: asStr(get("financeira")),
 
     valoriza,
+
+    // Sempre boolean (nunca null) — ausência/valor não reconhecido vira
+    // `false` (fato conhecido "não é consignado"), não "não sabemos". Ver
+    // justificativa completa no campo `consignado` de VendaParsed.
+    consignado: asBool(get("consignado")) ?? false,
   };
 
   return { venda, camposSemFonte };

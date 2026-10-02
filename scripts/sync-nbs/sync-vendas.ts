@@ -9,20 +9,27 @@ const JANELA_DIAS = 90;
 // descartada: 3.598.237 linhas no total e DATA_FATURAMENTO NULL em 100%
 // delas — é tabela de outro domínio do ERP, não vendas de veículo. As
 // vendas de usado estão dentro da própria NBS.VEICULOS: DATA_VENDA
-// preenchida (não nula, não a sentinela 1899-12-30) + NOVO_USADO='U' marca
-// uma linha como veículo usado vendido naquela data. Validado: 1.049 vendas
-// de usados nos últimos 90 dias em todas as lojas — escala plausível bate
-// com o volume real do negócio (~56/mês só na loja 2/Aeroporto).
+// preenchida (não nula, não a sentinela 1899-12-30) + NOVO_USADO IN ('U','C')
+// marca uma linha como veículo usado (ou consignado) vendido naquela data.
+//
+// Filtro expandido em 02/10/2026 (decisão @aria-architect, ver migration 042
+// e o ACHADO documentado abaixo em SQL_SELECT_VENDAS): antes só NOVO_USADO='U'
+// (1.085 vendas/90d). Validado contra o Oracle real: NOVO_USADO='C' (consignado)
+// soma +23 vendas/90d, 100% com CONSIGNATO='S' (as 'U' são 100% CONSIGNATO='N' —
+// separação limpa, sem sobreposição) — total combinado 1.108 vendas/90d. Faixa
+// de sanidade [500, 1500] continua válida pro volume combinado, sem precisar
+// mudar os limites.
 const MIN_PLAUSIVEL = 500;
 const MAX_PLAUSIVEL = 1500;
 
 /**
- * Query base: vendas de usado na janela — DATA_VENDA preenchida (real, não
- * sentinela) e NOVO_USADO='U', dentro de NBS.VEICULOS. Qualificada com `v.`
- * porque a query de leitura completa faz JOIN (ver `sqlSelectVendas` abaixo)
- * e alguma tabela joinada poderia, em teoria, ter coluna homônima.
+ * Query base: vendas de usado (ou consignado) na janela — DATA_VENDA
+ * preenchida (real, não sentinela) e NOVO_USADO IN ('U','C'), dentro de
+ * NBS.VEICULOS. Qualificada com `v.` porque a query de leitura completa faz
+ * JOIN (ver `sqlSelectVendas` abaixo) e alguma tabela joinada poderia, em
+ * teoria, ter coluna homônima.
  */
-const FILTRO_VENDAS = `v.DATA_VENDA IS NOT NULL AND v.DATA_VENDA <> TO_DATE('1899-12-30','YYYY-MM-DD') AND v.NOVO_USADO = 'U' AND v.DATA_VENDA >= (SYSDATE - ${JANELA_DIAS})`;
+const FILTRO_VENDAS = `v.DATA_VENDA IS NOT NULL AND v.DATA_VENDA <> TO_DATE('1899-12-30','YYYY-MM-DD') AND v.NOVO_USADO IN ('U','C') AND v.DATA_VENDA >= (SYSDATE - ${JANELA_DIAS})`;
 
 /**
  * JOINs confirmados empiricamente contra o Oracle real (8 vendas reais
@@ -50,6 +57,21 @@ const FILTRO_VENDAS = `v.DATA_VENDA IS NOT NULL AND v.DATA_VENDA <> TO_DATE('189
  * - cliente_nome/uf: NBS.CLIENTES. cliente_cidade fica de fora — CLIENTES só
  *   tem COD_CID_RES (código) e não há tabela de cidades acessível pro
  *   usuário `comissao`.
+ * - consignado: NÃO precisou de JOIN nem de entrada nova no SELECT — v.*
+ *   já traz CONSIGNATO (coluna direta de NBS.VEICULOS, mesma usada como
+ *   FILTRO_ESTOQUE em sync-veiculos.ts). Mapeado em mapear-venda.ts.
+ *   ACHADO (validado contra o Oracle real em 02/10/2026, 1.108 vendas/90d
+ *   combinadas 'U'+'C'): vendas de consignado usam NOVO_USADO='C', não 'U' —
+ *   separação limpa confirmada (0 sobreposição: 'U' é 100% CONSIGNATO='N',
+ *   'C' é 100% CONSIGNATO='S'). @aria-architect avaliou e aprovou expandir
+ *   FILTRO_VENDAS pra NOVO_USADO IN ('U','C') (feito abaixo) — COM UMA
+ *   RESSALVA DE SEMÂNTICA: pra vendas consignadas, `custo_total_final`/
+ *   `margem_pct` vindos do Oracle não representam lucro de estoque de
+ *   verdade (a revenda nunca foi dona do carro) — por isso os blocos de
+ *   MARGEM do relatório "Vendas Usados Matriz" (aba-margens.ts e cia)
+ *   continuam excluindo `consignado === true` explicitamente, mesmo com o
+ *   filtro do sync expandido (ver nota em aba-margens.ts/gerar-workbook.ts).
+ *   Os blocos de CONTAGEM (aba RESUMO) incluem consignados normalmente.
  *
  * Todas as colunas joinadas usam alias `JOIN_*` pra nunca colidir com nomes
  * de coluna reais de NBS.VEICULOS (selecionada via `v.*`).

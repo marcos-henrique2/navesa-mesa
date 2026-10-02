@@ -68,6 +68,24 @@ export const COR_BORDA_BLOCO = "FF1B2A41";
 /** Vermelho padrão de número negativo — igual ao relatório original (não mais um tom "sóbrio"). */
 export const COR_NEGATIVO = "FFFF0000";
 
+/**
+ * Amarelo vivo de destaque — usado em linhas isoladas que chamam atenção pra um recorte
+ * específico (ex: "TOTAL ... SEM CONSIGNADOS" na aba RESUMO, linha de vendedor com DELTA
+ * negativo na aba MEDIA) — igual ao relatório original do Marcos (19.png/26.png de
+ * referência: fundo amarelo vivo + texto preto bold, não um tom pastel).
+ */
+export const COR_DESTAQUE_AMARELO_BG = "FFFFFF00";
+export const COR_DESTAQUE_AMARELO_FG = "FF000000";
+
+/**
+ * Header 3º tom de azul (periwinkle claro) — usado no bloco de totais/médias no rodapé
+ * das abas de detalhe (abas 1/2), distinto do navy dos banners/totais (COR_BANNER_N1_BG)
+ * e do azul acinzentado médio do header de coluna (COR_HEADER_DETALHE_BG). Texto preto
+ * bold, igual ao relatório original (21.png de referência).
+ */
+export const COR_HEADER_RESUMO_NUMERICO_BG = "FFB4C7E7";
+export const COR_HEADER_RESUMO_NUMERICO_FG = "FF1B2A41";
+
 /** Cor da dataBar da Margem Líquida — combina com o verde de "estoque próprio". */
 export const COR_DATABAR_MARGEM = COR_PROPRIO_BG;
 
@@ -84,6 +102,8 @@ export const FONT_BANNER_N1 = { name: FONTE, bold: true, size: 13, color: { argb
 /** Mesmo tamanho de nível 1 — o original não distingue banner de bloco × sub-bloco. */
 export const FONT_BANNER_N2 = { name: FONTE, bold: true, size: 13, color: { argb: COR_BANNER_N2_FG } } as const;
 export const FONT_NOTA = { name: FONTE, italic: true, size: 8, color: { argb: COR_NOTA_FG } } as const;
+/** Header do bloco de totais/médias no rodapé das abas de detalhe — ver COR_HEADER_RESUMO_NUMERICO_BG. */
+export const FONT_HEADER_RESUMO_NUMERICO = { name: FONTE, bold: true, size: 9, color: { argb: COR_HEADER_RESUMO_NUMERICO_FG } } as const;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Alturas
@@ -151,6 +171,16 @@ export function aplicarBordaBloco(
 export function aplicarFundoTotal(cell: ExcelJS.Cell): void {
   cell.font = { name: FONTE, bold: true, size: 10, color: { argb: COR_BANNER_N1_FG } };
   cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COR_BANNER_N1_BG } };
+}
+
+/**
+ * Fundo amarelo vivo + texto preto bold — ver COR_DESTAQUE_AMARELO_BG. Aplicado
+ * estaticamente (cor já conhecida em JS no momento da geração), não via conditional
+ * formatting — mesmo precedente de `aplicarZebra` abaixo.
+ */
+export function aplicarFundoDestaqueAmarelo(cell: ExcelJS.Cell): void {
+  cell.font = { name: FONTE, bold: true, size: 10, color: { argb: COR_DESTAQUE_AMARELO_FG } };
+  cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COR_DESTAQUE_AMARELO_BG } };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

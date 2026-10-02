@@ -94,6 +94,18 @@ describe("mapearLinha — coluna U (F Plan): upload manual > automático Oracle"
   });
 });
 
+describe("mapearLinha — consignado (propagação pra LinhaVendaMatriz)", () => {
+  it("v.consignado = true -> linha.consignado = true", () => {
+    const linha = mapear({ placa: "ABC1D23", consignado: true }, new Map());
+    assert.equal(linha.consignado, true);
+  });
+
+  it("v.consignado = false -> linha.consignado = false", () => {
+    const linha = mapear({ placa: "ABC1D23", consignado: false }, new Map());
+    assert.equal(linha.consignado, false);
+  });
+});
+
 describe("mapearLinha — coluna W (Impostos): SEM fonte automática (fora de escopo)", () => {
   it("com upload manual: usa custo.impostos", () => {
     const linha = mapear({ placa: "ABC1D23" }, new Map([["ABC1D23", custo({ placa: "ABC1D23", impostos: 777 })]]));

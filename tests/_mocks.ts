@@ -2,6 +2,7 @@ import type { VendaParsed } from "@/lib/parsers/nbs-vendas-xlsx";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import type { CustoDetalhado } from "@/lib/parsers/nbs-custos-xls";
 import type { Repasse } from "@/lib/repasses/types";
+import type { LinhaVendaMatriz } from "@/lib/export/vendas-matriz/tipos";
 
 /** Cria uma VendaParsed completa com defaults; sobrescreva o que o teste precisar. */
 export function venda(over: Partial<VendaParsed> = {}): VendaParsed {
@@ -42,6 +43,8 @@ export function venda(over: Partial<VendaParsed> = {}): VendaParsed {
     placa_troca: null,
     financiado: null,
     financeira: null,
+    valoriza: 0,
+    consignado: false,
     ...over,
   } as VendaParsed;
 }
@@ -102,6 +105,37 @@ export function veiculo(over: Partial<VeiculoParsed> = {}): VeiculoParsed {
     custo_comissoes: 0,
     ...over,
   } as VeiculoParsed;
+}
+
+/** Cria uma LinhaVendaMatriz completa com defaults; sobrescreva o que o teste precisar. */
+export function linhaVendaMatriz(over: Partial<LinhaVendaMatriz> = {}): LinhaVendaMatriz {
+  return {
+    chassi: "CHASSI000000000",
+    placa: "ABC1D23",
+    lojaOrigemNome: "ESTOQUE AEROPORTO",
+    lojaOrigemCodEmpresa: 2,
+    descricaoVeiculo: "MODELO TESTE",
+    cor: "PRETO",
+    marca: "Ford",
+    anoModelo: "22/22",
+    km: 50000,
+    diasEstoque: 20,
+    nfEntrada: 80000,
+    valoriza: 1000,
+    valorFipe: 100000,
+    valorVenda: 95000,
+    despesaGeral: 1000,
+    forplan: 2000,
+    impostos: 500,
+    comissao: 400,
+    usadoNaTroca: false,
+    financiou: null,
+    clienteNome: "CLIENTE TESTE",
+    lojista: false,
+    vendedorNome: "VENDEDOR TESTE",
+    consignado: false,
+    ...over,
+  };
 }
 
 /** Cria um Repasse completo com defaults; sobrescreva o que o teste precisar. */

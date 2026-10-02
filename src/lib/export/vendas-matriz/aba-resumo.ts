@@ -23,7 +23,7 @@ import { COL, DATA_START_ROW, FMT_PERCENT, escaparAspasFormula, rangeEntreAbas }
 import {
   FONT_DADO, FONT_HEADER_COLUNA, FONT_BANNER_N1, ALTURA_BANNER_N1,
   COR_BANNER_N1_BG, COR_HEADER_TABELA_BG,
-  aplicarBordaBloco, aplicarFundoTotal, comVerticalMiddle,
+  aplicarBordaBloco, aplicarFundoTotal, aplicarFundoDestaqueAmarelo, comVerticalMiddle,
 } from "./estilo";
 
 const LABEL_COL = COL.C_LOJA_ORIGEM;
@@ -68,6 +68,7 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
   const rangeLojista = rangeCol(COL.AF_LOJISTA);
   const rangeDias = rangeCol(COL.J_DIAS);
   const rangePlaca = rangeCol(COL.G_PLACA);
+  const rangeConsignado = rangeCol(COL.AH_CONSIGNADO);
   const totalFormula = `COUNTA(${rangePlaca})`;
 
   let r = 2;
@@ -125,7 +126,8 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
     return linhaAtual;
   };
 
-  const escreverLinhaTotal = (formulaQtde: string, result: number): number => {
+  /** `semGapDepois` — pula as 2 linhas em branco finais (chamador insere mais linhas antes do gap, ex: Bloco A). */
+  const escreverLinhaTotal = (formulaQtde: string, result: number, opts?: { semGapDepois?: boolean }): number => {
     const row = ws.getRow(r);
     const labelCell = row.getCell(LABEL_COL);
     labelCell.value = "TOTAL";
@@ -142,7 +144,7 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
     comVerticalMiddle(pctCell);
     const linhaAtual = r;
     r++;
-    r += 2; // 2 linhas em branco antes do próximo bloco
+    if (!opts?.semGapDepois) r += 2; // 2 linhas em branco antes do próximo bloco
     return linhaAtual;
   };
 
@@ -182,8 +184,30 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
       totalLinhas,
     );
 
-    const linhaTotalA = escreverLinhaTotal(totalFormula, totalLinhas);
-    aplicarBordaBloco(ws, linhaIniA, linhaTotalA, LABEL_COL, PCT_COL);
+    escreverLinhaTotal(totalFormula, totalLinhas, { semGapDepois: true });
+
+    // "TOTAL ... SEM CONSIGNADOS" — item pendente da reestilização (PR #25), destaque
+    // amarelo vivo, igual ao relatório original (19.png de referência). Mesmo totalFormula
+    // (todas as 103 linhas, incl. Auto Avaliar), só acrescenta o critério consignado="NÃO"
+    // na coluna de apoio AH (ver colunas.ts/aba-detalhe.ts). Sem % (igual à imagem — a
+    // linha de baixo não tem par "com"/"sem" de percentual, só a contagem).
+    const linhaTotalSemConsignado = r;
+    {
+      const row = ws.getRow(r);
+      const labelCell = row.getCell(LABEL_COL);
+      labelCell.value = "TOTAL CARROS FATURADOS SEM CONSIGNADOS";
+      aplicarFundoDestaqueAmarelo(labelCell);
+      comVerticalMiddle(labelCell);
+      const qtdSemConsignado = linhasAba1.filter((l) => !l.consignado).length;
+      const qtdCell = row.getCell(QT_COL);
+      qtdCell.value = { formula: `COUNTIF(${rangeConsignado},"NÃO")`, result: qtdSemConsignado };
+      aplicarFundoDestaqueAmarelo(qtdCell);
+      comVerticalMiddle(qtdCell);
+      r++;
+      r += 2; // 2 linhas em branco antes do próximo bloco
+    }
+
+    aplicarBordaBloco(ws, linhaIniA, linhaTotalSemConsignado, LABEL_COL, PCT_COL);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -198,12 +222,16 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
       { col: PCT_COL, label: "%" },
     ]);
 
-    const semAutoAvaliar = linhasAba1.filter((l) => !isAutoAvaliar(l) && l.diasEstoque != null);
+    // Exclui consignado também (item pendente da reestilização, PR #25) — o nome do bloco
+    // no relatório original é "VENDAS POR DIAS DE ESTOQUE ... ( SEM CONSIGNADOS )"
+    // (19.png de referência): "dias de pátio" não faz sentido pra consignado (o carro
+    // nunca foi do estoque da revenda), mesmo raciocínio que já exclui Auto Avaliar aqui.
+    const semAutoAvaliar = linhasAba1.filter((l) => !isAutoAvaliar(l) && l.diasEstoque != null && !l.consignado);
     const totalSemAuto = semAutoAvaliar.length;
     // Denominador precisa excluir linhas sem Dias preenchido (critério "<>") — senão os
     // numeradores das 3 faixas (que só contam linhas com diasEstoque != null) somam menos
     // de 100% do denominador quando o Excel recalcula.
-    const denominadorFormula = `COUNTIFS(${rangeVendedor},"${CRITERIO_NAO_AUTO_AVALIAR}",${rangeDias},"<>")`;
+    const denominadorFormula = `COUNTIFS(${rangeVendedor},"${CRITERIO_NAO_AUTO_AVALIAR}",${rangeDias},"<>",${rangeConsignado},"NÃO")`;
 
     const faixas: { label: string; min: number; max: number | null }[] = [
       { label: "0-30 dias", min: 0, max: 30 },
@@ -222,7 +250,7 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
           : `${rangeDias},">=${faixa.min}",${rangeDias},"<=${faixa.max}"`;
       linhaFimB = escreverLinhaContagem(
         faixa.label,
-        `COUNTIFS(${rangeVendedor},"${CRITERIO_NAO_AUTO_AVALIAR}",${criteriosDias})`,
+        `COUNTIFS(${rangeVendedor},"${CRITERIO_NAO_AUTO_AVALIAR}",${rangeConsignado},"NÃO",${criteriosDias})`,
         count,
         denominadorFormula,
         totalSemAuto,
@@ -348,6 +376,46 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
         qtde,
         lojistaQtde,
       );
+    }
+
+    // SUBTOTAL "TOTAL CARROS FATURADOS" — todos os vendedores humanos, ANTES da linha
+    // Auto Avaliar (item pendente da reestilização, PR #25; 20.png de referência: mesmo
+    // estilo bold navy do TOTAL final, não o amarelo das linhas "sem consignados"). %
+    // sobre o total GERAL (todas as 103, incl. Auto Avaliar) — mesmo denominador que as
+    // linhas de vendedor individuais usam logo acima.
+    {
+      const qtdeSemAuto = semAutoAvaliar.length;
+      const lojistaSemAuto = semAutoAvaliar.filter((l) => l.lojista === true).length;
+      const row = ws.getRow(r);
+      const labelCell = row.getCell(LABEL_COL);
+      labelCell.value = "TOTAL CARROS FATURADOS";
+      aplicarFundoTotal(labelCell);
+      comVerticalMiddle(labelCell);
+      const qtdCell = row.getCell(QT_COL);
+      qtdCell.value = { formula: `COUNTIF(${rangeVendedor},"${CRITERIO_NAO_AUTO_AVALIAR}")`, result: qtdeSemAuto };
+      aplicarFundoTotal(qtdCell);
+      comVerticalMiddle(qtdCell);
+      const pctCell = row.getCell(PCT_COL);
+      pctCell.value = { formula: `IFERROR(${qtdCell.address}/${totalFormula},"")`, result: totalLinhas > 0 ? qtdeSemAuto / totalLinhas : "" };
+      pctCell.numFmt = FMT_PERCENT;
+      aplicarFundoTotal(pctCell);
+      comVerticalMiddle(pctCell);
+      const lojistaCell = row.getCell(LOJISTA_COL);
+      lojistaCell.value = {
+        formula: `COUNTIFS(${rangeVendedor},"${CRITERIO_NAO_AUTO_AVALIAR}",${rangeLojista},"SIM")`,
+        result: lojistaSemAuto,
+      };
+      aplicarFundoTotal(lojistaCell);
+      comVerticalMiddle(lojistaCell);
+      const lojistaPctCell = row.getCell(LOJISTA_PCT_COL);
+      lojistaPctCell.value = {
+        formula: `IFERROR(${lojistaCell.address}/${qtdCell.address},"")`,
+        result: qtdeSemAuto > 0 ? lojistaSemAuto / qtdeSemAuto : "",
+      };
+      lojistaPctCell.numFmt = FMT_PERCENT;
+      aplicarFundoTotal(lojistaPctCell);
+      comVerticalMiddle(lojistaPctCell);
+      r++;
     }
 
     const linhasAutoAvaliar = linhasAba1.filter(isAutoAvaliar);

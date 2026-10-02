@@ -64,6 +64,34 @@ export type VendaParsed = {
    * XLSX (parseNbsVendasXlsx) não tem acesso a essa tabela e grava sempre 0.
    */
   valoriza: number;
+
+  /**
+   * Venda de veículo consignado (NBS.VEICULOS.CONSIGNATO = 'S'/'N', já vem
+   * de graça no `v.*` do SELECT de sync-vendas.ts — não precisou de JOIN
+   * nem de coluna extra). Sempre `boolean`, nunca `null`: dentro da janela
+   * de 90 dias realmente sincronizada, CONSIGNATO só veio 'S' ou 'N'
+   * (1.084 vendas validadas, 0 nulos/vazios — validado também em 365 dias,
+   * 4.062 vendas) — ausência tratada como `false` (fato conhecido "não é
+   * consignado"), igual à lógica já usada em CONSIGNATO='N' no filtro de
+   * estoque (sync-veiculos.ts).
+   *
+   * ACHADO IMPORTANTE (validado contra o Oracle real em 02/10/2026): vendas
+   * de consignado usam NOVO_USADO='C' em NBS.VEICULOS, NÃO 'U'. O filtro
+   * atual de vendas (FILTRO_VENDAS em sync-vendas.ts) exige
+   * `NOVO_USADO = 'U'`, então HOJE este campo sempre vem `false` pra toda
+   * venda sincronizada — nenhuma venda com CONSIGNATO='S' passa pelo filtro
+   * atual (confirmado: 0 de 1.084 em 90 dias, 0 de 4.062 em 365 dias).
+   * Pra habilitar de fato o bloco "COM CONSIGNADOS" do relatório
+   * (comparado ao original feito à mão), seria necessário expandir
+   * FILTRO_VENDAS pra incluir NOVO_USADO='C' também — decisão arquitetural
+   * fora do escopo desta migration (ver @aria-architect: shape do JOIN,
+   * campos financeiros, sanidade de contagem podem diferir pra 'C').
+   *
+   * Parser manual de XLSX (parseNbsVendasXlsx) não tem coluna "Consignado"
+   * no relatório "vendidos.xlsx" — grava sempre `false` (mesma limitação de
+   * escopo: o XLSX manual também só traz Tipo="Usado", nunca consignados).
+   */
+  consignado: boolean;
 };
 
 export type VendasSnapshotMeta = {
@@ -392,6 +420,10 @@ export async function parseNbsVendasXlsx(
       // NBS.VEICULOS_CUSTOS_ESPECIFICOS — só o sync Oracle calcula o valor
       // real (ver scripts/sync-nbs/valoriza.ts).
       valoriza: 0,
+
+      // XLSX "vendidos.xlsx" não tem coluna "Consignado" — ver doc do campo
+      // em VendaParsed acima. false documentado, não é uma leitura real.
+      consignado: false,
     });
 
     lojasSet.add(codEmpresa);

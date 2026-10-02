@@ -109,6 +109,8 @@ export function mapearLinha(
     clienteNome: v.cliente_nome,
     lojista: v.cliente_tipo === "PJ" ? true : v.cliente_tipo === "PF" ? false : null,
     vendedorNome: v.vendedor_nome,
+
+    consignado: v.consignado,
   };
 }
 
