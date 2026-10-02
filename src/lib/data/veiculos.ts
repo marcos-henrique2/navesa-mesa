@@ -33,6 +33,16 @@ export function toRow(v: VeiculoParsed, snapshotId: number): Record<string, unkn
     vendedor_recebeu: v.vendedor_recebeu,
     cod_proposta: v.cod_proposta,
     valoriza: v.valoriza,
+    custo_impostos: v.custo_impostos,
+    custo_revisoes: v.custo_revisoes,
+    custo_holdback: v.custo_holdback,
+    custo_acessorios: v.custo_acessorios,
+    custo_forplan: v.custo_forplan,
+    custo_comissoes: v.custo_comissoes,
+    // custo_adm/custo_despesas_gerais NÃO entram aqui de propósito — sem
+    // CODIGO_CUSTO mapeado (ver VeiculoParsed em nbs-xlsx.ts e migration
+    // 040). Omitir a chave deixa o Postgres gravar NULL (colunas NULLABLE
+    // SEM DEFAULT) em vez de afirmar falsamente "custo zero conhecido".
   };
 }
 
@@ -58,6 +68,12 @@ function fromRow(r: VeiculoRow): VeiculoParsed {
     vendedor_recebeu: r.vendedor_recebeu,
     cod_proposta: r.cod_proposta ?? null,
     valoriza: r.valoriza ?? 0,
+    custo_impostos: r.custo_impostos ?? 0,
+    custo_revisoes: r.custo_revisoes ?? 0,
+    custo_holdback: r.custo_holdback ?? 0,
+    custo_acessorios: r.custo_acessorios ?? 0,
+    custo_forplan: r.custo_forplan ?? 0,
+    custo_comissoes: r.custo_comissoes ?? 0,
   };
 }
 

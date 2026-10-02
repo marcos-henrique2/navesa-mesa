@@ -93,6 +93,13 @@ export function veiculo(over: Partial<VeiculoParsed> = {}): VeiculoParsed {
     data_entrada: null,
     vendedor_recebeu: null,
     cod_proposta: null,
+    valoriza: 0,
+    custo_impostos: 0,
+    custo_revisoes: 0,
+    custo_holdback: 0,
+    custo_acessorios: 0,
+    custo_forplan: 0,
+    custo_comissoes: 0,
     ...over,
   } as VeiculoParsed;
 }

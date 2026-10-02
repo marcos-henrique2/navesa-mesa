@@ -30,6 +30,27 @@ export type VeiculoParsed = {
    * XLSX (parseNbsXlsx) não tem acesso a essa tabela e grava sempre 0.
    */
   valoriza: number;
+  /**
+   * 6 categorias do relatório nativo NBS "Custos de Veículos em Estoque"
+   * (ver scripts/sync-nbs/custos-estoque-detalhado.ts e migration 040).
+   * Mesmo contrato de `valoriza`: sempre `number`, nunca `null` — ausência de
+   * custo lançado naquela categoria é fato conhecido (zero). Só o sync
+   * Oracle preenche o valor real; o parser manual de XLSX grava sempre 0.
+   *
+   * NOTA: `custo_adm` e `custo_despesas_gerais` (colunas NULLABLE SEM
+   * DEFAULT no banco) NÃO têm campo aqui de propósito — nenhum CODIGO_CUSTO
+   * foi encontrado pra essas duas categorias (provável rateio calculado pelo
+   * motor do relatório NBS, fora de escopo), e NULL precisa continuar
+   * significando "não apurado". Nunca adicionar esses dois campos aqui como
+   * `number` — isso forçaria toRow() a sempre gravar algum valor (mesmo que
+   * 0) e apagaria essa distinção.
+   */
+  custo_impostos: number;
+  custo_revisoes: number;
+  custo_holdback: number;
+  custo_acessorios: number;
+  custo_forplan: number;
+  custo_comissoes: number;
 };
 
 export type SnapshotMeta = {
@@ -230,8 +251,14 @@ export async function parseNbsXlsx(
       cod_proposta,
       // Parser manual (XLSX de estoque) não tem acesso a
       // NBS.VEICULOS_CUSTOS_ESPECIFICOS — só o sync Oracle calcula o valor
-      // real (ver scripts/sync-nbs/valoriza.ts).
+      // real (ver scripts/sync-nbs/valoriza.ts e custos-estoque-detalhado.ts).
       valoriza: 0,
+      custo_impostos: 0,
+      custo_revisoes: 0,
+      custo_holdback: 0,
+      custo_acessorios: 0,
+      custo_forplan: 0,
+      custo_comissoes: 0,
     });
 
     const empresa = parseEmpresaCell(row[COL.empresa_nome]);

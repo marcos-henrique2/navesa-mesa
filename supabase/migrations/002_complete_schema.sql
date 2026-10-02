@@ -49,6 +49,23 @@ create table if not exists veiculos (
   dias_patio             integer,
   data_entrada           timestamptz,
   vendedor_recebeu       text,
+  -- Custos de estoque detalhados (relatorio nativo NBS "Custos de Veiculos em
+  -- Estoque"), ver 040_custos_estoque_detalhado_em_veiculos.sql. NOT NULL
+  -- DEFAULT 0: ausencia de custo lancado naquela categoria = fato conhecido
+  -- (zero), mesmo padrao de valoriza/valor_aquisicao/custo_total.
+  custo_revisoes         numeric(12,2) not null default 0,
+  custo_forplan          numeric(12,2) not null default 0,
+  custo_holdback         numeric(12,2) not null default 0,
+  custo_acessorios       numeric(12,2) not null default 0,
+  -- custo_adm e custo_despesas_gerais sao NULLABLE SEM DEFAULT (diferente das
+  -- outras 6 acima): nenhum CODIGO_CUSTO foi encontrado pra essas categorias
+  -- em NBS.CUSTOS_ESPECIFICOS (provavel rateio/alocacao do motor do
+  -- relatorio NBS, nao um custo lancado por veiculo) — NULL = "nao apurado",
+  -- diferente de "fato conhecido de custo zero". Ver migration 040.
+  custo_adm              numeric(12,2),
+  custo_impostos         numeric(12,2) not null default 0,
+  custo_comissoes        numeric(12,2) not null default 0,
+  custo_despesas_gerais  numeric(12,2),
   unique (snapshot_id, chassi)
 );
 
