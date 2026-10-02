@@ -81,6 +81,7 @@ async function main() {
       console.log(`Filtro plausível (esperado ~900-1.300): ${resultadoVeiculos.filtroPlausivel ? "SIM" : "NÃO"}`);
       console.log(`Veículos mapeados: ${resultadoVeiculos.veiculos.length}`);
       console.log(`Tempo da query de valoriza/bônus (NBS.VEICULOS_CUSTOS_ESPECIFICOS, sem JOIN): ${resultadoVeiculos.tempoMsMapaValoriza}ms`);
+      console.log(`Tempo das 6 queries sequenciais de custos detalhados: ${resultadoVeiculos.tempoMsCustosDetalhados}ms`);
       console.log(`Tabelas candidatas a lookup de cor/combustível: ${resultadoVeiculos.lookupsEncontrados.tabelasCombustivelOuCor.join(", ") || "(nenhuma encontrada)"}`);
       console.log(`NBS.PRODUTOS_MODELOS existe: ${resultadoVeiculos.lookupsEncontrados.produtosModelosExiste ? "SIM" : "NÃO"}`);
 

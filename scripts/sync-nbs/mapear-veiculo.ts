@@ -1,6 +1,7 @@
 import type { VeiculoParsed } from "../../src/lib/parsers/nbs-xlsx";
 import { parseAnoModelo } from "../../src/lib/parsers/ano-modelo";
 import { buscarValoriza } from "./valoriza";
+import { buscarCustoDetalhado, type CategoriaCustoDetalhado, type MapasCustosDetalhados } from "./custos-estoque-detalhado";
 
 /**
  * Mapeamento campo canônico (VeiculoParsed) -> candidatos de nome de coluna no
@@ -79,6 +80,18 @@ const CANDIDATOS: Record<keyof VeiculoParsed, string[]> = {
   // valoriza é derivado (busca em mapaValoriza por CHASSI_RESUMIDO+LOJA_ATUAL,
   // ver mapearVeiculo abaixo) — sem coluna própria em NBS.VEICULOS.
   valoriza: [],
+  // custo_impostos/revisoes/holdback/acessorios/forplan/comissoes são
+  // derivados (busca em mapasCustosDetalhados por CHASSI_RESUMIDO+LOJA_ATUAL,
+  // mesmo padrão de valoriza acima, ver custos-estoque-detalhado.ts) — sem
+  // coluna própria em NBS.VEICULOS. custo_adm/custo_despesas_gerais NÃO têm
+  // entrada aqui de propósito (nem campo em VeiculoParsed): sem
+  // CODIGO_CUSTO mapeado, ficam de fora do payload e o Postgres grava NULL.
+  custo_impostos: [],
+  custo_revisoes: [],
+  custo_holdback: [],
+  custo_acessorios: [],
+  custo_forplan: [],
+  custo_comissoes: [],
 };
 
 /**
@@ -86,7 +99,17 @@ const CANDIDATOS: Record<keyof VeiculoParsed, string[]> = {
  * campos derivados sem coluna própria — não fazem parte do VeiculoParsed cru,
  * então a ausência de coluna correspondente não é reportada em camposSemFonte.
  */
-const CAMPOS_COMPUTADOS = new Set(["loja_atual", "dias_patio", "valoriza"]);
+const CAMPOS_COMPUTADOS = new Set([
+  "loja_atual",
+  "dias_patio",
+  "valoriza",
+  "custo_impostos",
+  "custo_revisoes",
+  "custo_holdback",
+  "custo_acessorios",
+  "custo_forplan",
+  "custo_comissoes",
+]);
 
 /**
  * Mapa estático COD_PATIO (Oracle) -> nome legível do pátio.
@@ -204,6 +227,14 @@ export type LookupsVeiculo = {
    * (buscarValoriza devolve 0 pra tudo).
    */
   mapaValoriza?: Map<string, number>;
+  /**
+   * chassi_resumido+loja_atual -> soma de VALOR_FINAL por categoria (6
+   * categorias do relatório "Custos de Veículos em Estoque"), construído por
+   * carregarMapasCustosDetalhados() (ver custos-estoque-detalhado.ts).
+   * Ausente = tratado como Map vazio por categoria (buscarCustoDetalhado
+   * devolve 0 pra tudo).
+   */
+  mapasCustosDetalhados?: MapasCustosDetalhados;
 };
 
 function achaColuna(row: Record<string, unknown>, candidatos: string[]): { valor: unknown; coluna: string } | null {
@@ -330,6 +361,14 @@ export function mapearVeiculo(row: Record<string, unknown>, lookups: LookupsVeic
   const lojaAtual = asInt(row["LOJA_ATUAL"]);
   const valoriza = buscarValoriza(lookups.mapaValoriza ?? new Map(), chassiResumido, lojaAtual);
 
+  // custo_impostos/revisoes/holdback/acessorios/forplan/comissoes = busca no
+  // Map de cada categoria (mesma chave chassi_resumido+loja_atual de
+  // valoriza acima, ver custos-estoque-detalhado.ts). custo_adm/
+  // custo_despesas_gerais ficam de fora de propósito (sem CODIGO_CUSTO
+  // mapeado) — nem são calculados aqui, nem têm campo em VeiculoParsed.
+  const buscaCategoria = (categoria: CategoriaCustoDetalhado) =>
+    buscarCustoDetalhado(lookups.mapasCustosDetalhados?.[categoria] ?? new Map(), chassiResumido, lojaAtual);
+
   const veiculo: VeiculoParsed = {
     cod_empresa: asInt(get("cod_empresa")) ?? 0,
     chassi: asStr(get("chassi")) ?? "",
@@ -351,6 +390,12 @@ export function mapearVeiculo(row: Record<string, unknown>, lookups: LookupsVeic
     vendedor_recebeu: asStr(get("vendedor_recebeu")),
     cod_proposta: asStrCodigoPositivo(get("cod_proposta")),
     valoriza,
+    custo_impostos: buscaCategoria("custo_impostos"),
+    custo_revisoes: buscaCategoria("custo_revisoes"),
+    custo_holdback: buscaCategoria("custo_holdback"),
+    custo_acessorios: buscaCategoria("custo_acessorios"),
+    custo_forplan: buscaCategoria("custo_forplan"),
+    custo_comissoes: buscaCategoria("custo_comissoes"),
   };
 
   return { veiculo, camposSemFonte };

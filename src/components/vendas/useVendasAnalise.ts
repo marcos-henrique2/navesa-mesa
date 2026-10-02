@@ -246,6 +246,16 @@ export function useVendasAnalise() {
         vendedor_recebeu: v.vendedor_recebeu,
         cod_proposta: null,
         valoriza: v.valoriza,
+        // VendaParsed não tem os 6 campos de custos detalhados (migration 040
+        // só toca `veiculos`, não `vendas`) — 0 aqui é só preenchimento pra
+        // satisfazer o tipo, igual cod_proposta/data_entrada acima; não é
+        // usado pelo matching de FIPE.
+        custo_impostos: 0,
+        custo_revisoes: 0,
+        custo_holdback: 0,
+        custo_acessorios: 0,
+        custo_forplan: 0,
+        custo_comissoes: 0,
       }));
       const r = await runFipeBatch(veiculos, (p) => setProgressoFipe(p));
       if (r.persistenciaErro) {

@@ -2,6 +2,7 @@ import type { Connection } from "oracledb";
 import type { VeiculoParsed } from "../../src/lib/parsers/nbs-xlsx";
 import { mapearVeiculos, type LookupsVeiculo } from "./mapear-veiculo";
 import { carregarMapaValoriza } from "./valoriza";
+import { carregarMapasCustosDetalhados } from "./custos-estoque-detalhado";
 
 // Limites de sanidade pra validar o filtro "em estoque hoje". Validado contra
 // export real e completo do estoque de SEMINOVOS (`estoque 2.xlsx`, 1.124
@@ -25,6 +26,8 @@ export type ResultadoSyncVeiculos = {
   };
   /** Tempo real da query de NBS.VEICULOS_CUSTOS_ESPECIFICOS (sem JOIN, ver valoriza.ts) — monitorar performance. */
   tempoMsMapaValoriza: number;
+  /** Tempo real das 6 queries sequenciais de custos detalhados (ver custos-estoque-detalhado.ts) — monitorar performance. */
+  tempoMsCustosDetalhados: number;
   warnings: string[];
 };
 
@@ -113,7 +116,16 @@ export async function syncVeiculos(conn: Connection): Promise<ResultadoSyncVeicu
         `NÃO segui pra query completa nem gravação — reporte pro Marcos antes de inventar outro filtro.`,
     );
     const lookupsEncontrados = { tabelasCombustivelOuCor: [], produtosModelosExiste: false };
-    return { contagemFiltroEstoque, filtroPlausivel, veiculos: [], amostra: [], lookupsEncontrados, tempoMsMapaValoriza: 0, warnings };
+    return {
+      contagemFiltroEstoque,
+      filtroPlausivel,
+      veiculos: [],
+      amostra: [],
+      lookupsEncontrados,
+      tempoMsMapaValoriza: 0,
+      tempoMsCustosDetalhados: 0,
+      warnings,
+    };
   }
 
   const lookupsEncontrados = await descobrirLookups(conn);
@@ -126,9 +138,20 @@ export async function syncVeiculos(conn: Connection): Promise<ResultadoSyncVeicu
   const mapaValoriza = await carregarMapaValoriza(conn);
   const tempoMsMapaValoriza = Date.now() - inicioMapaValoriza;
 
+  // Mapas das 6 categorias de custos detalhados (NBS.VEICULOS_CUSTOS_ESPECIFICOS,
+  // ver custos-estoque-detalhado.ts) — 6 queries SEQUENCIAIS, uma por
+  // categoria (nunca combinar os ~73 códigos num IN() só: testado e cancelado
+  // depois de 15+min; Promise.all também testado e descartado — uma mesma
+  // Connection do node-oracledb serializa execute() internamente, então não
+  // dava paralelismo real, só 13% de "ganho" nada confiável). ~3,2min medido
+  // contra o Oracle real — desprezível dentro da janela de sync (a cada 2h).
+  const inicioCustosDetalhados = Date.now();
+  const mapasCustosDetalhados = await carregarMapasCustosDetalhados(conn);
+  const tempoMsCustosDetalhados = Date.now() - inicioCustosDetalhados;
+
   // Lookups de cor/combustível: sem tabela de domínio confirmada ainda, fica
   // como fallback documentado no plano ("código bruto por enquanto").
-  const lookups: LookupsVeiculo = { mapaValoriza };
+  const lookups: LookupsVeiculo = { mapaValoriza, mapasCustosDetalhados };
 
   const result = await conn.execute(SQL_SELECT_VEICULOS);
 
@@ -151,6 +174,7 @@ export async function syncVeiculos(conn: Connection): Promise<ResultadoSyncVeicu
     amostra: veiculos.slice(0, 5),
     lookupsEncontrados,
     tempoMsMapaValoriza,
+    tempoMsCustosDetalhados,
     warnings,
   };
 }
