@@ -6,32 +6,29 @@
 import type ExcelJS from "exceljs";
 import type { LinhaVendaMatriz } from "./tipos";
 import { calcularDerivadosLinha } from "./tipos";
-import { COL, ULTIMA_COL, DATA_START_ROW, HEADERS, COL_WIDTHS, FMT_MONEY, FMT_PERCENT, FMT_INT } from "./colunas";
+import {
+  COL, ULTIMA_COL, NOTA_ROW, DATA_START_ROW, HEADERS, COL_WIDTHS,
+  FMT_MONEY, FMT_PERCENT, FMT_INT, colLetter,
+} from "./colunas";
+import {
+  FONT_DADO, FONT_HEADER_COLUNA, FONT_NOTA, COR_HEADER_TABELA_BG, COR_DATABAR_MARGEM,
+  bordaInferiorFina, bordaInferiorMedia, aplicarBordaBloco, aplicarZebra, comVerticalMiddle,
+  condFormatNegativoSobrio, condFormatDataBar,
+} from "./estilo";
 
-const COLOR_TITLE_BG = "FF374151";
-const COLOR_TITLE_FG = "FFFFFFFF";
-const COLOR_HEADER_BG = "FFF3F4F6";
-const COLOR_BORDER = "FFD1D5DB";
-
-function thinBorder(): Partial<ExcelJS.Borders> {
-  const side: Partial<ExcelJS.Border> = { style: "thin", color: { argb: COLOR_BORDER } };
-  return { top: side, bottom: side, left: side, right: side, diagonal: { up: false, down: false } };
-}
-
+/**
+ * `titulo` não é mais renderizado na planilha (não existe banner de título, igual
+ * ao arquivo original) — mantido no parâmetro só por compatibilidade de assinatura
+ * com `gerar-workbook.ts`.
+ */
 export function renderAbaDetalhe(ws: ExcelJS.Worksheet, titulo: string, linhas: LinhaVendaMatriz[]): void {
   for (let c = 1; c <= ULTIMA_COL; c++) {
     ws.getColumn(c).width = COL_WIDTHS[c] ?? 12;
+    ws.getColumn(c).font = FONT_DADO;
   }
 
-  // ─── Linha 1 — título mergeado ───
-  ws.mergeCells(1, COL.B_SEQ, 1, ULTIMA_COL);
-  const row1 = ws.getRow(1);
-  row1.height = 26;
-  const titleCell = row1.getCell(COL.B_SEQ);
-  titleCell.value = titulo;
-  titleCell.font = { bold: true, size: 13, color: { argb: COLOR_TITLE_FG } };
-  titleCell.alignment = { horizontal: "center", vertical: "middle" };
-  titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_TITLE_BG } };
+  // ─── Linha 1 — espaçador em branco, baixo, igual ao original ───
+  ws.getRow(1).height = 6.6;
 
   // ─── Linha 2 — header ───
   const row2 = ws.getRow(2);
@@ -40,11 +37,19 @@ export function renderAbaDetalhe(ws: ExcelJS.Worksheet, titulo: string, linhas: 
     const colNum = Number(colNumStr);
     const cell = row2.getCell(colNum);
     cell.value = label;
-    cell.font = { bold: true, size: 10 };
+    cell.font = FONT_HEADER_COLUNA;
     cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_HEADER_BG } };
-    cell.border = thinBorder();
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COR_HEADER_TABELA_BG } };
+    cell.border = bordaInferiorMedia();
   }
+
+  // ─── Linha 3 — nota explicativa da fórmula de Custo Real ───
+  const row3 = ws.getRow(NOTA_ROW);
+  row3.height = 12;
+  const notaCell = row3.getCell(COL.M_CUSTO_REAL);
+  notaCell.value = "entrada - valoriza";
+  notaCell.font = FONT_NOTA;
+  notaCell.alignment = { horizontal: "center", vertical: "middle" };
 
   // ─── Linhas de dados ───
   let r = DATA_START_ROW;
@@ -161,15 +166,17 @@ export function renderAbaDetalhe(ws: ExcelJS.Worksheet, titulo: string, linhas: 
     row.getCell(COL.AF_LOJISTA).value = l.lojista === true ? "SIM" : l.lojista === false ? "NÃO" : "";
     row.getCell(COL.AG_VENDEDOR).value = l.vendedorNome ?? "";
 
-    // Formatação numérica + alinhamento + borda em toda a linha
+    // Formatação numérica + alinhamento em toda a linha. Q/AA (Lucro Bruto/Margem
+    // Líquida) e R/AB (as % correspondentes) usam o MESMO numFmt das demais — o
+    // vermelho sóbrio de negativo agora é conditional formatting (aplicado uma vez,
+    // pro range inteiro da coluna, depois do loop), não mais seção `[Red]` do numFmt.
     const moneyCols = [
       COL.K_NF_ENTRADA, COL.L_VALORIZA, COL.M_CUSTO_REAL, COL.N_VALOR_FIPE, COL.O_VALOR_VENDA,
-      COL.Q_LUCRO_BRUTO, COL.S_DESPESA_GERAL, COL.U_FPLAN, COL.W_IMPOSTOS, COL.Y_COMISSAO,
-      COL.AA_MARGEM_LIQUIDA,
+      COL.S_DESPESA_GERAL, COL.U_FPLAN, COL.W_IMPOSTOS, COL.Y_COMISSAO, COL.Q_LUCRO_BRUTO, COL.AA_MARGEM_LIQUIDA,
     ];
     const pctCols = [
-      COL.P_PCT_FIPE, COL.R_PCT_LUCRO_BRUTO, COL.T_PCT_DESPESA_GERAL, COL.V_PCT_FPLAN,
-      COL.X_PCT_IMPOSTOS, COL.Z_PCT_COMISSAO, COL.AB_PCT_MARGEM,
+      COL.P_PCT_FIPE, COL.T_PCT_DESPESA_GERAL, COL.V_PCT_FPLAN,
+      COL.X_PCT_IMPOSTOS, COL.Z_PCT_COMISSAO, COL.R_PCT_LUCRO_BRUTO, COL.AB_PCT_MARGEM,
     ];
     for (const c of moneyCols) {
       row.getCell(c).numFmt = FMT_MONEY;
@@ -185,10 +192,45 @@ export function renderAbaDetalhe(ws: ExcelJS.Worksheet, titulo: string, linhas: 
     row.getCell(COL.AD_FINANCIOU).alignment = { horizontal: "center" };
     row.getCell(COL.AF_LOJISTA).alignment = { horizontal: "center" };
 
+    // Borda fina só embaixo (sem grade completa), zebra striping e vertical middle
+    // padronizado em toda célula com conteúdo — nessa ordem, pra não perder os
+    // alinhamentos horizontais já setados acima.
+    const numeroLinhaTabela = idx + 1;
+    aplicarZebra(ws, r, COL.B_SEQ, ULTIMA_COL, numeroLinhaTabela);
     for (let c = COL.B_SEQ; c <= ULTIMA_COL; c++) {
-      row.getCell(c).border = thinBorder();
+      const cell = row.getCell(c);
+      cell.border = bordaInferiorFina();
+      comVerticalMiddle(cell);
     }
 
     r++;
+  }
+
+  const ultimaLinhaDados = r - 1;
+
+  // AutoFilter na linha de header (linha 2) — dá as setinhas de filtro do arquivo original.
+  ws.autoFilter = {
+    from: { row: 2, column: COL.B_SEQ },
+    to: { row: 2, column: ULTIMA_COL },
+  };
+
+  // Borda grossa navy ao redor da tabela inteira (header + nota + dados).
+  const linhaFimBloco = Math.max(ultimaLinhaDados, NOTA_ROW);
+  aplicarBordaBloco(ws, 2, linhaFimBloco, COL.B_SEQ, ULTIMA_COL);
+
+  if (ultimaLinhaDados >= DATA_START_ROW) {
+    let prioridade = 1;
+    const refColuna = (colNum: number): string => {
+      const letra = colLetter(colNum);
+      return `${letra}${DATA_START_ROW}:${letra}${ultimaLinhaDados}`;
+    };
+
+    // Vermelho sóbrio de negativo (Lucro Bruto/Margem Líquida e as % correspondentes).
+    for (const col of [COL.Q_LUCRO_BRUTO, COL.R_PCT_LUCRO_BRUTO, COL.AA_MARGEM_LIQUIDA, COL.AB_PCT_MARGEM]) {
+      condFormatNegativoSobrio(ws, refColuna(col), prioridade++);
+    }
+
+    // DataBar nativa na coluna Margem Líquida (AA).
+    condFormatDataBar(ws, refColuna(COL.AA_MARGEM_LIQUIDA), prioridade++, COR_DATABAR_MARGEM);
   }
 }

@@ -1,87 +1,394 @@
 /**
- * VENDAS USADOS MATRIZ — aba 3 (RESUMO): pivot manual.
+ * VENDAS USADOS MATRIZ — aba 3 (RESUMO): 4 blocos empilhados, cada um um pivot manual.
  *
- * As categorias (lojas de origem e vendedores) são calculadas em JS a partir das
- * linhas da aba 1, mas cada contagem em si é uma fórmula COUNTIF/COUNTIFS de
+ * As categorias (lojas, faixas de dias, canal de vendas, vendedores) são calculadas em JS
+ * a partir das linhas da aba 1, mas cada contagem em si é uma fórmula COUNTIF/COUNTIFS de
  * verdade apontando pra aba 1 — nunca um número pré-calculado escrito direto.
+ *
+ * Decisões de "critério do autor" tomadas aqui (documentadas no handoff):
+ * - Bloco B (dias de estoque) EXCLUI as linhas Auto Avaliar (venda de leilão não tem
+ *   "tempo de pátio" com o mesmo sentido de uma venda normal) — a % de cada faixa é sobre
+ *   o universo reduzido (só linhas não-Auto-Avaliar), não sobre as 82 totais.
+ * - Blocos A, C e D usam como denominador da % o total de 82 linhas (COUNTA da aba 1) —
+ *   incluindo Auto Avaliar como uma categoria própria nesses três.
+ *
+ * Estilo: cada um dos 4 blocos é tratado como banner nível 1 (navy, sem sub-blocos
+ * aninhados) — mesmo tom usado no bloco "VENDIDO TOTAL" da aba MARGENS.
  */
 
 import type ExcelJS from "exceljs";
 import type { LinhaVendaMatriz } from "./tipos";
-import { COL, DATA_START_ROW, FMT_PERCENT, colLetter, escaparAspasFormula, rangeEntreAbas } from "./colunas";
+import { isAutoAvaliar, CRITERIO_AUTO_AVALIAR, CRITERIO_NAO_AUTO_AVALIAR } from "./tipos";
+import { COL, DATA_START_ROW, FMT_PERCENT, escaparAspasFormula, rangeEntreAbas } from "./colunas";
+import {
+  FONT_DADO, FONT_HEADER_COLUNA, FONT_BANNER_N1, ALTURA_BANNER_N1,
+  COR_BANNER_N1_BG, COR_HEADER_TABELA_BG, COR_TEXTO_DADO, COR_LOJISTA_BG, COR_LOJISTA_FG, COR_CLIENTE_BG, COR_CLIENTE_FG,
+  aplicarBordaBloco, comVerticalMiddle,
+} from "./estilo";
 
-const COLOR_HEADER_BG = "FFF3F4F6";
-const COLOR_TITLE_BG = "FFE5E7EB";
+const LABEL_COL = COL.C_LOJA_ORIGEM;
+const QT_COL = COL.D_DESCRICAO;
+const PCT_COL = COL.E_COR;
+const LOJISTA_COL = COL.F_MARCA;
+const LOJISTA_PCT_COL = COL.G_PLACA;
 
-function bold(cell: ExcelJS.Cell): void {
-  cell.font = { bold: true };
+function fonteHeaderNegrito(cell: ExcelJS.Cell): void {
+  cell.font = FONT_HEADER_COLUNA;
 }
 
-export function renderAbaResumo(ws: ExcelJS.Worksheet, nomeAba1: string, linhasAba1: LinhaVendaMatriz[]): void {
-  ws.getColumn(COL.B_SEQ).width = 2;
-  ws.getColumn(COL.C_LOJA_ORIGEM).width = 32;
-  ws.getColumn(COL.D_DESCRICAO).width = 12;
-  ws.getColumn(COL.E_COR).width = 10;
+export type AbaResumoOpts = {
+  nomeAba1: string;
+  linhasAba1: LinhaVendaMatriz[];
+  /** Nome do mês por extenso (ex: "AGOSTO") — pro título do bloco A. */
+  nomeMes: string;
+};
 
-  const ultimaLinhaAba1 = DATA_START_ROW + linhasAba1.length - 1;
+export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): void {
+  const { nomeAba1, linhasAba1, nomeMes } = opts;
+
+  ws.getColumn(COL.B_SEQ).width = 2;
+  ws.getColumn(COL.B_SEQ).font = FONT_DADO;
+  ws.getColumn(LABEL_COL).width = 32;
+  ws.getColumn(LABEL_COL).font = FONT_DADO;
+  ws.getColumn(QT_COL).width = 12;
+  ws.getColumn(QT_COL).font = FONT_DADO;
+  ws.getColumn(PCT_COL).width = 10;
+  ws.getColumn(PCT_COL).font = FONT_DADO;
+  ws.getColumn(LOJISTA_COL).width = 12;
+  ws.getColumn(LOJISTA_COL).font = FONT_DADO;
+  ws.getColumn(LOJISTA_PCT_COL).width = 10;
+  ws.getColumn(LOJISTA_PCT_COL).font = FONT_DADO;
+
+  const ultimaLinhaAba1 = Math.max(DATA_START_ROW, DATA_START_ROW + linhasAba1.length - 1);
   const totalLinhas = linhasAba1.length;
 
-  const LABEL_COL = COL.C_LOJA_ORIGEM;
-  const QT_COL = COL.D_DESCRICAO;
-  const PCT_COL = COL.E_COR;
+  const rangeCol = (col: number): string => rangeEntreAbas(nomeAba1, col, DATA_START_ROW, ultimaLinhaAba1);
+  const rangeLoja = rangeCol(COL.C_LOJA_ORIGEM);
+  const rangeVendedor = rangeCol(COL.AG_VENDEDOR);
+  const rangeLojista = rangeCol(COL.AF_LOJISTA);
+  const rangeDias = rangeCol(COL.J_DIAS);
+  const rangePlaca = rangeCol(COL.G_PLACA);
+  const totalFormula = `COUNTA(${rangePlaca})`;
 
   let r = 2;
 
-  const renderBloco = (
-    titulo: string,
-    categorias: string[],
-    colunaFonte: number,
-  ): void => {
-    ws.mergeCells(r, LABEL_COL, r, PCT_COL);
+  const escreverBanner = (titulo: string, ultimaColBanner: number): void => {
+    ws.mergeCells(r, LABEL_COL, r, ultimaColBanner);
     const tituloCell = ws.getCell(r, LABEL_COL);
     tituloCell.value = titulo;
-    tituloCell.font = { bold: true, size: 12 };
-    tituloCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_TITLE_BG } };
+    tituloCell.font = FONT_BANNER_N1;
+    tituloCell.alignment = { horizontal: "center", vertical: "middle" };
+    tituloCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COR_BANNER_N1_BG } };
+    ws.getRow(r).height = ALTURA_BANNER_N1;
     r++;
-
-    const headerRow = ws.getRow(r);
-    headerRow.getCell(LABEL_COL).value = "Categoria";
-    headerRow.getCell(QT_COL).value = "Qtde";
-    headerRow.getCell(PCT_COL).value = "%";
-    for (const c of [LABEL_COL, QT_COL, PCT_COL]) {
-      bold(headerRow.getCell(c));
-      headerRow.getCell(c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_HEADER_BG } };
-    }
-    r++;
-
-    const rangeFonte = rangeEntreAbas(nomeAba1, colunaFonte, DATA_START_ROW, ultimaLinhaAba1);
-
-    for (const categoria of categorias) {
-      const row = ws.getRow(r);
-      row.getCell(LABEL_COL).value = categoria;
-
-      const qtdCell = row.getCell(QT_COL);
-      const criterio = escaparAspasFormula(categoria);
-      const count = linhasAba1.filter((l) =>
-        colunaFonte === COL.C_LOJA_ORIGEM ? l.lojaOrigemNome === categoria : (l.vendedorNome ?? "") === categoria,
-      ).length;
-      qtdCell.value = { formula: `COUNTIF(${rangeFonte},"${criterio}")`, result: count };
-
-      const pctCell = row.getCell(PCT_COL);
-      pctCell.value = {
-        formula: `IFERROR(${colLetter(QT_COL)}${r}/COUNTA(${rangeFonte}),"")`,
-        result: totalLinhas > 0 ? count / totalLinhas : "",
-      };
-      pctCell.numFmt = FMT_PERCENT;
-
-      r++;
-    }
-    r += 2; // linha em branco antes do próximo bloco
   };
 
-  const lojas = [...new Set(linhasAba1.map((l) => l.lojaOrigemNome).filter((n) => n.length > 0))].sort();
-  const vendedores = [...new Set(linhasAba1.map((l) => l.vendedorNome ?? "").filter((n) => n.length > 0))].sort();
+  const escreverHeader = (colunas: { col: number; label: string }[]): void => {
+    const headerRow = ws.getRow(r);
+    for (const { col, label } of colunas) {
+      const cell = headerRow.getCell(col);
+      cell.value = label;
+      fonteHeaderNegrito(cell);
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COR_HEADER_TABELA_BG } };
+      cell.alignment = { vertical: "middle" };
+    }
+    r++;
+  };
 
-  renderBloco("VENDAS POR LOJA DE ORIGEM", lojas, COL.C_LOJA_ORIGEM);
-  renderBloco("VENDAS POR VENDEDOR", vendedores, COL.AG_VENDEDOR);
+  /** Escreve uma linha "categoria | qtde (fórmula) | % (fórmula)" — usado nos blocos A/B/C. Retorna a linha escrita. */
+  const escreverLinhaContagem = (
+    label: string,
+    formulaQtde: string,
+    countResult: number,
+    formulaDenominador: string,
+    denominadorResult: number,
+  ): number => {
+    const row = ws.getRow(r);
+    const labelCell = row.getCell(LABEL_COL);
+    labelCell.value = label;
+    comVerticalMiddle(labelCell);
+
+    const qtdCell = row.getCell(QT_COL);
+    qtdCell.value = { formula: formulaQtde, result: countResult };
+    comVerticalMiddle(qtdCell);
+
+    const pctCell = row.getCell(PCT_COL);
+    pctCell.value = {
+      formula: `IFERROR(${qtdCell.address}/${formulaDenominador},"")`,
+      result: denominadorResult > 0 ? countResult / denominadorResult : "",
+    };
+    pctCell.numFmt = FMT_PERCENT;
+    comVerticalMiddle(pctCell);
+
+    const linhaAtual = r;
+    r++;
+    return linhaAtual;
+  };
+
+  const escreverLinhaTotal = (formulaQtde: string, result: number): number => {
+    const row = ws.getRow(r);
+    const labelCell = row.getCell(LABEL_COL);
+    labelCell.value = "TOTAL";
+    labelCell.font = { name: FONT_DADO.name, bold: true, size: FONT_DADO.size, color: { argb: COR_TEXTO_DADO } };
+    comVerticalMiddle(labelCell);
+    const qtdCell = row.getCell(QT_COL);
+    qtdCell.value = { formula: formulaQtde, result };
+    qtdCell.font = { name: FONT_DADO.name, bold: true, size: FONT_DADO.size, color: { argb: COR_TEXTO_DADO } };
+    comVerticalMiddle(qtdCell);
+    const pctCell = row.getCell(PCT_COL);
+    pctCell.value = 1;
+    pctCell.numFmt = FMT_PERCENT;
+    pctCell.font = { name: FONT_DADO.name, bold: true, size: FONT_DADO.size, color: { argb: COR_TEXTO_DADO } };
+    comVerticalMiddle(pctCell);
+    const linhaAtual = r;
+    r++;
+    r += 2; // 2 linhas em branco antes do próximo bloco
+    return linhaAtual;
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Bloco A — VENDAS POR PÁTIO (loja de origem) + AUTO AVALIAR à parte
+  // ═══════════════════════════════════════════════════════════════════════
+  const linhaIniA = r;
+  {
+    escreverBanner(`VENDAS EM ${nomeMes} NAVESA AEROPORTO (POR PÁTIO)`, PCT_COL);
+    escreverHeader([
+      { col: LABEL_COL, label: "Pátio" },
+      { col: QT_COL, label: "Qtde" },
+      { col: PCT_COL, label: "%" },
+    ]);
+
+    const semAutoAvaliar = linhasAba1.filter((l) => !isAutoAvaliar(l));
+    const lojas = [...new Set(semAutoAvaliar.map((l) => l.lojaOrigemNome).filter((n) => n.length > 0))].sort();
+
+    for (const nomeLoja of lojas) {
+      const count = semAutoAvaliar.filter((l) => l.lojaOrigemNome === nomeLoja).length;
+      const criterio = escaparAspasFormula(nomeLoja);
+      escreverLinhaContagem(
+        nomeLoja,
+        `COUNTIFS(${rangeLoja},"${criterio}",${rangeVendedor},"${CRITERIO_NAO_AUTO_AVALIAR}")`,
+        count,
+        totalFormula,
+        totalLinhas,
+      );
+    }
+
+    const countAutoAvaliar = linhasAba1.filter(isAutoAvaliar).length;
+    escreverLinhaContagem(
+      "AUTO AVALIAR",
+      `COUNTIF(${rangeVendedor},"${CRITERIO_AUTO_AVALIAR}")`,
+      countAutoAvaliar,
+      totalFormula,
+      totalLinhas,
+    );
+
+    const linhaTotalA = escreverLinhaTotal(totalFormula, totalLinhas);
+    aplicarBordaBloco(ws, linhaIniA, linhaTotalA, LABEL_COL, PCT_COL);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Bloco B — VENDAS POR DIAS DE ESTOQUE (exclui Auto Avaliar; % sobre o universo reduzido)
+  // ═══════════════════════════════════════════════════════════════════════
+  const linhaIniB = r;
+  {
+    escreverBanner("VENDAS POR DIAS DE ESTOQUE", PCT_COL);
+    escreverHeader([
+      { col: LABEL_COL, label: "Faixa" },
+      { col: QT_COL, label: "Qtde" },
+      { col: PCT_COL, label: "%" },
+    ]);
+
+    const semAutoAvaliar = linhasAba1.filter((l) => !isAutoAvaliar(l) && l.diasEstoque != null);
+    const totalSemAuto = semAutoAvaliar.length;
+    // Denominador precisa excluir linhas sem Dias preenchido (critério "<>") — senão os
+    // numeradores das 3 faixas (que só contam linhas com diasEstoque != null) somam menos
+    // de 100% do denominador quando o Excel recalcula.
+    const denominadorFormula = `COUNTIFS(${rangeVendedor},"${CRITERIO_NAO_AUTO_AVALIAR}",${rangeDias},"<>")`;
+
+    const faixas: { label: string; min: number; max: number | null }[] = [
+      { label: "0-30 dias", min: 0, max: 30 },
+      { label: "31-60 dias", min: 31, max: 60 },
+      { label: "61+ dias", min: 61, max: null },
+    ];
+
+    let linhaFimB = r;
+    for (const faixa of faixas) {
+      const count = semAutoAvaliar.filter(
+        (l) => l.diasEstoque! >= faixa.min && (faixa.max === null || l.diasEstoque! <= faixa.max),
+      ).length;
+      const criteriosDias =
+        faixa.max === null
+          ? `${rangeDias},">=${faixa.min}"`
+          : `${rangeDias},">=${faixa.min}",${rangeDias},"<=${faixa.max}"`;
+      linhaFimB = escreverLinhaContagem(
+        faixa.label,
+        `COUNTIFS(${rangeVendedor},"${CRITERIO_NAO_AUTO_AVALIAR}",${criteriosDias})`,
+        count,
+        denominadorFormula,
+        totalSemAuto,
+      );
+    }
+    aplicarBordaBloco(ws, linhaIniB, linhaFimB, LABEL_COL, PCT_COL);
+  }
+  r += 2;
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Bloco C — VENDAS POR CANAL DE VENDAS (CLIENTE FINAL / LOJISTA / NÃO INFORMADO / AUTO AVALIAR)
+  // ═══════════════════════════════════════════════════════════════════════
+  const linhaIniC = r;
+  {
+    escreverBanner("VENDAS POR CANAL DE VENDAS", PCT_COL);
+    escreverHeader([
+      { col: LABEL_COL, label: "Canal" },
+      { col: QT_COL, label: "Qtde" },
+      { col: PCT_COL, label: "%" },
+    ]);
+
+    const countClienteFinal = linhasAba1.filter((l) => l.lojista === false && !isAutoAvaliar(l)).length;
+    const countLojista = linhasAba1.filter((l) => l.lojista === true && !isAutoAvaliar(l)).length;
+    // `lojista === null` (tipo de cliente desconhecido, não é Auto Avaliar) precisa de
+    // categoria própria — senão essas linhas não caem em CLIENTE FINAL (AF="NÃO") nem em
+    // LOJISTA (AF="SIM") e o bloco não fecha 100% do total.
+    const countNaoInformado = linhasAba1.filter((l) => l.lojista === null && !isAutoAvaliar(l)).length;
+    const countAutoAvaliar = linhasAba1.filter(isAutoAvaliar).length;
+
+    // Par "lojista × cliente final" — único lugar do relatório onde as duas categorias
+    // aparecem lado a lado como linhas de uma mesma tabela, então é aqui que a Uma
+    // pediu pra usar o par de cor dedicado (só no rótulo, pra não brigar com o número).
+    const linhaClienteFinal = escreverLinhaContagem(
+      "CLIENTE FINAL",
+      `COUNTIFS(${rangeLojista},"NÃO",${rangeVendedor},"${CRITERIO_NAO_AUTO_AVALIAR}")`,
+      countClienteFinal,
+      totalFormula,
+      totalLinhas,
+    );
+    const clienteLabelCell = ws.getCell(linhaClienteFinal, LABEL_COL);
+    clienteLabelCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COR_CLIENTE_BG } };
+    clienteLabelCell.font = { name: FONT_DADO.name, bold: true, size: FONT_DADO.size, color: { argb: COR_CLIENTE_FG } };
+
+    const linhaLojista = escreverLinhaContagem(
+      "LOJISTA",
+      `COUNTIFS(${rangeLojista},"SIM",${rangeVendedor},"${CRITERIO_NAO_AUTO_AVALIAR}")`,
+      countLojista,
+      totalFormula,
+      totalLinhas,
+    );
+    const lojistaLabelCell = ws.getCell(linhaLojista, LABEL_COL);
+    lojistaLabelCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COR_LOJISTA_BG } };
+    lojistaLabelCell.font = { name: FONT_DADO.name, bold: true, size: FONT_DADO.size, color: { argb: COR_LOJISTA_FG } };
+
+    escreverLinhaContagem(
+      "NÃO INFORMADO",
+      `COUNTIFS(${rangeLojista},"",${rangeVendedor},"${CRITERIO_NAO_AUTO_AVALIAR}")`,
+      countNaoInformado,
+      totalFormula,
+      totalLinhas,
+    );
+    escreverLinhaContagem(
+      "AUTO AVALIAR",
+      `COUNTIF(${rangeVendedor},"${CRITERIO_AUTO_AVALIAR}")`,
+      countAutoAvaliar,
+      totalFormula,
+      totalLinhas,
+    );
+
+    const linhaTotalC = escreverLinhaTotal(totalFormula, totalLinhas);
+    aplicarBordaBloco(ws, linhaIniC, linhaTotalC, LABEL_COL, PCT_COL);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Bloco D — VENDAS POR VENDEDOR (+ coluna Lojista) — MOZAINEL vira "AUTO AVALIAR"
+  // ═══════════════════════════════════════════════════════════════════════
+  const linhaIniD = r;
+  {
+    escreverBanner("VENDAS POR VENDEDOR", LOJISTA_PCT_COL);
+    escreverHeader([
+      { col: LABEL_COL, label: "Vendedor" },
+      { col: QT_COL, label: "Qtde" },
+      { col: PCT_COL, label: "%" },
+      { col: LOJISTA_COL, label: "Lojista" },
+      { col: LOJISTA_PCT_COL, label: "%" },
+    ]);
+
+    const semAutoAvaliar = linhasAba1.filter((l) => !isAutoAvaliar(l));
+    const vendedores = [...new Set(semAutoAvaliar.map((l) => l.vendedorNome ?? "").filter((n) => n.length > 0))].sort();
+
+    const escreverLinhaVendedor = (label: string, criterioVendedorFormula: string, qtde: number, lojistaQtde: number): void => {
+      const row = ws.getRow(r);
+      const labelCell = row.getCell(LABEL_COL);
+      labelCell.value = label;
+      comVerticalMiddle(labelCell);
+
+      const qtdCell = row.getCell(QT_COL);
+      qtdCell.value = { formula: criterioVendedorFormula, result: qtde };
+      comVerticalMiddle(qtdCell);
+
+      const pctCell = row.getCell(PCT_COL);
+      pctCell.value = { formula: `IFERROR(${qtdCell.address}/${totalFormula},"")`, result: totalLinhas > 0 ? qtde / totalLinhas : "" };
+      pctCell.numFmt = FMT_PERCENT;
+      comVerticalMiddle(pctCell);
+
+      const lojistaCell = row.getCell(LOJISTA_COL);
+      const criterioLojistaFormula =
+        label === "AUTO AVALIAR"
+          ? `COUNTIFS(${rangeVendedor},"${CRITERIO_AUTO_AVALIAR}",${rangeLojista},"SIM")`
+          : `COUNTIFS(${rangeVendedor},"${escaparAspasFormula(label)}",${rangeLojista},"SIM")`;
+      lojistaCell.value = { formula: criterioLojistaFormula, result: lojistaQtde };
+      comVerticalMiddle(lojistaCell);
+
+      const lojistaPctCell = row.getCell(LOJISTA_PCT_COL);
+      lojistaPctCell.value = { formula: `IFERROR(${lojistaCell.address}/${qtdCell.address},"")`, result: qtde > 0 ? lojistaQtde / qtde : "" };
+      lojistaPctCell.numFmt = FMT_PERCENT;
+      comVerticalMiddle(lojistaPctCell);
+
+      r++;
+    };
+
+    for (const vendedor of vendedores) {
+      const linhasVendedor = semAutoAvaliar.filter((l) => (l.vendedorNome ?? "") === vendedor);
+      const qtde = linhasVendedor.length;
+      const lojistaQtde = linhasVendedor.filter((l) => l.lojista === true).length;
+      escreverLinhaVendedor(
+        vendedor,
+        `COUNTIF(${rangeVendedor},"${escaparAspasFormula(vendedor)}")`,
+        qtde,
+        lojistaQtde,
+      );
+    }
+
+    const linhasAutoAvaliar = linhasAba1.filter(isAutoAvaliar);
+    const qtdeAuto = linhasAutoAvaliar.length;
+    const lojistaAuto = linhasAutoAvaliar.filter((l) => l.lojista === true).length;
+    escreverLinhaVendedor("AUTO AVALIAR", `COUNTIF(${rangeVendedor},"${CRITERIO_AUTO_AVALIAR}")`, qtdeAuto, lojistaAuto);
+
+    // TOTAL — Qtde = todas as 82, Lojista = total lojista entre todas, % = lojista/qtde.
+    const totalLojista = linhasAba1.filter((l) => l.lojista === true).length;
+    const row = ws.getRow(r);
+    const labelCell = row.getCell(LABEL_COL);
+    labelCell.value = "TOTAL";
+    labelCell.font = { name: FONT_DADO.name, bold: true, size: FONT_DADO.size, color: { argb: COR_TEXTO_DADO } };
+    comVerticalMiddle(labelCell);
+    const qtdCell = row.getCell(QT_COL);
+    qtdCell.value = { formula: totalFormula, result: totalLinhas };
+    qtdCell.font = { name: FONT_DADO.name, bold: true, size: FONT_DADO.size, color: { argb: COR_TEXTO_DADO } };
+    comVerticalMiddle(qtdCell);
+    const pctCell = row.getCell(PCT_COL);
+    pctCell.value = 1;
+    pctCell.numFmt = FMT_PERCENT;
+    pctCell.font = { name: FONT_DADO.name, bold: true, size: FONT_DADO.size, color: { argb: COR_TEXTO_DADO } };
+    comVerticalMiddle(pctCell);
+    const lojistaCell = row.getCell(LOJISTA_COL);
+    lojistaCell.value = { formula: `COUNTIF(${rangeLojista},"SIM")`, result: totalLojista };
+    lojistaCell.font = { name: FONT_DADO.name, bold: true, size: FONT_DADO.size, color: { argb: COR_TEXTO_DADO } };
+    comVerticalMiddle(lojistaCell);
+    const lojistaPctCell = row.getCell(LOJISTA_PCT_COL);
+    lojistaPctCell.value = { formula: `IFERROR(${lojistaCell.address}/${qtdCell.address},"")`, result: totalLinhas > 0 ? totalLojista / totalLinhas : "" };
+    lojistaPctCell.numFmt = FMT_PERCENT;
+    lojistaPctCell.font = { name: FONT_DADO.name, bold: true, size: FONT_DADO.size, color: { argb: COR_TEXTO_DADO } };
+    comVerticalMiddle(lojistaPctCell);
+    const linhaTotalD = r;
+    r++;
+
+    aplicarBordaBloco(ws, linhaIniD, linhaTotalD, LABEL_COL, LOJISTA_PCT_COL);
+  }
 }
