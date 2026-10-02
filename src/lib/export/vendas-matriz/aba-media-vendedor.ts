@@ -6,11 +6,12 @@
 import type ExcelJS from "exceljs";
 import { MEDIA_VENDEDOR_2025, MEDIA_VENDEDOR_2025_TOTAL } from "./dados-estaticos-2025";
 import { FMT_INT, colLetter } from "./colunas";
-import { FONT_DADO, FONT_HEADER_COLUNA, COR_HEADER_TABELA_BG, COR_ZEBRA_BG, COR_TEXTO_DADO, comVerticalMiddle } from "./estilo";
+import { FONT_DADO, FONT_HEADER_NAVY, COR_BANNER_N1_BG, aplicarFundoTotal, comVerticalMiddle } from "./estilo";
 import { FUSO_BRASILIA } from "@/lib/utils/data-local";
 
-const COLOR_HEADER_BG = COR_HEADER_TABELA_BG;
-const COLOR_TOTAL_BG = COR_ZEBRA_BG;
+// Header e linha TOTAL navy + texto branco (igual ao banner de bloco) — bate com o
+// relatório original (26.png/27.png de referência), não o cinza-claro anterior.
+const COLOR_HEADER_BG = COR_BANNER_N1_BG;
 
 /**
  * Mês (1-12) de uma data no calendário de Brasília — nunca `d.getMonth()` cru, que lê
@@ -39,7 +40,7 @@ export function renderAbaMediaVendedor2025(ws: ExcelJS.Worksheet): void {
   header.getCell(4).value = "MÉDIA";
   for (const c of [2, 3, 4]) {
     const cell = header.getCell(c);
-    cell.font = FONT_HEADER_COLUNA;
+    cell.font = FONT_HEADER_NAVY;
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_HEADER_BG } };
     comVerticalMiddle(cell);
   }
@@ -62,8 +63,7 @@ export function renderAbaMediaVendedor2025(ws: ExcelJS.Worksheet): void {
   totalRow.getCell(4).value = MEDIA_VENDEDOR_2025_TOTAL.media;
   for (const c of [2, 3, 4]) {
     const cell = totalRow.getCell(c);
-    cell.font = { name: FONT_DADO.name, bold: true, size: FONT_DADO.size, color: { argb: COR_TEXTO_DADO } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_TOTAL_BG } };
+    aplicarFundoTotal(cell);
     comVerticalMiddle(cell);
   }
 }
@@ -123,7 +123,7 @@ export function renderAbaMediaVendedorAtual(
   header.getCell(COL_MEDIA).value = "MÉDIA";
   for (let c = COL_VENDEDOR; c <= COL_MEDIA; c++) {
     const cell = header.getCell(c);
-    cell.font = FONT_HEADER_COLUNA;
+    cell.font = FONT_HEADER_NAVY;
     cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_HEADER_BG } };
     comVerticalMiddle(cell);
   }
@@ -181,8 +181,7 @@ export function renderAbaMediaVendedorAtual(
   };
   for (let c = COL_VENDEDOR; c <= COL_MEDIA; c++) {
     const cell = totalRow.getCell(c);
-    cell.font = { name: FONT_DADO.name, bold: true, size: FONT_DADO.size, color: { argb: COR_TEXTO_DADO } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_TOTAL_BG } };
+    aplicarFundoTotal(cell);
     comVerticalMiddle(cell);
   }
 }

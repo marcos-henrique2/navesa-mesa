@@ -22,8 +22,8 @@ import { isAutoAvaliar, CRITERIO_AUTO_AVALIAR, CRITERIO_NAO_AUTO_AVALIAR } from 
 import { COL, DATA_START_ROW, FMT_PERCENT, escaparAspasFormula, rangeEntreAbas } from "./colunas";
 import {
   FONT_DADO, FONT_HEADER_COLUNA, FONT_BANNER_N1, ALTURA_BANNER_N1,
-  COR_BANNER_N1_BG, COR_HEADER_TABELA_BG, COR_TEXTO_DADO, COR_LOJISTA_BG, COR_LOJISTA_FG, COR_CLIENTE_BG, COR_CLIENTE_FG,
-  aplicarBordaBloco, comVerticalMiddle,
+  COR_BANNER_N1_BG, COR_HEADER_TABELA_BG,
+  aplicarBordaBloco, aplicarFundoTotal, comVerticalMiddle,
 } from "./estilo";
 
 const LABEL_COL = COL.C_LOJA_ORIGEM;
@@ -129,16 +129,16 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
     const row = ws.getRow(r);
     const labelCell = row.getCell(LABEL_COL);
     labelCell.value = "TOTAL";
-    labelCell.font = { name: FONT_DADO.name, bold: true, size: FONT_DADO.size, color: { argb: COR_TEXTO_DADO } };
+    aplicarFundoTotal(labelCell);
     comVerticalMiddle(labelCell);
     const qtdCell = row.getCell(QT_COL);
     qtdCell.value = { formula: formulaQtde, result };
-    qtdCell.font = { name: FONT_DADO.name, bold: true, size: FONT_DADO.size, color: { argb: COR_TEXTO_DADO } };
+    aplicarFundoTotal(qtdCell);
     comVerticalMiddle(qtdCell);
     const pctCell = row.getCell(PCT_COL);
     pctCell.value = 1;
     pctCell.numFmt = FMT_PERCENT;
-    pctCell.font = { name: FONT_DADO.name, bold: true, size: FONT_DADO.size, color: { argb: COR_TEXTO_DADO } };
+    aplicarFundoTotal(pctCell);
     comVerticalMiddle(pctCell);
     const linhaAtual = r;
     r++;
@@ -252,30 +252,24 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
     const countNaoInformado = linhasAba1.filter((l) => l.lojista === null && !isAutoAvaliar(l)).length;
     const countAutoAvaliar = linhasAba1.filter(isAutoAvaliar).length;
 
-    // Par "lojista × cliente final" — único lugar do relatório onde as duas categorias
-    // aparecem lado a lado como linhas de uma mesma tabela, então é aqui que a Uma
-    // pediu pra usar o par de cor dedicado (só no rótulo, pra não brigar com o número).
-    const linhaClienteFinal = escreverLinhaContagem(
+    // Cliente final / Lojista — linhas normais, sem destaque de cor no rótulo (o
+    // relatório original do Marcos não colore essas duas linhas; só o header navy do
+    // bloco e o TOTAL final se destacam, como em todos os outros blocos do RESUMO).
+    escreverLinhaContagem(
       "CLIENTE FINAL",
       `COUNTIFS(${rangeLojista},"NÃO",${rangeVendedor},"${CRITERIO_NAO_AUTO_AVALIAR}")`,
       countClienteFinal,
       totalFormula,
       totalLinhas,
     );
-    const clienteLabelCell = ws.getCell(linhaClienteFinal, LABEL_COL);
-    clienteLabelCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COR_CLIENTE_BG } };
-    clienteLabelCell.font = { name: FONT_DADO.name, bold: true, size: FONT_DADO.size, color: { argb: COR_CLIENTE_FG } };
 
-    const linhaLojista = escreverLinhaContagem(
+    escreverLinhaContagem(
       "LOJISTA",
       `COUNTIFS(${rangeLojista},"SIM",${rangeVendedor},"${CRITERIO_NAO_AUTO_AVALIAR}")`,
       countLojista,
       totalFormula,
       totalLinhas,
     );
-    const lojistaLabelCell = ws.getCell(linhaLojista, LABEL_COL);
-    lojistaLabelCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COR_LOJISTA_BG } };
-    lojistaLabelCell.font = { name: FONT_DADO.name, bold: true, size: FONT_DADO.size, color: { argb: COR_LOJISTA_FG } };
 
     escreverLinhaContagem(
       "NÃO INFORMADO",
@@ -366,25 +360,25 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
     const row = ws.getRow(r);
     const labelCell = row.getCell(LABEL_COL);
     labelCell.value = "TOTAL";
-    labelCell.font = { name: FONT_DADO.name, bold: true, size: FONT_DADO.size, color: { argb: COR_TEXTO_DADO } };
+    aplicarFundoTotal(labelCell);
     comVerticalMiddle(labelCell);
     const qtdCell = row.getCell(QT_COL);
     qtdCell.value = { formula: totalFormula, result: totalLinhas };
-    qtdCell.font = { name: FONT_DADO.name, bold: true, size: FONT_DADO.size, color: { argb: COR_TEXTO_DADO } };
+    aplicarFundoTotal(qtdCell);
     comVerticalMiddle(qtdCell);
     const pctCell = row.getCell(PCT_COL);
     pctCell.value = 1;
     pctCell.numFmt = FMT_PERCENT;
-    pctCell.font = { name: FONT_DADO.name, bold: true, size: FONT_DADO.size, color: { argb: COR_TEXTO_DADO } };
+    aplicarFundoTotal(pctCell);
     comVerticalMiddle(pctCell);
     const lojistaCell = row.getCell(LOJISTA_COL);
     lojistaCell.value = { formula: `COUNTIF(${rangeLojista},"SIM")`, result: totalLojista };
-    lojistaCell.font = { name: FONT_DADO.name, bold: true, size: FONT_DADO.size, color: { argb: COR_TEXTO_DADO } };
+    aplicarFundoTotal(lojistaCell);
     comVerticalMiddle(lojistaCell);
     const lojistaPctCell = row.getCell(LOJISTA_PCT_COL);
     lojistaPctCell.value = { formula: `IFERROR(${lojistaCell.address}/${qtdCell.address},"")`, result: totalLinhas > 0 ? totalLojista / totalLinhas : "" };
     lojistaPctCell.numFmt = FMT_PERCENT;
-    lojistaPctCell.font = { name: FONT_DADO.name, bold: true, size: FONT_DADO.size, color: { argb: COR_TEXTO_DADO } };
+    aplicarFundoTotal(lojistaPctCell);
     comVerticalMiddle(lojistaPctCell);
     const linhaTotalD = r;
     r++;

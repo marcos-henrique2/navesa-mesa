@@ -11,9 +11,9 @@ import {
   FMT_MONEY, FMT_PERCENT, FMT_INT, colLetter,
 } from "./colunas";
 import {
-  FONT_DADO, FONT_HEADER_COLUNA, FONT_NOTA, COR_HEADER_TABELA_BG, COR_DATABAR_MARGEM,
+  FONT_DADO, FONT_HEADER_DETALHE, FONT_NOTA, COR_HEADER_DETALHE_BG, COR_DATABAR_MARGEM,
   bordaInferiorFina, bordaInferiorMedia, aplicarBordaBloco, aplicarZebra, comVerticalMiddle,
-  condFormatNegativoSobrio, condFormatDataBar,
+  condFormatNegativo, condFormatDataBar,
 } from "./estilo";
 
 /**
@@ -37,9 +37,9 @@ export function renderAbaDetalhe(ws: ExcelJS.Worksheet, titulo: string, linhas: 
     const colNum = Number(colNumStr);
     const cell = row2.getCell(colNum);
     cell.value = label;
-    cell.font = FONT_HEADER_COLUNA;
+    cell.font = FONT_HEADER_DETALHE;
     cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COR_HEADER_TABELA_BG } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COR_HEADER_DETALHE_BG } };
     cell.border = bordaInferiorMedia();
   }
 
@@ -168,7 +168,7 @@ export function renderAbaDetalhe(ws: ExcelJS.Worksheet, titulo: string, linhas: 
 
     // Formatação numérica + alinhamento em toda a linha. Q/AA (Lucro Bruto/Margem
     // Líquida) e R/AB (as % correspondentes) usam o MESMO numFmt das demais — o
-    // vermelho sóbrio de negativo agora é conditional formatting (aplicado uma vez,
+    // vermelho de negativo é conditional formatting (aplicado uma vez,
     // pro range inteiro da coluna, depois do loop), não mais seção `[Red]` do numFmt.
     const moneyCols = [
       COL.K_NF_ENTRADA, COL.L_VALORIZA, COL.M_CUSTO_REAL, COL.N_VALOR_FIPE, COL.O_VALOR_VENDA,
@@ -225,9 +225,9 @@ export function renderAbaDetalhe(ws: ExcelJS.Worksheet, titulo: string, linhas: 
       return `${letra}${DATA_START_ROW}:${letra}${ultimaLinhaDados}`;
     };
 
-    // Vermelho sóbrio de negativo (Lucro Bruto/Margem Líquida e as % correspondentes).
+    // Vermelho de negativo (Lucro Bruto/Margem Líquida e as % correspondentes).
     for (const col of [COL.Q_LUCRO_BRUTO, COL.R_PCT_LUCRO_BRUTO, COL.AA_MARGEM_LIQUIDA, COL.AB_PCT_MARGEM]) {
-      condFormatNegativoSobrio(ws, refColuna(col), prioridade++);
+      condFormatNegativo(ws, refColuna(col), prioridade++);
     }
 
     // DataBar nativa na coluna Margem Líquida (AA).

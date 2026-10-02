@@ -1,14 +1,16 @@
 /**
  * VENDAS USADOS MATRIZ — estilo visual (cores, bordas, tipografia, alturas).
  *
- * Especificação da Uma (UX), aprovada pelo Marcos: visual corporativo/profissional,
- * sem grade completa (só as bordas descritas abaixo), zebra striping nas abas 1/2 e
- * borda de bloco navy em cada bloco empilhado (MARGENS/RESUMO) e ao redor da tabela
- * inteira (abas 1/2).
+ * Paleta RESTAURADA pra bater com o relatório original feito à mão pelo Marcos (9
+ * screenshots de referência, mês a mês) — ele considerou a estilização anterior
+ * ("corporativa", header cinza-claro, verde petróleo/terracota foscos, sem destaque
+ * amarelo) desorganizada e pediu pra voltar ao visual dele: azul-marinho forte nos
+ * banners/headers/totais, verde e vermelho VIVOS por categoria (própria × outras
+ * lojas), e vermelho padrão em número negativo.
  *
  * Isso é estilo PURO — nenhuma fórmula, filtro ou valor calculado muda por causa
- * deste arquivo. Toda cor/tamanho/altura referenciado pelo handoff da Uma mora
- * aqui; nenhum hex solto deve sobrar nos 6 renderers que importam este arquivo.
+ * deste arquivo. Toda cor/tamanho/altura mora aqui; nenhum hex solto deve sobrar
+ * nos renderers que importam este arquivo.
  */
 
 import type ExcelJS from "exceljs";
@@ -19,29 +21,38 @@ export const FONTE = "Arial";
 // Paleta ARGB
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Header de tabela (linha de cabeçalho de coluna, abas 1/2 e cabeçalhos internos). */
+/** Header neutro (sub-cabeçalhos internos da aba RESUMO — "Pátio/Qtde/%" etc). */
 export const COR_HEADER_TABELA_BG = "FFDDE3EA";
 export const COR_HEADER_TABELA_FG = "FF1B2A41";
 
-/** Banner categoria nível 1 — título principal de bloco (ex: "VENDIDO TOTAL"). */
+/**
+ * Header da aba de detalhe (abas 1/2, linha de autofiltro) — azul acinzentado médio,
+ * DIFERENTE do azul-marinho dos banners/totais (ver 20.png de referência).
+ */
+export const COR_HEADER_DETALHE_BG = "FF5B7FA6";
+export const COR_HEADER_DETALHE_FG = "FFFFFFFF";
+
+/** Banner categoria nível 1 — título principal de bloco (ex: "VENDIDO TOTAL") e TOTAL geral. */
 export const COR_BANNER_N1_BG = "FF1B2A41";
 export const COR_BANNER_N1_FG = "FFFFFFFF";
 
-/** Banner categoria nível 2 — sub-bloco (ex: "SOMENTE ESTOQUE PRÓPRIO"). */
-export const COR_BANNER_N2_BG = "FF3B5470";
-export const COR_BANNER_N2_FG = "FFFFFFFF";
+/**
+ * Banner categoria nível 2 — sub-bloco (ex: "SOMENTE ESTOQUE PRÓPRIO"). No original do
+ * Marcos todo banner de bloco (nível 1 ou 2) tem o MESMO tamanho/peso — sem marcador
+ * "▪" nem fonte menor — por isso os valores aqui são idênticos aos de nível 1.
+ */
+export const COR_BANNER_N2_BG = COR_BANNER_N1_BG;
+export const COR_BANNER_N2_FG = COR_BANNER_N1_FG;
 
-/** Par "estoque próprio × repasse outra loja" — troca o verde/vermelho genérico antigo. */
-export const COR_PROPRIO_BG = "FF1E6B52";
+/**
+ * Par "estoque próprio × repasse outra loja" — verde/vermelho VIVOS (bate com
+ * MARGENS/MARGENS VENDAS LOJISTAS/MARGENS VENDAS CLIENTES nas imagens de referência;
+ * qual bloco usa qual cor depende da aba — ver nota em `gerar-workbook.ts`).
+ */
+export const COR_PROPRIO_BG = "FF1DA64A";
 export const COR_PROPRIO_FG = "FFFFFFFF";
-export const COR_REPASSE_BG = "FF8A4B18";
+export const COR_REPASSE_BG = "FFE02424";
 export const COR_REPASSE_FG = "FFFFFFFF";
-
-/** Par "lojista × cliente final". */
-export const COR_LOJISTA_BG = "FF4A5D8A";
-export const COR_LOJISTA_FG = "FFFFFFFF";
-export const COR_CLIENTE_BG = "FF7A6B47";
-export const COR_CLIENTE_FG = "FFFFFFFF";
 
 /** Zebra striping (abas 1/2) — linhas pares. */
 export const COR_ZEBRA_BG = "FFF2F4F7";
@@ -54,10 +65,10 @@ export const COR_NOTA_FG = "FF808080";
 export const COR_BORDA_FINA = "FFE2E5EA";
 export const COR_BORDA_BLOCO = "FF1B2A41";
 
-/** Vermelho sóbrio de número negativo (substitui o vermelho vivo anterior). */
-export const COR_NEGATIVO = "FFB3261E";
+/** Vermelho padrão de número negativo — igual ao relatório original (não mais um tom "sóbrio"). */
+export const COR_NEGATIVO = "FFFF0000";
 
-/** Cor da dataBar da Margem Líquida — combina com o par próprio×repasse. */
+/** Cor da dataBar da Margem Líquida — combina com o verde de "estoque próprio". */
 export const COR_DATABAR_MARGEM = COR_PROPRIO_BG;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -66,8 +77,12 @@ export const COR_DATABAR_MARGEM = COR_PROPRIO_BG;
 
 export const FONT_DADO = { name: FONTE, size: 10, color: { argb: COR_TEXTO_DADO } } as const;
 export const FONT_HEADER_COLUNA = { name: FONTE, bold: true, size: 10, color: { argb: COR_HEADER_TABELA_FG } } as const;
+export const FONT_HEADER_DETALHE = { name: FONTE, bold: true, size: 10, color: { argb: COR_HEADER_DETALHE_FG } } as const;
+/** Header navy + texto branco (aba MÉDIA VENDEDOR) — mesmo navy do banner, tamanho de header de coluna. */
+export const FONT_HEADER_NAVY = { name: FONTE, bold: true, size: 10, color: { argb: COR_BANNER_N1_FG } } as const;
 export const FONT_BANNER_N1 = { name: FONTE, bold: true, size: 13, color: { argb: COR_BANNER_N1_FG } } as const;
-export const FONT_BANNER_N2 = { name: FONTE, bold: true, size: 11, color: { argb: COR_BANNER_N2_FG } } as const;
+/** Mesmo tamanho de nível 1 — o original não distingue banner de bloco × sub-bloco. */
+export const FONT_BANNER_N2 = { name: FONTE, bold: true, size: 13, color: { argb: COR_BANNER_N2_FG } } as const;
 export const FONT_NOTA = { name: FONTE, italic: true, size: 8, color: { argb: COR_NOTA_FG } } as const;
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -75,13 +90,14 @@ export const FONT_NOTA = { name: FONTE, italic: true, size: 8, color: { argb: CO
 // ═══════════════════════════════════════════════════════════════════════════
 
 export const ALTURA_BANNER_N1 = 22;
-export const ALTURA_BANNER_N2 = 18;
+/** Mesma altura de nível 1 — ver nota em FONT_BANNER_N2. */
+export const ALTURA_BANNER_N2 = ALTURA_BANNER_N1;
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Marcador — único indicador visual extra (sem emoji), só em sub-bloco nível 2
+// Marcador — o relatório original NÃO usa bullet/emoji em nenhum banner de bloco.
 // ═══════════════════════════════════════════════════════════════════════════
 
-export const MARCADOR_N2 = "▪ ";
+export const MARCADOR_N2 = "";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Bordas
@@ -127,6 +143,17 @@ export function aplicarBordaBloco(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Linha TOTAL — faixa azul-marinho + texto branco bold (igual ao banner nível 1),
+// como no relatório original. Usado em qualquer linha "TOTAL" de tabela simples
+// (RESUMO, MÉDIA VENDEDOR) — nunca só bold em cinza.
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function aplicarFundoTotal(cell: ExcelJS.Cell): void {
+  cell.font = { name: FONTE, bold: true, size: 10, color: { argb: COR_BANNER_N1_FG } };
+  cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COR_BANNER_N1_BG } };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Alinhamento vertical padrão
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -158,12 +185,12 @@ export function aplicarZebra(
 // ═══════════════════════════════════════════════════════════════════════════
 
 /**
- * Vermelho sóbrio pra número negativo via conditional formatting `cellIs` — o
+ * Vermelho padrão pra número negativo via conditional formatting `cellIs` — o
  * `numFmt` do Excel só aceita as 8 cores nomeadas (`[Red]`, `[Blue]`, …) ou um
  * índice de paleta legado (`[Color n]`), não um ARGB arbitrário; por isso o tom
- * customizado (`COR_NEGATIVO`) só é possível via conditional formatting de verdade.
+ * (`COR_NEGATIVO`) só é possível via conditional formatting de verdade.
  */
-export function condFormatNegativoSobrio(ws: ExcelJS.Worksheet, ref: string, priority: number): void {
+export function condFormatNegativo(ws: ExcelJS.Worksheet, ref: string, priority: number): void {
   ws.addConditionalFormatting({
     ref,
     rules: [

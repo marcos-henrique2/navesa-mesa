@@ -23,7 +23,7 @@ import {
 } from "./colunas";
 import {
   FONT_DADO, FONT_BANNER_N1, FONT_BANNER_N2, ALTURA_BANNER_N1, ALTURA_BANNER_N2, MARCADOR_N2,
-  aplicarBordaBloco, comVerticalMiddle, condFormatNegativoSobrio,
+  aplicarBordaBloco, comVerticalMiddle, condFormatNegativo,
 } from "./estilo";
 
 const LABEL_COL = COL.C_LOJA_ORIGEM;
@@ -204,14 +204,14 @@ function renderBloco(
   const rMargemLiquida = linha("Margem Líquida", fSum(COL.AA_MARGEM_LIQUIDA), margemLiquidaTotal, FMT_MONEY, { comPct: true, pctResult: pct(margemLiquidaTotal) });
   linha("Dias Estoque Médio", fAvg(COL.J_DIAS), diasEstoqueMedio, FMT_INT);
 
-  // Vermelho sóbrio de negativo em Lucro Bruto/Margem Líquida (valor + %) — conditional
+  // Vermelho de negativo em Lucro Bruto/Margem Líquida (valor + %) — conditional
   // formatting de verdade, não seção `[Red]` do numFmt (ver nota em estilo.ts).
   const letraValor = colLetter(VALOR_COL);
   const letraPct = colLetter(PCT_COL);
-  condFormatNegativoSobrio(ws, `${letraValor}${rLucroBruto}`, cf.proxima++);
-  condFormatNegativoSobrio(ws, `${letraPct}${rLucroBruto}`, cf.proxima++);
-  condFormatNegativoSobrio(ws, `${letraValor}${rMargemLiquida}`, cf.proxima++);
-  condFormatNegativoSobrio(ws, `${letraPct}${rMargemLiquida}`, cf.proxima++);
+  condFormatNegativo(ws, `${letraValor}${rLucroBruto}`, cf.proxima++);
+  condFormatNegativo(ws, `${letraPct}${rLucroBruto}`, cf.proxima++);
+  condFormatNegativo(ws, `${letraValor}${rMargemLiquida}`, cf.proxima++);
+  condFormatNegativo(ws, `${letraPct}${rMargemLiquida}`, cf.proxima++);
 
   // Borda grossa navy contornando o bloco por fora (banner + linhas de métrica).
   aplicarBordaBloco(ws, linhaBanner, r - 1, LABEL_COL, PCT_COL);

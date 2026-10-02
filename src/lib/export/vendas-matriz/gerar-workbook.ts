@@ -16,9 +16,12 @@ import { renderAbaPlayPlan } from "./aba-play-plan";
 import { coletarVendasMatriz, type ColetarVendasMatrizResult } from "./coletar-dados";
 import { COR_BANNER_N1_BG, COR_PROPRIO_BG, COR_REPASSE_BG } from "./estilo";
 
-// Paleta de banners das abas 4/5/6 — convenção fixada nesta refatoração:
-// navy = total sem filtro (nível 1); petróleo = estoque/origem própria (nível 2);
-// terracota = outras lojas/repasse (nível 2).
+// Paleta de banners das abas 4/5/6 — NÃO é "verde sempre = próprio, vermelho sempre
+// = outras": cada aba usa um par diferente, confirmado contra o relatório original
+// (22.png/24.png/25.png de referência):
+// - Aba 4 MARGENS (3 blocos): navy = total geral; verde = estoque próprio; vermelho = outras lojas.
+// - Aba 5 MARGENS VENDAS LOJISTAS (2 blocos): vermelho = outras lojas; navy = estoque próprio (sem verde).
+// - Aba 6 MARGENS VENDAS CLIENTES (2 blocos): verde = estoque próprio; navy = outras lojas (sem vermelho).
 const COR_BANNER_NAVY = COR_BANNER_N1_BG;
 const COR_BANNER_VERDE = COR_PROPRIO_BG;
 const COR_BANNER_VERMELHO = COR_REPASSE_BG;
@@ -124,9 +127,12 @@ export async function gerarVendasMatrizWorkbook(
         criterios: [criterioLojistaSim, ...criteriosOrigemOutras],
       },
       {
+        // Navy aqui (não verde) — esta aba só usa vermelho (outras lojas) × navy
+        // (estoque próprio), diferente da aba 4 que usa verde pra "estoque próprio".
+        // Confirmado contra o relatório original (23.png de referência).
         titulo: "VENDIDO REPASSE ESTOQUE NAVESA",
         nivel: 2,
-        corBg: COR_BANNER_VERDE,
+        corBg: COR_BANNER_NAVY,
         linhas: linhasLojistaPropria,
         criterios: [criterioLojistaSim, ...criteriosOrigemPropria],
       },
@@ -153,9 +159,12 @@ export async function gerarVendasMatrizWorkbook(
         criterios: [criterioLojistaNao, ...criteriosOrigemPropria],
       },
       {
+        // Navy aqui (não vermelho) — esta aba só usa verde (estoque próprio) × navy
+        // (outras lojas), diferente da aba 4 que usa vermelho pra "outras lojas".
+        // Confirmado contra o relatório original (24.png de referência).
         titulo: "VENDIDO CLIENTE FINAL OUTROS ESTOQUES",
         nivel: 2,
-        corBg: COR_BANNER_VERMELHO,
+        corBg: COR_BANNER_NAVY,
         linhas: linhasClienteOutras,
         criterios: [criterioLojistaNao, ...criteriosOrigemOutras],
       },

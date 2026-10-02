@@ -133,8 +133,8 @@ export const FMT_PERCENT = "0.00%";
 export const FMT_INT = "#,##0";
 
 // Negativo em vermelho (Lucro Bruto/Margem Líquida e as % correspondentes) agora é
-// conditional formatting de verdade (`condFormatNegativoSobrio` em `estilo.ts`), não
-// mais seção `[Red]` do numFmt — o tom sóbrio pedido (COR_NEGATIVO) é um ARGB
+// conditional formatting de verdade (`condFormatNegativo` em `estilo.ts`), não
+// mais seção `[Red]` do numFmt — o tom customizado (COR_NEGATIVO) é um ARGB
 // customizado, e `[Red]` só aceita as 8 cores nomeadas do Excel.
 
 /** Converte número de coluna (1-indexed) pra letra de coluna Excel (1→A, 27→AA, …). */
