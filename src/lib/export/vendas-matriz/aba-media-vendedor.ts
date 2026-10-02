@@ -6,10 +6,12 @@
 import type ExcelJS from "exceljs";
 import { MEDIA_VENDEDOR_2025, MEDIA_VENDEDOR_2025_TOTAL } from "./dados-estaticos-2025";
 import { FMT_INT, colLetter } from "./colunas";
+import { FONT_DADO, FONT_HEADER_NAVY, COR_BANNER_N1_BG, aplicarFundoTotal, comVerticalMiddle } from "./estilo";
 import { FUSO_BRASILIA } from "@/lib/utils/data-local";
 
-const COLOR_HEADER_BG = "FFF3F4F6";
-const COLOR_TOTAL_BG = "FFE5E7EB";
+// Header e linha TOTAL navy + texto branco (igual ao banner de bloco) — bate com o
+// relatório original (26.png/27.png de referência), não o cinza-claro anterior.
+const COLOR_HEADER_BG = COR_BANNER_N1_BG;
 
 /**
  * Mês (1-12) de uma data no calendário de Brasília — nunca `d.getMonth()` cru, que lê
@@ -30,14 +32,17 @@ export function renderAbaMediaVendedor2025(ws: ExcelJS.Worksheet): void {
   ws.getColumn(2).width = 24;
   ws.getColumn(3).width = 12;
   ws.getColumn(4).width = 10;
+  for (const c of [2, 3, 4]) ws.getColumn(c).font = FONT_DADO;
 
   const header = ws.getRow(2);
   header.getCell(2).value = "VENDEDOR - 2025";
   header.getCell(3).value = "AGO A DEZ";
   header.getCell(4).value = "MÉDIA";
   for (const c of [2, 3, 4]) {
-    header.getCell(c).font = { bold: true };
-    header.getCell(c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_HEADER_BG } };
+    const cell = header.getCell(c);
+    cell.font = FONT_HEADER_NAVY;
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_HEADER_BG } };
+    comVerticalMiddle(cell);
   }
 
   let r = 3;
@@ -47,6 +52,7 @@ export function renderAbaMediaVendedor2025(ws: ExcelJS.Worksheet): void {
     row.getCell(3).value = linha.agoADez;
     row.getCell(3).numFmt = FMT_INT;
     row.getCell(4).value = linha.media;
+    for (const c of [2, 3, 4]) comVerticalMiddle(row.getCell(c));
     r++;
   }
 
@@ -56,8 +62,9 @@ export function renderAbaMediaVendedor2025(ws: ExcelJS.Worksheet): void {
   totalRow.getCell(3).numFmt = FMT_INT;
   totalRow.getCell(4).value = MEDIA_VENDEDOR_2025_TOTAL.media;
   for (const c of [2, 3, 4]) {
-    totalRow.getCell(c).font = { bold: true };
-    totalRow.getCell(c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_TOTAL_BG } };
+    const cell = totalRow.getCell(c);
+    aplicarFundoTotal(cell);
+    comVerticalMiddle(cell);
   }
 }
 
@@ -107,6 +114,7 @@ export function renderAbaMediaVendedorAtual(
   for (let i = 0; i < mesAtualIndex; i++) ws.getColumn(COL_MES_INI + i).width = 7;
   ws.getColumn(COL_TOTAL).width = 9;
   ws.getColumn(COL_MEDIA).width = 9;
+  for (let c = COL_VENDEDOR; c <= COL_MEDIA; c++) ws.getColumn(c).font = FONT_DADO;
 
   const header = ws.getRow(2);
   header.getCell(COL_VENDEDOR).value = `VENDEDOR - ${anoAtual}`;
@@ -114,8 +122,10 @@ export function renderAbaMediaVendedorAtual(
   header.getCell(COL_TOTAL).value = "TOTAL";
   header.getCell(COL_MEDIA).value = "MÉDIA";
   for (let c = COL_VENDEDOR; c <= COL_MEDIA; c++) {
-    header.getCell(c).font = { bold: true };
-    header.getCell(c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_HEADER_BG } };
+    const cell = header.getCell(c);
+    cell.font = FONT_HEADER_NAVY;
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_HEADER_BG } };
+    comVerticalMiddle(cell);
   }
 
   const letraMesIni = colLetter(COL_MES_INI);
@@ -140,6 +150,7 @@ export function renderAbaMediaVendedorAtual(
       formula: `AVERAGE(${letraMesIni}${r}:${letraMesFim}${r})`,
       result: linha.total / mesAtualIndex,
     };
+    for (let c = COL_VENDEDOR; c <= COL_MEDIA; c++) comVerticalMiddle(row.getCell(c));
     r++;
   }
   const linhaFimDados = r - 1;
@@ -169,7 +180,8 @@ export function renderAbaMediaVendedorAtual(
     result: mesAtualIndex > 0 ? totalGeral / mesAtualIndex : 0,
   };
   for (let c = COL_VENDEDOR; c <= COL_MEDIA; c++) {
-    totalRow.getCell(c).font = { bold: true };
-    totalRow.getCell(c).fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_TOTAL_BG } };
+    const cell = totalRow.getCell(c);
+    aplicarFundoTotal(cell);
+    comVerticalMiddle(cell);
   }
 }

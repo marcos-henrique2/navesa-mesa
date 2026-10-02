@@ -44,8 +44,16 @@ export const COL = {
 /** Última coluna com dado (AG) — a largura do título mergeado B..AG usa isso. */
 export const ULTIMA_COL = COL.AG_VENDEDOR;
 
-/** Linha 1 = título mergeado, linha 2 = header, dados a partir da linha 3. */
-export const DATA_START_ROW = 3;
+/**
+ * Linha 1 = espaçador em branco (baixa, sem título — igual ao arquivo original),
+ * linha 2 = header, linha 3 = nota explicativa (só sob a coluna M), dados a
+ * partir da linha 4.
+ */
+export const NOTA_ROW = 3;
+export const DATA_START_ROW = 4;
+
+// Fontes, cores, bordas e alturas centralizadas em `estilo.ts` (visual corporativo
+// aprovado pelo Marcos) — não redefinir localmente, sempre importar de lá.
 
 export const HEADERS: Record<number, string> = {
   [COL.B_SEQ]: "#",
@@ -84,15 +92,16 @@ export const HEADERS: Record<number, string> = {
 
 export const COL_WIDTHS: Record<number, number> = {
   [COL.A]: 2,
-  [COL.B_SEQ]: 5,
-  [COL.C_LOJA_ORIGEM]: 22,
-  [COL.D_DESCRICAO]: 28,
-  [COL.E_COR]: 12,
-  [COL.F_MARCA]: 12,
-  [COL.G_PLACA]: 9,
-  [COL.H_ANO_MODELO]: 10,
-  [COL.I_KM]: 9,
-  [COL.J_DIAS]: 7,
+  // B..J medidos direto no arquivo original (VENDAS USADOS MATRIZ - AGOSTO 2026.xlsx).
+  [COL.B_SEQ]: 7.4,
+  [COL.C_LOJA_ORIGEM]: 18.3,
+  [COL.D_DESCRICAO]: 63.7,
+  [COL.E_COR]: 13.6,
+  [COL.F_MARCA]: 13.6,
+  [COL.G_PLACA]: 11.2,
+  [COL.H_ANO_MODELO]: 10.4,
+  [COL.I_KM]: 9.9,
+  [COL.J_DIAS]: 8.4,
   [COL.K_NF_ENTRADA]: 13,
   [COL.L_VALORIZA]: 12,
   [COL.M_CUSTO_REAL]: 13,
@@ -122,6 +131,11 @@ export const COL_WIDTHS: Record<number, number> = {
 export const FMT_MONEY = '"R$" #,##0.00';
 export const FMT_PERCENT = "0.00%";
 export const FMT_INT = "#,##0";
+
+// Negativo em vermelho (Lucro Bruto/Margem Líquida e as % correspondentes) agora é
+// conditional formatting de verdade (`condFormatNegativo` em `estilo.ts`), não
+// mais seção `[Red]` do numFmt — o tom customizado (COR_NEGATIVO) é um ARGB
+// customizado, e `[Red]` só aceita as 8 cores nomeadas do Excel.
 
 /** Converte número de coluna (1-indexed) pra letra de coluna Excel (1→A, 27→AA, …). */
 export function colLetter(colNum: number): string {

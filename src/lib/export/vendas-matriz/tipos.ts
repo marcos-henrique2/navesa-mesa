@@ -84,6 +84,23 @@ export function calcularDerivadosLinha(l: LinhaVendaMatriz): DerivadosLinha {
   return { custoReal, lucroBruto, margemLiquida };
 }
 
+/**
+ * "Auto Avaliar" = venda por leilão sem vendedor humano. Regra confirmada com o Marcos:
+ * `vendedor_nome ILIKE '%MOZAINEL%'` (o valor real no NBS é "MOZAINEL CORREA",
+ * `vendedor_codigo` = "MOZAINIEL" — usamos o nome porque é o campo que chega em
+ * `vendedorNome`). Trate sempre como categoria própria em qualquer lógica "por vendedor" —
+ * nunca deixar cair no balde de um vendedor humano.
+ */
+export function isAutoAvaliar(l: LinhaVendaMatriz): boolean {
+  return (l.vendedorNome ?? "").toUpperCase().includes("MOZAINEL");
+}
+
+/** Critérios de wildcard Excel equivalentes a `isAutoAvaliar`, pra COUNTIF/SUMIF/COUNTIFS
+ * contra a coluna AG (Vendedor) da aba de detalhe — Excel aceita `<>` concatenado com
+ * wildcard pra negar um "contém". */
+export const CRITERIO_AUTO_AVALIAR = "*MOZAINEL*";
+export const CRITERIO_NAO_AUTO_AVALIAR = "<>*MOZAINEL*";
+
 export type ColetarVendasMatrizInput = {
   /** Loja "dona" do relatório (ex: 2 = Ford Aeroporto). Nunca hardcode — sempre parâmetro. */
   codEmpresa: number;

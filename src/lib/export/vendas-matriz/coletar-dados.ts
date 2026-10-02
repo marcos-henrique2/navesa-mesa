@@ -58,7 +58,7 @@ function formatarAnoModelo(v: VendaParsed): string {
   return `${aa(v.ano_fabricacao)}/${aa(v.ano_modelo)}`;
 }
 
-function mapearLinha(
+export function mapearLinha(
   v: VendaParsed,
   custosPorPlaca: Map<string, CustoDetalhado>,
   fipePorChassi: Map<string, { precoFipe: number; confirmado: boolean }>,
@@ -94,8 +94,13 @@ function mapearLinha(
 
     valorVenda: v.valor_venda,
 
-    despesaGeral: custo?.despesas_gerais ?? null,
-    forplan: custo?.forplan ?? null,
+    // Prefere o upload manual (mais confiável/específico); cai pro automático do
+    // sync Oracle (`vendas.despesas_gerais`/`vendas.custo_floor_plan`) quando não há
+    // upload de "Custos de Veículos Vendidos" pro mês.
+    despesaGeral: custo?.despesas_gerais ?? v.despesas_gerais ?? null,
+    forplan: custo?.forplan ?? v.custo_floor_plan ?? null,
+    // Sem fonte automática ainda (Oracle só mapeado pra impostos em `veiculos`, não
+    // em `vendas`) — mantém 100% dependente do upload manual.
     impostos: custo?.impostos ?? null,
     comissao: custo?.comissoes ?? (v.comissao_vendedor ?? null),
 
@@ -114,6 +119,13 @@ function mapearLinha(
 export type ColetarVendasMatrizResult = {
   /** Aba 1 — todas as vendas da loja no mês selecionado. */
   linhasMes: LinhaVendaMatriz[];
+  /**
+   * Nome da loja do relatório (`codEmpresa`), igual ao que aparece na coluna C (Loja de
+   * Origem) quando a origem é a própria loja — usado nas abas 4/5/6 pra montar critérios
+   * SUMIFS/COUNTIFS de "origem própria" vs "outras lojas" comparando pelo NOME (a aba de
+   * detalhe não tem coluna de cod_empresa).
+   */
+  nomeLojaPropria: string;
   /** Ano corrente real (não o `ano` do input) — usado no título/nome de aba 8. */
   anoAtual: number;
   /** Mês corrente real (1-12) — até onde a aba 8 vai. */
@@ -166,6 +178,8 @@ export async function coletarVendasMatriz(input: ColetarVendasMatrizInput): Prom
     mapearLinha(v, custosPorPlaca, fipePorChassi, lojaOrigemPorChassi, nomePorCodEmpresa),
   );
 
+  const nomeLojaPropria = nomePorCodEmpresa.get(codEmpresa) ?? `Loja ${codEmpresa}`;
+
   // ─── Vendas do ANO CORRENTE REAL (não o mês/ano do input) — aba 8 ───
   const hojeISO = hojeLocal();
   const anoAtual = Number(hojeISO.slice(0, 4));
@@ -183,5 +197,5 @@ export async function coletarVendasMatriz(input: ColetarVendasMatrizInput): Prom
     )
     .map((v) => ({ vendedorNome: v.vendedor_nome, dataVenda: v.data_venda }));
 
-  return { linhasMes, anoAtual, mesAtualIndex, vendasAnoAtual };
+  return { linhasMes, nomeLojaPropria, anoAtual, mesAtualIndex, vendasAnoAtual };
 }
