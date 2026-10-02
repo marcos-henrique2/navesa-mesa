@@ -63,11 +63,24 @@ export async function gerarVendasMatrizWorkbook(
   const criterioLojistaSim: CriterioMargens = { col: COL.AF_LOJISTA, criterio: "SIM" };
   const criterioLojistaNao: CriterioMargens = { col: COL.AF_LOJISTA, criterio: "NÃO" };
 
+  // RESSALVA @aria-architect (02/10/2026, ver tipos.ts/sync-vendas.ts): pra vendas
+  // consignadas, custo_total_final/margem_pct do Oracle não representam lucro de estoque
+  // de verdade (a revenda nunca foi dona do carro) — por isso TODO bloco de MARGEM (abas
+  // 4/5/6, abaixo) exclui consignado=true explicitamente, tanto em JS (`linhas`, pro
+  // cache do `result` de cada fórmula) quanto em Excel (critério NÃO na coluna AH, pro
+  // SUMIFS/COUNTIFS de verdade recalcular do mesmo jeito se o Excel reabrir o arquivo).
+  // Os blocos de CONTAGEM (aba RESUMO, aba-resumo.ts) NÃO usam este critério — lá,
+  // consignado entra normalmente.
+  const criterioNaoConsignado: CriterioMargens = { col: COL.AH_CONSIGNADO, criterio: "NÃO" };
+
   const linhasOrigemOutras = linhasAba1.filter(
-    (l) => l.lojaOrigemCodEmpresa != null && l.lojaOrigemCodEmpresa !== codEmpresa,
+    (l) => l.lojaOrigemCodEmpresa != null && l.lojaOrigemCodEmpresa !== codEmpresa && l.consignado === false,
   );
 
-  // ─── Aba 4 "MARGENS" — 3 blocos sobre a aba 1 inteira (todas as origens) ───
+  // ─── Aba 4 "MARGENS" — 3 blocos sobre a aba 1 inteira (todas as origens), SEM consignado ───
+  const linhasAba1SemConsignado = linhasAba1.filter((l) => l.consignado === false);
+  const linhasAba2SemConsignado = linhasAba2.filter((l) => l.consignado === false);
+
   const ws4 = workbook.addWorksheet(nomes.aba4);
   renderAbaMargens(ws4, {
     nomeAbaFonte: nomes.aba1,
@@ -77,22 +90,22 @@ export async function gerarVendasMatrizWorkbook(
         titulo: "VENDIDO TOTAL NAVESA AEROPORTO",
         nivel: 1,
         corBg: COR_BANNER_NAVY,
-        linhas: linhasAba1,
-        criterios: [],
+        linhas: linhasAba1SemConsignado,
+        criterios: [criterioNaoConsignado],
       },
       {
         titulo: "VENDIDO SOMENTE ESTOQUE NAVESA AEROPORTO",
         nivel: 2,
         corBg: COR_BANNER_VERDE,
-        linhas: linhasAba2,
-        criterios: criteriosOrigemPropria,
+        linhas: linhasAba2SemConsignado,
+        criterios: [...criteriosOrigemPropria, criterioNaoConsignado],
       },
       {
         titulo: "VENDIDO NAVESA - ESTOQUES OUTRAS LOJAS",
         nivel: 2,
         corBg: COR_BANNER_VERMELHO,
         linhas: linhasOrigemOutras,
-        criterios: criteriosOrigemOutras,
+        criterios: [...criteriosOrigemOutras, criterioNaoConsignado],
       },
     ],
   });
@@ -110,9 +123,15 @@ export async function gerarVendasMatrizWorkbook(
   // — essas linhas aparecem contabilizadas explicitamente no Bloco C ("NÃO INFORMADO") da
   // aba 3 RESUMO (ver aba-resumo.ts). ───
   const linhasLojistaOutras = linhasAba1.filter(
-    (l) => l.lojista === true && l.lojaOrigemCodEmpresa != null && l.lojaOrigemCodEmpresa !== codEmpresa,
+    (l) =>
+      l.lojista === true &&
+      l.lojaOrigemCodEmpresa != null &&
+      l.lojaOrigemCodEmpresa !== codEmpresa &&
+      l.consignado === false,
   );
-  const linhasLojistaPropria = linhasAba1.filter((l) => l.lojista === true && l.lojaOrigemCodEmpresa === codEmpresa);
+  const linhasLojistaPropria = linhasAba1.filter(
+    (l) => l.lojista === true && l.lojaOrigemCodEmpresa === codEmpresa && l.consignado === false,
+  );
 
   const ws5 = workbook.addWorksheet(nomes.aba5);
   renderAbaMargens(ws5, {
@@ -124,7 +143,7 @@ export async function gerarVendasMatrizWorkbook(
         nivel: 2,
         corBg: COR_BANNER_VERMELHO,
         linhas: linhasLojistaOutras,
-        criterios: [criterioLojistaSim, ...criteriosOrigemOutras],
+        criterios: [criterioLojistaSim, ...criteriosOrigemOutras, criterioNaoConsignado],
       },
       {
         // Navy aqui (não verde) — esta aba só usa vermelho (outras lojas) × navy
@@ -134,16 +153,22 @@ export async function gerarVendasMatrizWorkbook(
         nivel: 2,
         corBg: COR_BANNER_NAVY,
         linhas: linhasLojistaPropria,
-        criterios: [criterioLojistaSim, ...criteriosOrigemPropria],
+        criterios: [criterioLojistaSim, ...criteriosOrigemPropria, criterioNaoConsignado],
       },
     ],
   });
 
   // ─── Aba 6 "MARGENS VENDAS CLIENTES" — 2 blocos, lojista=NÃO sobre a aba 1 inteira.
   // Mesma nota da aba 5: `lojista=null` fica de fora daqui também, de propósito. ───
-  const linhasClientePropria = linhasAba1.filter((l) => l.lojista === false && l.lojaOrigemCodEmpresa === codEmpresa);
+  const linhasClientePropria = linhasAba1.filter(
+    (l) => l.lojista === false && l.lojaOrigemCodEmpresa === codEmpresa && l.consignado === false,
+  );
   const linhasClienteOutras = linhasAba1.filter(
-    (l) => l.lojista === false && l.lojaOrigemCodEmpresa != null && l.lojaOrigemCodEmpresa !== codEmpresa,
+    (l) =>
+      l.lojista === false &&
+      l.lojaOrigemCodEmpresa != null &&
+      l.lojaOrigemCodEmpresa !== codEmpresa &&
+      l.consignado === false,
   );
 
   const ws6 = workbook.addWorksheet(nomes.aba6);
@@ -156,7 +181,7 @@ export async function gerarVendasMatrizWorkbook(
         nivel: 2,
         corBg: COR_BANNER_VERDE,
         linhas: linhasClientePropria,
-        criterios: [criterioLojistaNao, ...criteriosOrigemPropria],
+        criterios: [criterioLojistaNao, ...criteriosOrigemPropria, criterioNaoConsignado],
       },
       {
         // Navy aqui (não vermelho) — esta aba só usa verde (estoque próprio) × navy
@@ -166,7 +191,7 @@ export async function gerarVendasMatrizWorkbook(
         nivel: 2,
         corBg: COR_BANNER_NAVY,
         linhas: linhasClienteOutras,
-        criterios: [criterioLojistaNao, ...criteriosOrigemOutras],
+        criterios: [criterioLojistaNao, ...criteriosOrigemOutras, criterioNaoConsignado],
       },
     ],
   });

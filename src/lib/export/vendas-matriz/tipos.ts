@@ -53,6 +53,20 @@ export type LinhaVendaMatriz = {
   /** `true` = PJ ("SIM"), `false` = PF ("NÃO"), `null` = tipo desconhecido (célula vazia). */
   lojista: boolean | null;
   vendedorNome: string | null;
+
+  /**
+   * Venda de veículo consignado (NBS.VEICULOS.CONSIGNATO, ver migration 042 e
+   * sync-vendas.ts). Nunca `null` — sempre um boolean conhecido.
+   *
+   * RESSALVA (decisão @aria-architect, 02/10/2026): pra vendas consignadas,
+   * `custo_total_final`/`margem_pct` do Oracle não representam lucro de
+   * estoque de verdade (a revenda nunca foi dona do carro — é quase
+   * literalmente "preço de venda + comissão"). Por isso os blocos de MARGEM
+   * do relatório (aba-margens.ts e as margens derivadas em gerar-workbook.ts)
+   * excluem `consignado === true` explicitamente; os blocos de CONTAGEM (aba
+   * RESUMO) incluem normalmente.
+   */
+  consignado: boolean;
 };
 
 /** Resultado de M (Custo Real), Q (Lucro Bruto) e AA (Margem Líquida) pra uma linha. */

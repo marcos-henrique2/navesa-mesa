@@ -8,13 +8,15 @@ import type { LinhaVendaMatriz } from "./tipos";
 import { calcularDerivadosLinha } from "./tipos";
 import {
   COL, ULTIMA_COL, NOTA_ROW, DATA_START_ROW, HEADERS, COL_WIDTHS,
-  FMT_MONEY, FMT_PERCENT, FMT_INT, colLetter,
+  FMT_MONEY, FMT_PERCENT, FMT_INT, FMT_DECIMAL2, colLetter,
 } from "./colunas";
 import {
-  FONT_DADO, FONT_HEADER_DETALHE, FONT_NOTA, COR_HEADER_DETALHE_BG, COR_DATABAR_MARGEM,
+  FONT_DADO, FONT_HEADER_DETALHE, FONT_HEADER_RESUMO_NUMERICO, FONT_NOTA,
+  COR_HEADER_DETALHE_BG, COR_HEADER_RESUMO_NUMERICO_BG, COR_DATABAR_MARGEM,
   bordaInferiorFina, bordaInferiorMedia, aplicarBordaBloco, aplicarZebra, comVerticalMiddle,
   condFormatNegativo, condFormatDataBar,
 } from "./estilo";
+import { somaCampo, mediaCampo } from "./aba-margens";
 
 /**
  * `titulo` não é mais renderizado na planilha (não existe banner de título, igual
@@ -165,6 +167,9 @@ export function renderAbaDetalhe(ws: ExcelJS.Worksheet, titulo: string, linhas: 
     row.getCell(COL.AE_CLIENTE).value = l.clienteNome;
     row.getCell(COL.AF_LOJISTA).value = l.lojista === true ? "SIM" : l.lojista === false ? "NÃO" : "";
     row.getCell(COL.AG_VENDEDOR).value = l.vendedorNome ?? "";
+    // Coluna de apoio pra SUMIFS/COUNTIFS dos blocos de MARGEM excluírem consignado via
+    // critério de Excel de verdade (ver ressalva em tipos.ts/gerar-workbook.ts).
+    row.getCell(COL.AH_CONSIGNADO).value = l.consignado ? "SIM" : "NÃO";
 
     // Formatação numérica + alinhamento em toda a linha. Q/AA (Lucro Bruto/Margem
     // Líquida) e R/AB (as % correspondentes) usam o MESMO numFmt das demais — o
@@ -191,6 +196,7 @@ export function renderAbaDetalhe(ws: ExcelJS.Worksheet, titulo: string, linhas: 
     row.getCell(COL.AC_USADO_TROCA).alignment = { horizontal: "center" };
     row.getCell(COL.AD_FINANCIOU).alignment = { horizontal: "center" };
     row.getCell(COL.AF_LOJISTA).alignment = { horizontal: "center" };
+    row.getCell(COL.AH_CONSIGNADO).alignment = { horizontal: "center" };
 
     // Borda fina só embaixo (sem grade completa), zebra striping e vertical middle
     // padronizado em toda célula com conteúdo — nessa ordem, pra não perder os
@@ -232,5 +238,142 @@ export function renderAbaDetalhe(ws: ExcelJS.Worksheet, titulo: string, linhas: 
 
     // DataBar nativa na coluna Margem Líquida (AA).
     condFormatDataBar(ws, refColuna(COL.AA_MARGEM_LIQUIDA), prioridade++, COR_DATABAR_MARGEM);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Bloco de totais/médias do período — logo abaixo da tabela (21.png de
+  // referência). Header 3º tom de azul (periwinkle, ver estilo.ts) + 1 linha
+  // de valores, sempre fórmula Excel de verdade (SUM/AVERAGE sobre o range
+  // de dados desta mesma aba) — nunca hardcode, mesmo princípio das colunas
+  // M/P/Q/R/T/V/X/Z/AA/AB já calculadas por linha acima.
+  //
+  // KM/DIAS PÁTIO = MÉDIA (um "total" de km não faz sentido). Todo o resto é
+  // SOMA. %FIPE X VENDA e as demais % seguem SUM(numerador)/SUM(denominador)
+  // — razão das somas, não média das razões por linha — pra não deixar
+  // poucos carros caros/baratos distorcerem a % agregada (decisão tomada
+  // aqui, documentada pro handoff: não havia como confirmar contra o
+  // original porque a imagem de referência estava cortada nessa região).
+  // ═══════════════════════════════════════════════════════════════════════
+  if (ultimaLinhaDados >= DATA_START_ROW) {
+    const rIni = DATA_START_ROW;
+    const rFim = ultimaLinhaDados;
+    const rHeader = rFim + 2; // 1 linha em branco de respiro antes do bloco
+    const rValores = rHeader + 1;
+
+    const headerLabels: { col: number; label: string }[] = [
+      { col: COL.I_KM, label: "KM" },
+      { col: COL.J_DIAS, label: "DIAS PÁTIO" },
+      { col: COL.K_NF_ENTRADA, label: "VALOR ENTRADA" },
+      { col: COL.L_VALORIZA, label: "VALORIZA" },
+      { col: COL.M_CUSTO_REAL, label: "CUSTO REAL" },
+      { col: COL.N_VALOR_FIPE, label: "FIPE" },
+      { col: COL.O_VALOR_VENDA, label: "VALOR VENDA" },
+      { col: COL.P_PCT_FIPE, label: "%FIPE X VENDA" },
+      { col: COL.Q_LUCRO_BRUTO, label: "LUCRO BRUTO" },
+      { col: COL.R_PCT_LUCRO_BRUTO, label: "%" },
+      { col: COL.S_DESPESA_GERAL, label: "DESPESA GERAL" },
+      { col: COL.T_PCT_DESPESA_GERAL, label: "%" },
+      { col: COL.U_FPLAN, label: "F PLAN" },
+      { col: COL.V_PCT_FPLAN, label: "%" },
+      { col: COL.W_IMPOSTOS, label: "IMPOSTOS" },
+      { col: COL.X_PCT_IMPOSTOS, label: "%" },
+      { col: COL.Y_COMISSAO, label: "COMISSÃO VENDEDOR" },
+      { col: COL.Z_PCT_COMISSAO, label: "%" },
+      { col: COL.AA_MARGEM_LIQUIDA, label: "MARGEM LÍQUIDA" },
+      { col: COL.AB_PCT_MARGEM, label: "%" },
+    ];
+
+    // Rótulo do bloco, mergeado nas colunas sem dado aqui (B..H) — o original (fora de
+    // view na imagem de referência) não deixa claro se rotula; sem isso a linha de
+    // totais fica "solta" sem contexto, então mantemos um rótulo simples.
+    ws.mergeCells(rHeader, COL.B_SEQ, rHeader, COL.H_ANO_MODELO);
+    const rotuloCell = ws.getCell(rHeader, COL.B_SEQ);
+    rotuloCell.value = "TOTAIS / MÉDIAS DO PERÍODO";
+    rotuloCell.font = FONT_HEADER_RESUMO_NUMERICO;
+    rotuloCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COR_HEADER_RESUMO_NUMERICO_BG } };
+    rotuloCell.alignment = { horizontal: "center", vertical: "middle" };
+
+    const headerRow = ws.getRow(rHeader);
+    headerRow.height = 28;
+    for (const { col, label } of headerLabels) {
+      const cell = headerRow.getCell(col);
+      cell.value = label;
+      cell.font = FONT_HEADER_RESUMO_NUMERICO;
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COR_HEADER_RESUMO_NUMERICO_BG } };
+      cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    }
+
+    const kmMedia = mediaCampo(linhas, (l) => l.km);
+    const diasMedia = mediaCampo(linhas, (l) => l.diasEstoque);
+    const entradaTotal = somaCampo(linhas, (l) => l.nfEntrada);
+    const valorizaTotal = somaCampo(linhas, (l) => l.valoriza);
+    const custoRealTotal = somaCampo(linhas, (l) => calcularDerivadosLinha(l).custoReal);
+    const fipeTotal = somaCampo(linhas, (l) => l.valorFipe);
+    const vendaTotal = somaCampo(linhas, (l) => l.valorVenda);
+    const lucroBrutoTotal = somaCampo(linhas, (l) => calcularDerivadosLinha(l).lucroBruto);
+    const despesaTotal = somaCampo(linhas, (l) => l.despesaGeral);
+    const forplanTotal = somaCampo(linhas, (l) => l.forplan);
+    const impostosTotal = somaCampo(linhas, (l) => l.impostos);
+    const comissaoTotal = somaCampo(linhas, (l) => l.comissao);
+    const margemTotal = somaCampo(linhas, (l) => calcularDerivadosLinha(l).margemLiquida);
+
+    const valorRow = ws.getRow(rValores);
+    const escreverSoma = (col: number, result: number, fmt: string): void => {
+      const letraCol = colLetter(col);
+      const cell = valorRow.getCell(col);
+      cell.value = { formula: `SUM(${letraCol}${rIni}:${letraCol}${rFim})`, result };
+      cell.numFmt = fmt;
+      cell.alignment = { horizontal: "right", vertical: "middle" };
+      cell.font = FONT_DADO;
+    };
+    const escreverMedia = (col: number, result: number, fmt: string): void => {
+      const letraCol = colLetter(col);
+      const cell = valorRow.getCell(col);
+      cell.value = { formula: `IFERROR(AVERAGE(${letraCol}${rIni}:${letraCol}${rFim}),0)`, result };
+      cell.numFmt = fmt;
+      cell.alignment = { horizontal: "right", vertical: "middle" };
+      cell.font = FONT_DADO;
+    };
+    // Razão das somas (SUM/SUM), referenciando as próprias células de SOMA já escritas
+    // nesta linha — mesmo padrão intra-linha usado nas colunas P/R/T/V/X/Z/AB por venda.
+    const escreverPctDeSomas = (col: number, colNumerador: number, colDenominador: number, result: number | ""): void => {
+      const letraNum = colLetter(colNumerador);
+      const letraDen = colLetter(colDenominador);
+      const cell = valorRow.getCell(col);
+      cell.value = { formula: `IFERROR(${letraNum}${rValores}/${letraDen}${rValores},"")`, result };
+      cell.numFmt = FMT_PERCENT;
+      cell.alignment = { horizontal: "right", vertical: "middle" };
+      cell.font = FONT_DADO;
+    };
+
+    escreverMedia(COL.I_KM, kmMedia, FMT_INT);
+    escreverMedia(COL.J_DIAS, diasMedia, FMT_DECIMAL2);
+    escreverSoma(COL.K_NF_ENTRADA, entradaTotal, FMT_MONEY);
+    escreverSoma(COL.L_VALORIZA, valorizaTotal, FMT_MONEY);
+    escreverSoma(COL.M_CUSTO_REAL, custoRealTotal, FMT_MONEY);
+    escreverSoma(COL.N_VALOR_FIPE, fipeTotal, FMT_MONEY);
+    escreverSoma(COL.O_VALOR_VENDA, vendaTotal, FMT_MONEY);
+    escreverPctDeSomas(COL.P_PCT_FIPE, COL.O_VALOR_VENDA, COL.N_VALOR_FIPE, fipeTotal > 0 ? vendaTotal / fipeTotal : "");
+    escreverSoma(COL.Q_LUCRO_BRUTO, lucroBrutoTotal, FMT_MONEY);
+    escreverPctDeSomas(COL.R_PCT_LUCRO_BRUTO, COL.Q_LUCRO_BRUTO, COL.O_VALOR_VENDA, vendaTotal > 0 ? lucroBrutoTotal / vendaTotal : "");
+    escreverSoma(COL.S_DESPESA_GERAL, despesaTotal, FMT_MONEY);
+    escreverPctDeSomas(COL.T_PCT_DESPESA_GERAL, COL.S_DESPESA_GERAL, COL.O_VALOR_VENDA, vendaTotal > 0 ? despesaTotal / vendaTotal : "");
+    escreverSoma(COL.U_FPLAN, forplanTotal, FMT_MONEY);
+    escreverPctDeSomas(COL.V_PCT_FPLAN, COL.U_FPLAN, COL.O_VALOR_VENDA, vendaTotal > 0 ? forplanTotal / vendaTotal : "");
+    escreverSoma(COL.W_IMPOSTOS, impostosTotal, FMT_MONEY);
+    escreverPctDeSomas(COL.X_PCT_IMPOSTOS, COL.W_IMPOSTOS, COL.O_VALOR_VENDA, vendaTotal > 0 ? impostosTotal / vendaTotal : "");
+    escreverSoma(COL.Y_COMISSAO, comissaoTotal, FMT_MONEY);
+    escreverPctDeSomas(COL.Z_PCT_COMISSAO, COL.Y_COMISSAO, COL.O_VALOR_VENDA, vendaTotal > 0 ? comissaoTotal / vendaTotal : "");
+    escreverSoma(COL.AA_MARGEM_LIQUIDA, margemTotal, FMT_MONEY);
+    escreverPctDeSomas(COL.AB_PCT_MARGEM, COL.AA_MARGEM_LIQUIDA, COL.O_VALOR_VENDA, vendaTotal > 0 ? margemTotal / vendaTotal : "");
+
+    aplicarBordaBloco(ws, rHeader, rValores, COL.B_SEQ, COL.AB_PCT_MARGEM);
+
+    // Vermelho de negativo em Lucro Bruto/Margem Líquida (valor + %) — mesma CF do resto
+    // da aba. Offset de prioridade alto pra nunca colidir com as do bloco de dados acima.
+    let prioridadeTotais = 1000;
+    for (const col of [COL.Q_LUCRO_BRUTO, COL.R_PCT_LUCRO_BRUTO, COL.AA_MARGEM_LIQUIDA, COL.AB_PCT_MARGEM]) {
+      condFormatNegativo(ws, `${colLetter(col)}${rValores}`, prioridadeTotais++);
+    }
   }
 }

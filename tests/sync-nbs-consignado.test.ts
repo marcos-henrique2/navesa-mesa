@@ -15,16 +15,14 @@
  *   row->VendaParsed — não roda a query SQL em si (isso é sync-vendas.ts, só
  *   exercitável contra o Oracle real).
  *
- *   ACHADO IMPORTANTE (validado contra o Oracle real em 02/10/2026, 1.084
- *   vendas/90d e 4.062 vendas/365d, 0 nulos/vazios em ambos): vendas de
- *   consignado usam NOVO_USADO='C' em NBS.VEICULOS, não 'U'. O
- *   FILTRO_VENDAS atual (NOVO_USADO='U') exclui 100% das vendas de
- *   consignado — então hoje `consignado` sempre vem `false` para toda venda
- *   realmente sincronizada. Isso é uma limitação conhecida do filtro atual
- *   (fora do escopo desta mudança de schema/mapeamento), não um bug deste
- *   mapeamento — os testes abaixo cobrem o CONTRATO do mapeamento em si
- *   (CONSIGNATO='S'/'N' -> boolean), pronto pra quando o filtro for
- *   expandido.
+ *   ACHADO IMPORTANTE (validado contra o Oracle real em 02/10/2026, 1.085
+ *   vendas/90d 'U' + 23 vendas/90d 'C', total 1.108): vendas de consignado
+ *   usam NOVO_USADO='C' em NBS.VEICULOS, não 'U' — separação limpa
+ *   confirmada (0 sobreposição). @aria-architect avaliou e aprovou expandir
+ *   FILTRO_VENDAS pra NOVO_USADO IN ('U','C') (ver sync-vendas.ts) — agora
+ *   `consignado` vem `true` pra vendas de verdade sincronizadas, não só em
+ *   teoria. Os testes abaixo cobrem o CONTRATO do mapeamento em si
+ *   (CONSIGNATO='S'/'N' -> boolean), que não mudou com a expansão do filtro.
  */
 
 import { describe, it } from "node:test";
