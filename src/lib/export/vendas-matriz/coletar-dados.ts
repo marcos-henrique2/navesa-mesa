@@ -58,7 +58,7 @@ function formatarAnoModelo(v: VendaParsed): string {
   return `${aa(v.ano_fabricacao)}/${aa(v.ano_modelo)}`;
 }
 
-function mapearLinha(
+export function mapearLinha(
   v: VendaParsed,
   custosPorPlaca: Map<string, CustoDetalhado>,
   fipePorChassi: Map<string, { precoFipe: number; confirmado: boolean }>,
@@ -94,8 +94,13 @@ function mapearLinha(
 
     valorVenda: v.valor_venda,
 
-    despesaGeral: custo?.despesas_gerais ?? null,
-    forplan: custo?.forplan ?? null,
+    // Prefere o upload manual (mais confiável/específico); cai pro automático do
+    // sync Oracle (`vendas.despesas_gerais`/`vendas.custo_floor_plan`) quando não há
+    // upload de "Custos de Veículos Vendidos" pro mês.
+    despesaGeral: custo?.despesas_gerais ?? v.despesas_gerais ?? null,
+    forplan: custo?.forplan ?? v.custo_floor_plan ?? null,
+    // Sem fonte automática ainda (Oracle só mapeado pra impostos em `veiculos`, não
+    // em `vendas`) — mantém 100% dependente do upload manual.
     impostos: custo?.impostos ?? null,
     comissao: custo?.comissoes ?? (v.comissao_vendedor ?? null),
 
