@@ -15,6 +15,12 @@
  * herda o que a busca forçou). As colunas em branco NÃO entram na busca —
  * ficam numa seção fixa, sempre expandida, no fim da área com scroll.
  *
+ * Ordem de exportação: com 2+ itens selecionados (dado + branco nomeado), uma
+ * seção plana no fim deixa reordenar a sequência final das colunas no XLSX
+ * (botões subir/descer, sem wrap-around). A ordem é persistida e reconciliada
+ * a cada render contra a seleção atual (ver `ordem-colunas-estoque.ts`):
+ * coluna desmarcada some da lista, coluna marcada entra sempre no FIM.
+ *
  * Acessibilidade: fecha com ESC (ou limpa a busca, se ela estiver focada e
  * com texto) e clique fora; headers de grupo são `<button>` com
  * aria-expanded/aria-controls reais; ícones de confiança têm aria-label via
@@ -22,7 +28,17 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, CircleHelp, FileSpreadsheet, Search, Trash2, TriangleAlert, X } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  CircleHelp,
+  FileSpreadsheet,
+  Search,
+  Trash2,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import {
   COLUNAS_ESTOQUE,
   COLUNAS_DEFAULT,
@@ -49,6 +65,14 @@ import {
   textoAuxiliarColunaBranco,
   type ColunaBranco,
 } from "@/lib/export/colunas-branco";
+import {
+  ariaLabelMoverItem,
+  itensOrdemExportacao,
+  mensagemItemMovido,
+  moverItemOrdem,
+  reconciliarOrdemColunas,
+  resolverOrdemParaExportacao,
+} from "@/lib/export/ordem-colunas-estoque";
 import { baixarRelatorioEstoque, construirDefEstoque } from "@/lib/export/relatorio/estoque";
 import type { VeiculoExportavel } from "@/lib/export/colunas-estoque";
 import { usePersistedState } from "@/lib/hooks/usePersistedState";
@@ -141,6 +165,41 @@ export function ConfigurarRelatorioEstoqueModal({
   );
   const [mensagemColunaBranco, setMensagemColunaBranco] = useState("");
   const [exportando, setExportando] = useState(false);
+
+  // Ordem de exportação (seção "Ordem de exportação", ver cabeçalho do
+  // arquivo). Persistida crua; `ordemReconciliada` é a versão sempre
+  // sincronizada com a seleção ATUAL de colunas/colunas em branco — usada pra
+  // renderizar e exportar. O efeito abaixo escreve a reconciliação de volta
+  // no sessionStorage (senão um item desmarcado e remarcado reapareceria na
+  // posição antiga, em vez de entrar no fim — ver `reconciliarOrdemColunas`).
+  const [ordemColunas, setOrdemColunas] = usePersistedState<string[]>(
+    "estoque:relatorioCustom:ordem",
+    [],
+  );
+  const ordemReconciliada = useMemo(
+    () => reconciliarOrdemColunas(ordemColunas, colunasSel, colunasBranco),
+    [ordemColunas, colunasSel, colunasBranco],
+  );
+  useEffect(() => {
+    const igual =
+      ordemReconciliada.length === ordemColunas.length &&
+      ordemReconciliada.every((token, i) => token === ordemColunas[i]);
+    if (!igual) setOrdemColunas(ordemReconciliada);
+  }, [ordemReconciliada, ordemColunas, setOrdemColunas]);
+
+  const [ordemSecaoExpandida, setOrdemSecaoExpandida] = useState(true);
+  const [mensagemOrdemMovida, setMensagemOrdemMovida] = useState("");
+  const [focoOrdemPendente, setFocoOrdemPendente] = useState<string | null>(null);
+  const botoesOrdemRef = useRef<Map<string, HTMLButtonElement>>(new Map());
+
+  useEffect(() => {
+    if (focoOrdemPendente == null) return;
+    const id = requestAnimationFrame(() => {
+      botoesOrdemRef.current.get(focoOrdemPendente)?.focus();
+      setFocoOrdemPendente(null);
+    });
+    return () => cancelAnimationFrame(id);
+  }, [focoOrdemPendente]);
 
   const [busca, setBusca] = useState("");
   const [gruposExpandidos, setGruposExpandidos] = useState<ReadonlySet<GrupoColuna>>(() =>
@@ -261,6 +320,18 @@ export function ConfigurarRelatorioEstoqueModal({
     setColunasBranco(renomearColunaBranco(colunasBranco, id, nome));
   }
 
+  // Itens da seção "Ordem de exportação" — lista plana, já na ordem atual.
+  const itensOrdem = itensOrdemExportacao(ordemReconciliada, colunasBranco);
+
+  function handleMoverItemOrdem(indice: number, direcao: "cima" | "baixo") {
+    const item = itensOrdem[indice];
+    if (!item) return;
+    setOrdemColunas(moverItemOrdem(ordemReconciliada, indice, direcao));
+    const novaPosicao = direcao === "cima" ? indice : indice + 2;
+    setMensagemOrdemMovida(mensagemItemMovido(item.label, novaPosicao, itensOrdem.length));
+    setFocoOrdemPendente(`${item.token}:${direcao}`);
+  }
+
   // Colunas visíveis por grupo (filtradas pela busca, quando ativa).
   const colunasPorGrupo = GRUPOS_ESTOQUE.map((grupo) => {
     const todas = COLUNAS_ESTOQUE.filter((c) => c.grupo === grupo);
@@ -289,6 +360,7 @@ export function ConfigurarRelatorioEstoqueModal({
       const def = construirDefEstoque({
         colunas: colunasSel,
         colunasBranco: colunasBrancoParaExportar(colunasBranco),
+        ordem: resolverOrdemParaExportacao(ordemReconciliada, colunasBranco),
         filtroLoja,
       });
       await baixarRelatorioEstoque(def, veiculos);
@@ -507,6 +579,82 @@ export function ConfigurarRelatorioEstoqueModal({
               </p>
             )}
           </section>
+
+          {itensOrdem.length >= 2 && (
+            <>
+              <div className="my-3 border-t border-[var(--border-soft)]" />
+              <section aria-labelledby="ordem-exportacao-heading" className="px-2 pb-2">
+                <button
+                  type="button"
+                  aria-expanded={ordemSecaoExpandida}
+                  aria-controls="ordem-exportacao-painel"
+                  onClick={() => setOrdemSecaoExpandida((v) => !v)}
+                  className="flex min-h-[40px] w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm font-semibold text-[var(--text-strong)] hover:bg-[var(--bg-muted)]"
+                >
+                  {ordemSecaoExpandida ? (
+                    <ChevronDown className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  ) : (
+                    <ChevronRight className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  )}
+                  <span id="ordem-exportacao-heading">
+                    Ordem de exportação ({itensOrdem.length} coluna{itensOrdem.length === 1 ? "" : "s"})
+                  </span>
+                </button>
+
+                <div aria-live="polite" className="sr-only">
+                  {mensagemOrdemMovida}
+                </div>
+
+                {ordemSecaoExpandida && (
+                  <div id="ordem-exportacao-painel" className="flex flex-col gap-1 pl-2">
+                    {itensOrdem.map((item, idx) => {
+                      const posicao = idx + 1;
+                      const total = itensOrdem.length;
+                      return (
+                        <div
+                          key={item.token}
+                          className="flex min-h-[40px] items-center gap-2 rounded-md px-2 py-1.5 text-sm text-[var(--text-body)]"
+                        >
+                          <span className="min-w-0 flex-1 truncate">
+                            {item.label}{" "}
+                            <span className="text-xs text-[var(--text-muted)]">— {item.tagGrupo}</span>
+                          </span>
+                          <button
+                            type="button"
+                            ref={(el) => {
+                              const chave = `${item.token}:cima`;
+                              if (el) botoesOrdemRef.current.set(chave, el);
+                              else botoesOrdemRef.current.delete(chave);
+                            }}
+                            onClick={() => handleMoverItemOrdem(idx, "cima")}
+                            disabled={idx === 0}
+                            aria-label={ariaLabelMoverItem(item.label, posicao, total, "cima")}
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-muted)] disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            <ChevronUp className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                          <button
+                            type="button"
+                            ref={(el) => {
+                              const chave = `${item.token}:baixo`;
+                              if (el) botoesOrdemRef.current.set(chave, el);
+                              else botoesOrdemRef.current.delete(chave);
+                            }}
+                            onClick={() => handleMoverItemOrdem(idx, "baixo")}
+                            disabled={idx === total - 1}
+                            aria-label={ariaLabelMoverItem(item.label, posicao, total, "baixo")}
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-muted)] disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+            </>
+          )}
         </div>
 
         <div className="mt-5 flex flex-wrap items-center justify-end gap-2">

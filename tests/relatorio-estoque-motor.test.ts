@@ -213,3 +213,70 @@ describe("XLSX: linhas TOTAIS/MÉDIA acrescentadas no fim", () => {
     assert.equal(ws.getRow(totRow).getCell(3).value ?? "", "");
   });
 });
+
+// ─── construirDefEstoque: ordem EXPLÍCITA (seção "Ordem de exportação") ─────
+
+describe("construirDefEstoque — ordem explícita de colunas", () => {
+  it("sem `ordem`: comportamento de sempre (catálogo, depois brancas no fim)", () => {
+    const def = construirDefEstoque({
+      colunas: ["preco_venda", "placa", "modelo"], // ordem de clique irrelevante
+      colunasBranco: ["Observações"],
+    });
+    assert.deepEqual(def.colunas, [
+      { tipo: "catalogo", key: "placa" },
+      { tipo: "catalogo", key: "modelo" },
+      { tipo: "catalogo", key: "preco_venda" },
+      { tipo: "branco", label: "Observações", corFundo: "FFFFFBEB" },
+    ]);
+  });
+
+  it("com `ordem`: respeita EXATAMENTE a sequência dos tokens (não a ordem do catálogo)", () => {
+    const def = construirDefEstoque({
+      colunas: ["placa", "modelo", "preco_venda"],
+      colunasBranco: ["Observações"],
+      ordem: ["col:preco_venda", "branco:0", "col:placa", "col:modelo"],
+    });
+    assert.deepEqual(def.colunas, [
+      { tipo: "catalogo", key: "preco_venda" },
+      { tipo: "branco", label: "Observações", corFundo: "FFFFFBEB" },
+      { tipo: "catalogo", key: "placa" },
+      { tipo: "catalogo", key: "modelo" },
+    ]);
+  });
+
+  it("a ordem explícita bate célula a célula com o header do XLSX gerado", async () => {
+    const def = construirDefEstoque({
+      colunas: ["placa", "modelo", "km"],
+      ordem: ["col:km", "col:placa", "col:modelo"],
+    });
+    const ws = await abrir(await gerarRelatorioEstoque(def, VEICULOS));
+    assert.equal(ws.getCell("A3").value, "KM");
+    assert.equal(ws.getCell("B3").value, "Placa");
+    assert.equal(ws.getCell("C3").value, "Modelo");
+  });
+
+  it("token de coluna fora de `colunas` é ignorado (não escolhida não entra mesmo citada na ordem)", () => {
+    const def = construirDefEstoque({
+      colunas: ["placa"],
+      ordem: ["col:placa", "col:modelo"], // "modelo" não está em `colunas`
+    });
+    assert.deepEqual(def.colunas, [{ tipo: "catalogo", key: "placa" }]);
+  });
+
+  it("índice de branco fora da faixa de `colunasBranco` é ignorado", () => {
+    const def = construirDefEstoque({
+      colunas: ["placa"],
+      colunasBranco: ["Observações"],
+      ordem: ["col:placa", "branco:0", "branco:5"],
+    });
+    assert.deepEqual(def.colunas, [
+      { tipo: "catalogo", key: "placa" },
+      { tipo: "branco", label: "Observações", corFundo: "FFFFFBEB" },
+    ]);
+  });
+
+  it("`ordem` vazia cai no comportamento padrão (não é tratada como 'zero colunas')", () => {
+    const def = construirDefEstoque({ colunas: ["placa"], ordem: [] });
+    assert.deepEqual(def.colunas, [{ tipo: "catalogo", key: "placa" }]);
+  });
+});
