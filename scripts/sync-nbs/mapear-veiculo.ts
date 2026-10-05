@@ -83,15 +83,19 @@ const CANDIDATOS: Record<keyof VeiculoParsed, string[]> = {
   // custo_impostos/revisoes/holdback/acessorios/forplan/comissoes são
   // derivados (busca em mapasCustosDetalhados por CHASSI_RESUMIDO+LOJA_ATUAL,
   // mesmo padrão de valoriza acima, ver custos-estoque-detalhado.ts) — sem
-  // coluna própria em NBS.VEICULOS. custo_adm/custo_despesas_gerais NÃO têm
-  // entrada aqui de propósito (nem campo em VeiculoParsed): sem
-  // CODIGO_CUSTO mapeado, ficam de fora do payload e o Postgres grava NULL.
+  // coluna própria em NBS.VEICULOS.
   custo_impostos: [],
   custo_revisoes: [],
   custo_holdback: [],
   custo_acessorios: [],
   custo_forplan: [],
   custo_comissoes: [],
+  // custo_adm/custo_despesas_gerais existem em VeiculoParsed só pra LEITURA
+  // (export/exibição — ver nota em nbs-xlsx.ts). Sem CODIGO_CUSTO mapeado,
+  // este sync nunca escreve valor nelas: ficam de fora de `mapearVeiculo()`
+  // de propósito e o Postgres grava/mantém NULL.
+  custo_adm: [],
+  custo_despesas_gerais: [],
 };
 
 /**

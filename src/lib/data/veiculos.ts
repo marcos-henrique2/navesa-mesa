@@ -74,6 +74,11 @@ function fromRow(r: VeiculoRow): VeiculoParsed {
     custo_acessorios: r.custo_acessorios ?? 0,
     custo_forplan: r.custo_forplan ?? 0,
     custo_comissoes: r.custo_comissoes ?? 0,
+    // custo_adm/custo_despesas_gerais: leitura direta, SEM fallback pra 0 —
+    // NULL aqui significa "não apurado" (ver nota em VeiculoParsed), nunca
+    // "zero conhecido" como as outras 7 colunas desta família.
+    custo_adm: r.custo_adm ?? null,
+    custo_despesas_gerais: r.custo_despesas_gerais ?? null,
   };
 }
 

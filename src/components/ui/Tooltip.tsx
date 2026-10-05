@@ -18,11 +18,14 @@ export function Tooltip({
   children,
   side = "top",
   className,
+  ariaLabel,
 }: {
   content: ReactNode;
   children: ReactNode;
   side?: Side;
   className?: string;
+  /** aria-label do gatilho (span focável). Útil quando `children` é só um ícone decorativo. */
+  ariaLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLSpanElement | null>(null);
@@ -70,6 +73,7 @@ export function Tooltip({
       tabIndex={0}
       role="button"
       aria-expanded={open}
+      aria-label={ariaLabel}
     >
       {children}
       {open && (
