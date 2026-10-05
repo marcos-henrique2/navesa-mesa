@@ -27,8 +27,13 @@ const BRANCO_BG = "FFFFFBEB";
 export type ConstruirDefEstoqueOpcoes = {
   /** Keys escolhidas (qualquer ordem; reordenadas pra ordem canônica do catálogo). */
   colunas: ColunaKey[];
-  incluirObservacoes: boolean;
-  incluirAnotacoes?: boolean;
+  /**
+   * Colunas em branco adicionais (rótulos pt-BR), na ORDEM em que devem
+   * aparecer no XLSX — sempre DEPOIS das colunas de dado. Substitui os antigos
+   * `incluirObservacoes`/`incluirAnotacoes` (2 checkboxes fixos): agora o
+   * modal deixa o Marcos nomear/adicionar quantas quiser (até 15).
+   */
+  colunasBranco?: string[];
   filtroLoja?: string;
   /** Default true — linhas de agregação no rodapé. */
   incluirTotais?: boolean;
@@ -49,9 +54,11 @@ export function construirDefEstoque(opcoes: ConstruirDefEstoqueOpcoes): Relatori
     (c) => ({ tipo: "catalogo", key: c.key }),
   );
 
-  const brancas: ColunaSaida[] = [];
-  if (opcoes.incluirObservacoes) brancas.push({ tipo: "branco", label: "Observações", corFundo: BRANCO_BG });
-  if (opcoes.incluirAnotacoes) brancas.push({ tipo: "branco", label: "Anotações", corFundo: BRANCO_BG });
+  const brancas: ColunaSaida[] = (opcoes.colunasBranco ?? []).map((label) => ({
+    tipo: "branco",
+    label,
+    corFundo: BRANCO_BG,
+  }));
 
   return {
     schemaVersion: RELATORIO_DEF_VERSION,

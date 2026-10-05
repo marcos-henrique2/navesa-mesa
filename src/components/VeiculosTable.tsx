@@ -13,6 +13,7 @@ import {
 import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, X, ClipboardCheck, BarChart3, Repeat, BadgeAlert, FileSpreadsheet } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { classificarPatio } from "@/lib/inventory/status";
+import { normalizarIdentificador } from "@/lib/utils/placa";
 import { estaReservado } from "@/lib/inventory/reservado";
 import { CAUTELAR_ICONE, CAUTELAR_LABEL } from "@/lib/inventory/cautelar";
 import { cn, formatBRL, formatInt } from "@/lib/utils";
@@ -87,6 +88,23 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
     exportarSelecionados, copiarPlacas,
     filtrosAvancadosAtivos, filtrosAtivos,
   } = vState;
+
+  // FIPE por chassi (normalizado) pro Relatório de Estoque Customizado (coluna
+  // `fipe` — ver colunas-estoque.ts). Reusa o MESMO `fipeBatch` já carregado
+  // pro filtro de FIPE da própria tela (sem fetch duplicado) e o MESMO
+  // critério do Vendas Matriz (coletar-dados.ts): só entra quando
+  // `plausibilidadeVerificada === true`.
+  const fipePorChassi = useMemo(() => {
+    const mapa = new Map<string, number>();
+    if (fipeBatch?.items) {
+      for (const item of Object.values(fipeBatch.items)) {
+        if (item.plausibilidadeVerificada === true) {
+          mapa.set(normalizarIdentificador(item.chassi), item.precoFipe);
+        }
+      }
+    }
+    return mapa;
+  }, [fipeBatch]);
 
   const columns = useMemo<ColumnDef<VeiculoParsed>[]>(() => [
     {
@@ -506,6 +524,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
         veiculos={filtered.map((v) => ({
           ...v,
           empresa_nome: lojas[v.cod_empresa]?.nome?.trim() ?? null,
+          fipe: fipePorChassi.get(normalizarIdentificador(v.chassi)) ?? null,
         }))}
         filtroLoja={
           filtroLoja === "all"

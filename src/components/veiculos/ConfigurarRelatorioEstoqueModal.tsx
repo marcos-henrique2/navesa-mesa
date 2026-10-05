@@ -4,14 +4,16 @@
  * Modal de configuração do Relatório de Estoque Customizável.
  *
  * O Marcos marca QUAIS colunas quer exportar (do catálogo `colunas-estoque`,
- * agrupadas em 5 grupos colapsáveis) e se quer colunas "Observações"/"Anotações"
- * em branco. A seleção é lembrada entre exports via `usePersistedState`
- * (sessionStorage). Ao exportar, gera o XLSX e baixa.
+ * agrupadas em 5 grupos colapsáveis) e pode adicionar colunas em branco
+ * personalizadas (nome livre, até 15 — ver `colunas-branco.ts`). A seleção é
+ * lembrada entre exports via `usePersistedState` (sessionStorage). Ao
+ * exportar, gera o XLSX e baixa.
  *
  * Busca: filtra colunas por label (ignora acento/caixa). Grupo sem nenhuma
  * coluna correspondente some; grupo com match expande sozinho mostrando só as
  * colunas que batem. Limpar a busca volta ao estado padrão de expansão (não
- * herda o que a busca forçou).
+ * herda o que a busca forçou). As colunas em branco NÃO entram na busca —
+ * ficam numa seção fixa, sempre expandida, no fim da área com scroll.
  *
  * Acessibilidade: fecha com ESC (ou limpa a busca, se ela estiver focada e
  * com texto) e clique fora; headers de grupo são `<button>` com
@@ -19,8 +21,8 @@
  * Tooltip.
  */
 
-import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, CircleHelp, FileSpreadsheet, Search, TriangleAlert, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronRight, CircleHelp, FileSpreadsheet, Search, Trash2, TriangleAlert, X } from "lucide-react";
 import {
   COLUNAS_ESTOQUE,
   COLUNAS_DEFAULT,
@@ -32,11 +34,33 @@ import {
   type ColunaKey,
   type GrupoColuna,
 } from "@/lib/export/colunas-estoque";
+import {
+  adicionarColunaBranco,
+  colunasBrancoParaExportar,
+  focoAposRemover,
+  inserirColunaBrancoApos,
+  LIMITE_COLUNAS_BRANCO,
+  mensagemColunaBrancoAdicionada,
+  mensagemColunaBrancoRemovida,
+  migrarColunasBrancoLegado,
+  nenhumaColunaBrancoComNome,
+  removerColunaBranco,
+  renomearColunaBranco,
+  textoAuxiliarColunaBranco,
+  type ColunaBranco,
+} from "@/lib/export/colunas-branco";
 import { baixarRelatorioEstoque, construirDefEstoque } from "@/lib/export/relatorio/estoque";
 import type { VeiculoExportavel } from "@/lib/export/colunas-estoque";
 import { usePersistedState } from "@/lib/hooks/usePersistedState";
 import { showErrorToast, showSuccessToast } from "@/components/ui/Toast";
 import { Tooltip } from "@/components/ui/Tooltip";
+
+/** Gera um id estável pra uma nova linha de coluna em branco (só identidade de UI/React key). */
+function criarIdColunaBranco(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `col-branco-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 export type ConfigurarRelatorioEstoqueModalProps = {
   open: boolean;
@@ -51,6 +75,8 @@ const TEXTO_CONFIANCA_BAIXA =
   "Confiança baixa: na amostra testada esse valor veio zerado na maioria dos carros. O código de custo existe no Oracle mas ainda não foi confirmado. Use com cautela.";
 const TEXTO_NAO_APURADO =
   "Não apurado: aparece como — no Excel (não é R$ 0,00) — ainda não existe fórmula de cálculo definida pra essa categoria.";
+const TEXTO_CUSTO_DETALHADO_PARCIAL =
+  "Esta soma inclui categorias com confiança baixa ou ainda não apuradas (HoldBack, Acessórios, Comissões, ADM, Despesas Gerais) — pode estar subestimada. Use com cautela.";
 
 function todayISOLocal(): string {
   const d = new Date();
@@ -72,6 +98,13 @@ function IconeConfianca({ confianca }: { confianca: ColunaEstoque["confianca"] }
       </Tooltip>
     );
   }
+  if (confianca === "parcial") {
+    return (
+      <Tooltip content={TEXTO_CUSTO_DETALHADO_PARCIAL} ariaLabel={TEXTO_CUSTO_DETALHADO_PARCIAL} side="top">
+        <TriangleAlert size={13} className="text-amber-600 dark:text-amber-400" aria-hidden="true" />
+      </Tooltip>
+    );
+  }
   return null;
 }
 
@@ -86,14 +119,27 @@ export function ConfigurarRelatorioEstoqueModal({
     "estoque:relatorioCustom:colunas",
     [...COLUNAS_DEFAULT],
   );
-  const [incluirObs, setIncluirObs] = usePersistedState<boolean>(
-    "estoque:relatorioCustom:observacoes",
-    true,
+
+  // Preferências antigas (2 checkboxes fixos) — só lidas, nunca mais escritas.
+  // Servem de DEFAULT pra migração one-shot da nova lista abaixo (ver
+  // `migrarColunasBrancoLegado`): quem tinha "Observações"/"Anotações"
+  // marcado ganha as linhas já preenchidas na 1ª abertura pós-deploy.
+  const [incluirObsLegado] = usePersistedState<boolean>("estoque:relatorioCustom:observacoes", false);
+  const [incluirAnotacoesLegado] = usePersistedState<boolean>("estoque:relatorioCustom:anotacoes", false);
+
+  // Memoizado: só recalcula (com novos crypto.randomUUID()) 1x por montagem —
+  // caso contrário, qualquer re-render antes da chave existir no
+  // sessionStorage troca os IDs das linhas migradas e força remount dos
+  // inputs "Observações"/"Anotações", podendo perder foco/estado não-commitado.
+  const colunasBrancoMigradas = useMemo(
+    () => migrarColunasBrancoLegado(incluirObsLegado, incluirAnotacoesLegado, criarIdColunaBranco),
+    [incluirObsLegado, incluirAnotacoesLegado],
   );
-  const [incluirAnotacoes, setIncluirAnotacoes] = usePersistedState<boolean>(
-    "estoque:relatorioCustom:anotacoes",
-    false,
+  const [colunasBranco, setColunasBranco] = usePersistedState<ColunaBranco[]>(
+    "estoque:relatorioCustom:colunasBranco",
+    colunasBrancoMigradas,
   );
+  const [mensagemColunaBranco, setMensagemColunaBranco] = useState("");
   const [exportando, setExportando] = useState(false);
 
   const [busca, setBusca] = useState("");
@@ -101,6 +147,26 @@ export function ConfigurarRelatorioEstoqueModal({
     gruposAbertosPorDefault(),
   );
   const buscaInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Foco das linhas de coluna em branco: alvo pendente (id da linha, ou o
+  // botão "+ Adicionar") aplicado no próximo paint via rAF — mesma técnica já
+  // usada no foco do campo de busca, abaixo.
+  const [focoColunaBrancoPendente, setFocoColunaBrancoPendente] = useState<string | null>(null);
+  const inputsColunaBrancoRef = useRef<Map<string, HTMLInputElement>>(new Map());
+  const botaoAdicionarColunaBrancoRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (focoColunaBrancoPendente == null) return;
+    const id = requestAnimationFrame(() => {
+      if (focoColunaBrancoPendente === "botao-adicionar") {
+        botaoAdicionarColunaBrancoRef.current?.focus();
+      } else {
+        inputsColunaBrancoRef.current.get(focoColunaBrancoPendente)?.focus();
+      }
+      setFocoColunaBrancoPendente(null);
+    });
+    return () => cancelAnimationFrame(id);
+  }, [focoColunaBrancoPendente]);
 
   const buscando = busca.trim().length > 0;
 
@@ -157,12 +223,42 @@ export function ConfigurarRelatorioEstoqueModal({
   if (!open) return null;
 
   const selecionadas = new Set(colunasSel);
-  const nenhumaColuna = selecionadas.size === 0 && !incluirObs && !incluirAnotacoes;
+  const nenhumaColuna = selecionadas.size === 0 && nenhumaColunaBrancoComNome(colunasBranco);
 
   function toggleColuna(key: ColunaKey) {
     setColunasSel((prev) =>
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
     );
+  }
+
+  function handleAdicionarColunaBranco() {
+    const novoId = criarIdColunaBranco();
+    const next = adicionarColunaBranco(colunasBranco, novoId);
+    setColunasBranco(next);
+    setMensagemColunaBranco(mensagemColunaBrancoAdicionada(next.length));
+    setFocoColunaBrancoPendente(novoId);
+  }
+
+  function handleInserirColunaBrancoApos(idAtual: string) {
+    const novoId = criarIdColunaBranco();
+    const next = inserirColunaBrancoApos(colunasBranco, idAtual, novoId);
+    setColunasBranco(next);
+    if (next.length !== colunasBranco.length) {
+      setMensagemColunaBranco(mensagemColunaBrancoAdicionada(next.length));
+    }
+    setFocoColunaBrancoPendente(novoId);
+  }
+
+  function handleRemoverColunaBranco(id: string) {
+    const alvoFoco = focoAposRemover(colunasBranco, id);
+    const next = removerColunaBranco(colunasBranco, id);
+    setColunasBranco(next);
+    setMensagemColunaBranco(mensagemColunaBrancoRemovida(next.length));
+    setFocoColunaBrancoPendente(alvoFoco ?? "botao-adicionar");
+  }
+
+  function handleRenomearColunaBranco(id: string, nome: string) {
+    setColunasBranco(renomearColunaBranco(colunasBranco, id, nome));
   }
 
   // Colunas visíveis por grupo (filtradas pela busca, quando ativa).
@@ -192,8 +288,7 @@ export function ConfigurarRelatorioEstoqueModal({
     try {
       const def = construirDefEstoque({
         colunas: colunasSel,
-        incluirObservacoes: incluirObs,
-        incluirAnotacoes,
+        colunasBranco: colunasBrancoParaExportar(colunasBranco),
         filtroLoja,
       });
       await baixarRelatorioEstoque(def, veiculos);
@@ -342,27 +437,77 @@ export function ConfigurarRelatorioEstoqueModal({
               );
             })
           )}
+
+          <div className="my-3 border-t border-[var(--border-soft)]" />
+
+          <section aria-labelledby="colunas-branco-heading" className="px-2 pb-2">
+            <h3 id="colunas-branco-heading" className="mb-2 text-sm font-semibold text-[var(--text-strong)]">
+              Colunas em branco personalizadas ({colunasBranco.length}/{LIMITE_COLUNAS_BRANCO})
+            </h3>
+
+            <div aria-live="polite" className="sr-only">
+              {mensagemColunaBranco}
+            </div>
+
+            <div className="flex flex-col gap-2">
+              {colunasBranco.map((coluna, idx) => {
+                const posicao = idx + 1;
+                const aux = textoAuxiliarColunaBranco(colunasBranco, coluna);
+                const nomeTrim = coluna.nome.trim();
+                return (
+                  <div key={coluna.id} className="flex flex-col gap-1">
+                    <div className="flex min-h-[40px] items-center gap-2">
+                      <input
+                        ref={(el) => {
+                          if (el) inputsColunaBrancoRef.current.set(coluna.id, el);
+                          else inputsColunaBrancoRef.current.delete(coluna.id);
+                        }}
+                        type="text"
+                        value={coluna.nome}
+                        onChange={(e) => handleRenomearColunaBranco(coluna.id, e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && nomeTrim !== "") {
+                            e.preventDefault();
+                            handleInserirColunaBrancoApos(coluna.id);
+                          }
+                        }}
+                        placeholder="Ex.: Conferido por, Data de revisão…"
+                        aria-label={`Nome da coluna em branco ${posicao}`}
+                        className="w-full flex-1 rounded-md border border-[var(--border-base)] bg-[var(--bg-surface)] px-3 py-2 text-sm text-[var(--text-body)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-[var(--brand-700)]"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoverColunaBranco(coluna.id)}
+                        aria-label={nomeTrim !== "" ? `Remover coluna "${nomeTrim}"` : `Remover coluna em branco ${posicao}`}
+                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md text-[var(--text-muted)] hover:bg-[var(--bg-muted)]"
+                      >
+                        <Trash2 className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    </div>
+                    {aux && <p className="px-1 text-xs text-amber-600 dark:text-amber-400">{aux}</p>}
+                  </div>
+                );
+              })}
+            </div>
+
+            <button
+              ref={botaoAdicionarColunaBrancoRef}
+              type="button"
+              onClick={handleAdicionarColunaBranco}
+              disabled={colunasBranco.length >= LIMITE_COLUNAS_BRANCO}
+              aria-disabled={colunasBranco.length >= LIMITE_COLUNAS_BRANCO}
+              aria-describedby={colunasBranco.length >= LIMITE_COLUNAS_BRANCO ? "limite-colunas-branco" : undefined}
+              className="mt-2 rounded-md border border-[var(--border-base)] px-3 py-2 text-sm text-[var(--text-body)] hover:bg-[var(--bg-muted)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              + Adicionar coluna em branco
+            </button>
+            {colunasBranco.length >= LIMITE_COLUNAS_BRANCO && (
+              <p id="limite-colunas-branco" className="mt-1 text-xs text-[var(--text-muted)]">
+                Limite de 15 colunas atingido.
+              </p>
+            )}
+          </section>
         </div>
-
-        <label className="mt-3 flex cursor-pointer items-center gap-2 rounded-md border border-[var(--border-base)] bg-[var(--bg-muted)] px-3 py-2 text-sm text-[var(--text-body)]">
-          <input
-            type="checkbox"
-            checked={incluirObs}
-            onChange={(e) => setIncluirObs(e.target.checked)}
-            className="h-4 w-4 accent-[var(--brand-700)]"
-          />
-          Incluir coluna de Observações (em branco) para anotar no Excel
-        </label>
-
-        <label className="mt-2 flex cursor-pointer items-center gap-2 rounded-md border border-[var(--border-base)] bg-[var(--bg-muted)] px-3 py-2 text-sm text-[var(--text-body)]">
-          <input
-            type="checkbox"
-            checked={incluirAnotacoes}
-            onChange={(e) => setIncluirAnotacoes(e.target.checked)}
-            className="h-4 w-4 accent-[var(--brand-700)]"
-          />
-          Incluir coluna de Anotações (em branco) para anotar no Excel
-        </label>
 
         <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
           {nenhumaColuna && (

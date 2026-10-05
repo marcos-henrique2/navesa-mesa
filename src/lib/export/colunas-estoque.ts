@@ -10,16 +10,27 @@
  * preço − aquisição). Campos que dependem de fontes externas (FIPE, batch) NÃO
  * entram aqui — o catálogo é puro e não depende de hooks/estado.
  *
- * A coluna "Observações" NÃO está no catálogo: ela é especial (sempre em branco,
- * sem getter) e é tratada à parte pelo gerador via flag `incluirObservacoes`.
+ * Colunas em branco (ex. "Observações", "Anotações" ou qualquer nome que o
+ * Marcos digitar no modal) NÃO estão no catálogo: são especiais (sempre em
+ * branco, sem getter) e são tratadas à parte pelo gerador via `colunasBranco`
+ * (ver `construirDefEstoque` em `relatorio/estoque.ts`).
  */
 
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import type { ColunaAgregacao, ColunaDef } from "@/lib/export/relatorio/tipos";
+import { calcularCustoReal } from "@/lib/export/custo-real";
 
-/** Veículo enriquecido com o nome da loja já resolvido (como o gerencial usa). */
+/**
+ * Veículo enriquecido com o nome da loja já resolvido (como o gerencial usa) e,
+ * opcionalmente, o preço FIPE já resolvido (batch) — ver coluna `fipe` abaixo.
+ * `fipe` NÃO é preenchido pelo catálogo (depende de fonte externa/Supabase):
+ * quem monta a lista de veículos pro modal/exportação é responsável por
+ * resolver `fipe` ANTES, com o mesmo critério do Vendas Matriz (só preenche
+ * quando `plausibilidadeVerificada === true`).
+ */
 export type VeiculoExportavel = VeiculoParsed & {
   empresa_nome?: string | null;
+  fipe?: number | null;
 };
 
 /**
@@ -49,6 +60,8 @@ export type ColunaKey =
   | "descricao_situacao"
   | "patio"
   | "valoriza"
+  | "custo_real"
+  | "fipe"
   | "custo_revisoes"
   | "custo_forplan"
   | "custo_holdback"
@@ -56,7 +69,8 @@ export type ColunaKey =
   | "custo_impostos"
   | "custo_comissoes"
   | "custo_adm"
-  | "custo_despesas_gerais";
+  | "custo_despesas_gerais"
+  | "custo_detalhado_total";
 
 /**
  * Agrupamento visual das colunas no modal (metadado — NÃO afeta a ordem de
@@ -107,8 +121,12 @@ export type ColunaEstoque = {
    *    (sem exemplo não-zero pra confirmar o valor, só a ausência de erro).
    *  - "nao_apurado": a coluna pode vir em BRANCO (não R$ 0,00) — ainda não
    *    existe fórmula de cálculo definida pra essa categoria.
+   *  - "parcial": é uma SOMA de categorias com confiança desigual (ex.:
+   *    `custo_detalhado_total` mistura categorias confirmadas com "baixa" e
+   *    "nao_apurado") — o total pode estar subestimado mesmo sem nenhuma
+   *    categoria individual estar "errada".
    */
-  confianca?: "baixa" | "nao_apurado";
+  confianca?: "baixa" | "nao_apurado" | "parcial";
 };
 
 function fmtAno(fab: number | null, mod: number | null): string | null {
@@ -138,7 +156,16 @@ export const COLUNAS_ESTOQUE: readonly ColunaEstoque[] = [
   { key: "combustivel", label: "Combustível", formato: "texto", agregacao: "nenhuma", grupo: "identificacao", getValor: (v) => v.combustivel },
   { key: "dias_patio", label: "Dias parado", formato: "numero", agregacao: "media", grupo: "localizacao_status", getValor: (v) => v.dias_patio },
   { key: "valor_aquisicao", label: "Custo de entrada", formato: "moeda", agregacao: "soma", grupo: "custos", getValor: (v) => v.valor_aquisicao },
+  { key: "valoriza", label: "Valoriza (bônus fábrica)", formato: "moeda", agregacao: "soma", grupo: "custos", getValor: (v) => v.valoriza },
+  // custo_real = Custo de entrada − Valoriza — mesma fórmula do Vendas Matriz
+  // (calcularDerivadosLinha, campo custoReal), extraída pra custo-real.ts pra
+  // garantir que os dois relatórios nunca divirjam. Sem indicador de confiança.
+  { key: "custo_real", label: "Custo Real (Entrada − Valoriza)", formato: "moeda", agregacao: "soma", grupo: "custos", getValor: (v) => calcularCustoReal(v.valor_aquisicao, v.valoriza) },
   { key: "custo_total", label: "Custo total", formato: "moeda", agregacao: "soma", grupo: "custos", getValor: (v) => v.custo_total },
+  // fipe: só vem preenchido quando quem monta a lista de veículos resolveu o
+  // batch FIPE (ver VeiculoExportavel.fipe) — o catálogo só lê o campo, não
+  // busca o preço. `null` quando não há FIPE confirmado pra esse chassi.
+  { key: "fipe", label: "FIPE", formato: "moeda", agregacao: "soma", grupo: "venda_margem", getValor: (v) => v.fipe ?? null },
   { key: "preco_venda", label: "Preço de venda", formato: "moeda", agregacao: "soma", grupo: "venda_margem", getValor: (v) => v.preco_venda },
   {
     key: "margem",
@@ -151,7 +178,6 @@ export const COLUNAS_ESTOQUE: readonly ColunaEstoque[] = [
   },
   { key: "descricao_situacao", label: "Status", formato: "texto", agregacao: "nenhuma", grupo: "localizacao_status", getValor: (v) => v.descricao_situacao },
   { key: "patio", label: "Localização", formato: "texto", agregacao: "nenhuma", grupo: "localizacao_status", getValor: (v) => v.patio.trim() || null },
-  { key: "valoriza", label: "Valoriza (bônus fábrica)", formato: "moeda", agregacao: "soma", grupo: "custos", getValor: (v) => v.valoriza },
   { key: "custo_revisoes", label: "Revisões", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", getValor: (v) => v.custo_revisoes },
   // custo_forplan: confiança baixa REMOVIDA em 05/10/2026 — fonte corrigida
   // pra NBS.VEICULOS.CUSTO_FORPLAN_FINAL (coluna direta, não CODIGO_CUSTO),
@@ -169,6 +195,28 @@ export const COLUNAS_ESTOQUE: readonly ColunaEstoque[] = [
   { key: "custo_comissoes", label: "Comissões", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", getValor: (v) => v.custo_comissoes },
   { key: "custo_adm", label: "ADM", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "nao_apurado", getValor: (v) => v.custo_adm ?? null },
   { key: "custo_despesas_gerais", label: "Despesas Gerais", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "nao_apurado", getValor: (v) => v.custo_despesas_gerais ?? null },
+  // custo_detalhado_total: soma das 8 categorias acima, tratando null de
+  // ADM/Despesas Gerais como 0 (NÃO propagar null — se propagasse, a coluna
+  // ficaria "—" pra quase todo carro, já que essas duas são "não apurado" na
+  // maioria). As outras 6 categorias são sempre `number` no VeiculoParsed
+  // (nunca null), daí não precisarem de fallback.
+  {
+    key: "custo_detalhado_total",
+    label: "Custos detalhados (total)",
+    formato: "moeda",
+    agregacao: "soma",
+    grupo: "custos_detalhados",
+    confianca: "parcial",
+    getValor: (v) =>
+      v.custo_revisoes +
+      v.custo_forplan +
+      v.custo_holdback +
+      v.custo_acessorios +
+      v.custo_impostos +
+      v.custo_comissoes +
+      (v.custo_adm ?? 0) +
+      (v.custo_despesas_gerais ?? 0),
+  },
 ];
 
 /**
