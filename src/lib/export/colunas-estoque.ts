@@ -195,21 +195,23 @@ export const COLUNAS_ESTOQUE: readonly ColunaEstoque[] = [
   { key: "custo_comissoes", label: "Comissões", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", getValor: (v) => v.custo_comissoes },
   { key: "custo_adm", label: "ADM", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "nao_apurado", getValor: (v) => v.custo_adm ?? null },
   { key: "custo_despesas_gerais", label: "Despesas Gerais", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "nao_apurado", getValor: (v) => v.custo_despesas_gerais ?? null },
-  // custo_detalhado_total: soma das 8 categorias acima, tratando null de
+  // custo_detalhado_total: soma das OUTRAS 7 categorias (exclui Forplan —
+  // esclarecido pelo Marcos em 05/10/2026: Forplan é custo FINANCEIRO (floor
+  // plan), conceitualmente diferente do "custo que o carro teve"; continua
+  // tendo sua própria coluna, só não entra nesta soma). Trata null de
   // ADM/Despesas Gerais como 0 (NÃO propagar null — se propagasse, a coluna
   // ficaria "—" pra quase todo carro, já que essas duas são "não apurado" na
-  // maioria). As outras 6 categorias são sempre `number` no VeiculoParsed
+  // maioria). As outras 5 categorias são sempre `number` no VeiculoParsed
   // (nunca null), daí não precisarem de fallback.
   {
     key: "custo_detalhado_total",
-    label: "Custos detalhados (total)",
+    label: "Custos detalhados (total, sem Forplan)",
     formato: "moeda",
     agregacao: "soma",
     grupo: "custos_detalhados",
     confianca: "parcial",
     getValor: (v) =>
       v.custo_revisoes +
-      v.custo_forplan +
       v.custo_holdback +
       v.custo_acessorios +
       v.custo_impostos +

@@ -10,6 +10,7 @@
 import {
   CATALOGO_ESTOQUE,
   COLUNAS_ESTOQUE,
+  getColuna,
   type ColunaKey,
   type VeiculoExportavel,
 } from "@/lib/export/colunas-estoque";
@@ -34,31 +35,61 @@ export type ConstruirDefEstoqueOpcoes = {
    * modal deixa o Marcos nomear/adicionar quantas quiser (até 15).
    */
   colunasBranco?: string[];
+  /**
+   * Ordem EXPLÍCITA das colunas de saída (dado + branco), como tokens
+   * "col:<key>" (coluna de catálogo) ou "branco:<índice>" (índice 0-based
+   * dentro de `colunasBranco`). Vem da seção "Ordem de exportação" do modal,
+   * já traduzida por `resolverOrdemParaExportacao`
+   * (`ordem-colunas-estoque.ts`). Token que não resolve (key fora de
+   * `colunas`, índice fora de `colunasBranco`) é ignorado. Omitido/vazio →
+   * comportamento de sempre (ver abaixo).
+   */
+  ordem?: readonly string[];
   filtroLoja?: string;
   /** Default true — linhas de agregação no rodapé. */
   incluirTotais?: boolean;
   incluirMedia?: boolean;
 };
 
+const PREFIXO_COLUNA_ORDEM = "col:";
+const PREFIXO_BRANCO_ORDEM = "branco:";
+
 /**
  * Constrói o `RelatorioDef` serializável de estoque a partir da seleção do modal.
  *
- * Decisão consciente: as colunas do catálogo saem na ORDEM CANÔNICA do catálogo
- * (não na ordem de clique) pra preservar exatamente o layout que o Marcos já
- * conhece. O motor RESPEITA a ordem do `def.colunas` — quem impõe a ordem
- * canônica aqui é este builder, não o motor (a Fatia B/F2 vai expor reordenação).
+ * Sem `ordem`: as colunas do catálogo saem na ORDEM CANÔNICA do catálogo (não
+ * na ordem de clique), seguidas das brancas na ordem recebida — comportamento
+ * de sempre, preservado pra quem ainda não passa `ordem` (ex. chamadas
+ * antigas/testes de não-regressão).
+ *
+ * Com `ordem`: a sequência final de colunas é EXATAMENTE a dos tokens, na
+ * ordem dada — é essa ordem que aparece na seção "Ordem de exportação" do
+ * modal, e tem que bater célula a célula com o XLSX gerado.
  */
 export function construirDefEstoque(opcoes: ConstruirDefEstoqueOpcoes): RelatorioDef {
   const escolhidas = new Set(opcoes.colunas);
-  const colunasCatalogo: ColunaSaida[] = COLUNAS_ESTOQUE.filter((c) => escolhidas.has(c.key)).map(
-    (c) => ({ tipo: "catalogo", key: c.key }),
-  );
+  const labelsBranco = opcoes.colunasBranco ?? [];
 
-  const brancas: ColunaSaida[] = (opcoes.colunasBranco ?? []).map((label) => ({
-    tipo: "branco",
-    label,
-    corFundo: BRANCO_BG,
-  }));
+  const colunasSaida: ColunaSaida[] =
+    opcoes.ordem && opcoes.ordem.length > 0
+      ? opcoes.ordem.flatMap((token): ColunaSaida[] => {
+          if (token.startsWith(PREFIXO_COLUNA_ORDEM)) {
+            const key = token.slice(PREFIXO_COLUNA_ORDEM.length) as ColunaKey;
+            return escolhidas.has(key) && getColuna(key) ? [{ tipo: "catalogo", key }] : [];
+          }
+          if (token.startsWith(PREFIXO_BRANCO_ORDEM)) {
+            const idx = Number(token.slice(PREFIXO_BRANCO_ORDEM.length));
+            const label = labelsBranco[idx];
+            return label != null ? [{ tipo: "branco", label, corFundo: BRANCO_BG }] : [];
+          }
+          return [];
+        })
+      : [
+          ...COLUNAS_ESTOQUE.filter((c) => escolhidas.has(c.key)).map(
+            (c): ColunaSaida => ({ tipo: "catalogo", key: c.key }),
+          ),
+          ...labelsBranco.map((label): ColunaSaida => ({ tipo: "branco", label, corFundo: BRANCO_BG })),
+        ];
 
   return {
     schemaVersion: RELATORIO_DEF_VERSION,
@@ -66,7 +97,7 @@ export function construirDefEstoque(opcoes: ConstruirDefEstoqueOpcoes): Relatori
     nome: "NAVESA — RELATÓRIO DE ESTOQUE CUSTOMIZADO",
     fonte: "estoque",
     filtros: { loja: opcoes.filtroLoja ?? null },
-    colunas: [...colunasCatalogo, ...brancas],
+    colunas: colunasSaida,
     totais: {
       incluirTotais: opcoes.incluirTotais ?? true,
       incluirMedia: opcoes.incluirMedia ?? true,

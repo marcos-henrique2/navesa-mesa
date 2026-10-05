@@ -146,9 +146,9 @@ describe("colunas-estoque (catálogo)", () => {
     assert.equal(col.confianca, undefined, "fipe não tem indicador de confiança");
   });
 
-  it("custo_detalhado_total soma as 8 categorias tratando null de ADM/Despesas Gerais como 0", () => {
+  it("custo_detalhado_total soma as OUTRAS 7 categorias (exclui Forplan), tratando null de ADM/Despesas Gerais como 0", () => {
     const col = getColuna("custo_detalhado_total")!;
-    assert.equal(col.label, "Custos detalhados (total)");
+    assert.equal(col.label, "Custos detalhados (total, sem Forplan)");
     assert.equal(col.formato, "moeda");
     assert.equal(col.agregacao, "soma");
     assert.equal(col.grupo, "custos_detalhados");
@@ -164,8 +164,8 @@ describe("colunas-estoque (catálogo)", () => {
       custo_adm: null,
       custo_despesas_gerais: null,
     });
-    // 100+200+300+400+500+600 + 0 + 0 = 2100 (null NÃO propaga pro total).
-    assert.equal(col.getValor(v), 2100);
+    // 100+300+400+500+600 + 0 + 0 = 1900 (Forplan NÃO entra; null NÃO propaga pro total).
+    assert.equal(col.getValor(v), 1900);
 
     const comAdmEDespesas = veiculo({
       custo_revisoes: 100,
@@ -177,7 +177,7 @@ describe("colunas-estoque (catálogo)", () => {
       custo_adm: 50,
       custo_despesas_gerais: 25,
     });
-    assert.equal(col.getValor(comAdmEDespesas), 2175);
+    assert.equal(col.getValor(comAdmEDespesas), 1975);
   });
 
   it("as 9 colunas novas existem, no formato moeda/soma e lêem o campo certo", () => {
