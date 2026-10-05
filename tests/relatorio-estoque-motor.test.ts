@@ -79,15 +79,23 @@ const COLS: ColunaKey[] = [
 
 describe("não-regressão: novo motor reproduz o export atual (fora TOTAIS/MÉDIA)", () => {
   it("título, meta, header, dados e LARGURAS batem célula a célula com o gerador atual", async () => {
-    // Observações + Anotações (2 colunas em branco no fim).
-    const opcoes = {
+    // Observações + Anotações (2 colunas em branco no fim). O gerador LEGADO
+    // (`gerarRelatorioEstoqueCustomizado`) ainda usa os 2 checkboxes fixos; o
+    // motor novo usa a lista genérica `colunasBranco` — mesmos rótulos, pra a
+    // não-regressão continuar válida.
+    const opcoesLegado = {
       colunas: COLS,
       incluirObservacoes: true,
       incluirAnotacoes: true,
       filtroLoja: "MATRIZ",
     };
-    const atual = await abrir(await gerarRelatorioEstoqueCustomizado(VEICULOS, opcoes));
-    const novo = await abrir(await gerarRelatorioEstoque(construirDefEstoque(opcoes), VEICULOS));
+    const opcoesNovo = {
+      colunas: COLS,
+      colunasBranco: ["Observações", "Anotações"],
+      filtroLoja: "MATRIZ",
+    };
+    const atual = await abrir(await gerarRelatorioEstoqueCustomizado(VEICULOS, opcoesLegado));
+    const novo = await abrir(await gerarRelatorioEstoque(construirDefEstoque(opcoesNovo), VEICULOS));
 
     // Título (A1) e meta (A2).
     assert.equal(String(novo.getCell("A1").value), String(atual.getCell("A1").value));
@@ -140,7 +148,7 @@ describe("XLSX: linhas TOTAIS/MÉDIA acrescentadas no fim", () => {
   it("TOTAIS soma dinheiro (cru) e MÉDIA calcula km, ambas após os dados", async () => {
     const ws = await abrir(
       await gerarRelatorioEstoque(
-        construirDefEstoque({ colunas: COLS_AGG, incluirObservacoes: false }),
+        construirDefEstoque({ colunas: COLS_AGG }),
         VEICULOS,
       ),
     );
@@ -168,7 +176,7 @@ describe("XLSX: linhas TOTAIS/MÉDIA acrescentadas no fim", () => {
   it("dinheiro somado mantém centavos crus (numFmt arredonda só na exibição)", async () => {
     const ws = await abrir(
       await gerarRelatorioEstoque(
-        construirDefEstoque({ colunas: ["placa", "valor_aquisicao"], incluirObservacoes: false }),
+        construirDefEstoque({ colunas: ["placa", "valor_aquisicao"] }),
         [
           veiculo({ placa: "A", valor_aquisicao: 100.25 }),
           veiculo({ placa: "B", valor_aquisicao: 100.25 }),
@@ -185,7 +193,7 @@ describe("XLSX: linhas TOTAIS/MÉDIA acrescentadas no fim", () => {
   it("lista vazia não gera TOTAIS/MÉDIA nem quebra", async () => {
     const ws = await abrir(
       await gerarRelatorioEstoque(
-        construirDefEstoque({ colunas: COLS, incluirObservacoes: false }),
+        construirDefEstoque({ colunas: COLS }),
         [],
       ),
     );
@@ -196,7 +204,7 @@ describe("XLSX: linhas TOTAIS/MÉDIA acrescentadas no fim", () => {
   it("colunas em branco (Observações) não recebem agregação", async () => {
     const ws = await abrir(
       await gerarRelatorioEstoque(
-        construirDefEstoque({ colunas: ["placa", "valor_aquisicao"], incluirObservacoes: true }),
+        construirDefEstoque({ colunas: ["placa", "valor_aquisicao"], colunasBranco: ["Observações"] }),
         VEICULOS,
       ),
     );

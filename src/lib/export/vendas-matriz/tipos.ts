@@ -8,6 +8,8 @@
  * escritas pelo renderer — nunca persistidas aqui.
  */
 
+import { calcularCustoReal } from "@/lib/export/custo-real";
+
 export type LinhaVendaMatriz = {
   /** Join key (não normalizado — é o valor bruto do NBS, só pra rastreio). */
   chassi: string;
@@ -82,9 +84,9 @@ export type DerivadosLinha = {
  * margens sem duplicar a regra de cálculo em três lugares.
  */
 export function calcularDerivadosLinha(l: LinhaVendaMatriz): DerivadosLinha {
-  // M = K - L (só existe quando há NF de entrada — sem isso "custo real" seria só -L,
-  // o que exibiria custo negativo sem sentido; mesma guarda usada em analise-navesa.ts).
-  const custoReal = l.nfEntrada != null ? l.nfEntrada - (l.valoriza ?? 0) : null;
+  // M = K - L — fórmula compartilhada com colunas-estoque.ts (coluna `custo_real`),
+  // ver custo-real.ts.
+  const custoReal = calcularCustoReal(l.nfEntrada, l.valoriza);
 
   // Q = O - M
   const lucroBruto = l.valorVenda != null && custoReal != null ? l.valorVenda - custoReal : null;

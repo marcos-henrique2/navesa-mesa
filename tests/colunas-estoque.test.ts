@@ -104,8 +104,80 @@ describe("colunas-estoque (catálogo)", () => {
     assert.equal(getColuna("observacoes" as ColunaKey), undefined);
   });
 
-  it("tem exatamente 25 colunas (16 originais + 9 novas de custos/valoriza)", () => {
-    assert.equal(COLUNAS_ESTOQUE.length, 25);
+  it("tem exatamente 28 colunas (25 + custo_real/fipe/custo_detalhado_total)", () => {
+    assert.equal(COLUNAS_ESTOQUE.length, 28);
+  });
+
+  it("ordem canônica: valoriza/custo_real ficam entre valor_aquisicao e custo_total; fipe antes de preco_venda", () => {
+    const keys = COLUNAS_ESTOQUE.map((c) => c.key);
+    const idx = (k: ColunaKey) => keys.indexOf(k);
+    assert.ok(idx("valor_aquisicao") < idx("valoriza"));
+    assert.ok(idx("valoriza") < idx("custo_real"));
+    assert.ok(idx("custo_real") < idx("custo_total"));
+    assert.ok(idx("custo_total") < idx("fipe"));
+    assert.ok(idx("fipe") < idx("preco_venda"));
+    assert.ok(idx("preco_venda") < idx("margem"));
+    // custo_detalhado_total é a ÚLTIMA entrada do catálogo.
+    assert.equal(keys[keys.length - 1], "custo_detalhado_total");
+  });
+
+  it("custo_real = valor_aquisicao - valoriza (mesma fórmula do Vendas Matriz)", () => {
+    const col = getColuna("custo_real")!;
+    assert.equal(col.label, "Custo Real (Entrada − Valoriza)");
+    assert.equal(col.formato, "moeda");
+    assert.equal(col.agregacao, "soma");
+    assert.equal(col.getValor(veiculo({ valor_aquisicao: 90000, valoriza: 1000 })), 89000);
+  });
+
+  it("custo_real retorna null quando não há valor_aquisicao (mesma guarda de calcularCustoReal)", () => {
+    const col = getColuna("custo_real")!;
+    assert.equal(col.getValor(veiculo({ valor_aquisicao: null })), null);
+  });
+
+  it("fipe lê o campo VeiculoExportavel.fipe; null quando ausente/não resolvido", () => {
+    const col = getColuna("fipe")!;
+    assert.equal(col.label, "FIPE");
+    assert.equal(col.formato, "moeda");
+    assert.equal(col.agregacao, "soma");
+    assert.equal(col.grupo, "venda_margem");
+    assert.equal(col.getValor(veiculo({})), null); // campo ausente (undefined)
+    assert.equal(col.getValor({ ...veiculo({}), fipe: null }), null);
+    assert.equal(col.getValor({ ...veiculo({}), fipe: 120000 }), 120000);
+    assert.equal(col.confianca, undefined, "fipe não tem indicador de confiança");
+  });
+
+  it("custo_detalhado_total soma as 8 categorias tratando null de ADM/Despesas Gerais como 0", () => {
+    const col = getColuna("custo_detalhado_total")!;
+    assert.equal(col.label, "Custos detalhados (total)");
+    assert.equal(col.formato, "moeda");
+    assert.equal(col.agregacao, "soma");
+    assert.equal(col.grupo, "custos_detalhados");
+    assert.equal(col.confianca, "parcial");
+
+    const v = veiculo({
+      custo_revisoes: 100,
+      custo_forplan: 200,
+      custo_holdback: 300,
+      custo_acessorios: 400,
+      custo_impostos: 500,
+      custo_comissoes: 600,
+      custo_adm: null,
+      custo_despesas_gerais: null,
+    });
+    // 100+200+300+400+500+600 + 0 + 0 = 2100 (null NÃO propaga pro total).
+    assert.equal(col.getValor(v), 2100);
+
+    const comAdmEDespesas = veiculo({
+      custo_revisoes: 100,
+      custo_forplan: 200,
+      custo_holdback: 300,
+      custo_acessorios: 400,
+      custo_impostos: 500,
+      custo_comissoes: 600,
+      custo_adm: 50,
+      custo_despesas_gerais: 25,
+    });
+    assert.equal(col.getValor(comAdmEDespesas), 2175);
   });
 
   it("as 9 colunas novas existem, no formato moeda/soma e lêem o campo certo", () => {
@@ -156,6 +228,7 @@ describe("colunas-estoque (catálogo)", () => {
       patio: "localizacao_status",
       valor_aquisicao: "custos",
       valoriza: "custos",
+      custo_real: "custos",
       custo_total: "custos",
       custo_impostos: "custos_detalhados",
       custo_revisoes: "custos_detalhados",
@@ -165,6 +238,8 @@ describe("colunas-estoque (catálogo)", () => {
       custo_comissoes: "custos_detalhados",
       custo_adm: "custos_detalhados",
       custo_despesas_gerais: "custos_detalhados",
+      custo_detalhado_total: "custos_detalhados",
+      fipe: "venda_margem",
       preco_venda: "venda_margem",
       margem: "venda_margem",
       // keys do contrato genérico que não existem como coluna própria aqui:
@@ -198,12 +273,24 @@ describe("colunas-estoque (catálogo)", () => {
     assert.equal(getColuna("custo_forplan")!.confianca, undefined);
   });
 
-  it("nenhuma outra coluna tem indicador de confiança além das 5 esperadas", () => {
+  it("nenhuma outra coluna tem indicador de confiança além das 6 esperadas", () => {
     const comConfianca = COLUNAS_ESTOQUE.filter((c) => c.confianca != null).map((c) => c.key).sort();
     assert.deepEqual(
       comConfianca,
-      ["custo_acessorios", "custo_adm", "custo_comissoes", "custo_despesas_gerais", "custo_holdback"].sort(),
+      [
+        "custo_acessorios",
+        "custo_adm",
+        "custo_comissoes",
+        "custo_despesas_gerais",
+        "custo_detalhado_total",
+        "custo_holdback",
+      ].sort(),
     );
+  });
+
+  it("confiança 'parcial' só em custo_detalhado_total", () => {
+    const comParcial = COLUNAS_ESTOQUE.filter((c) => c.confianca === "parcial").map((c) => c.key);
+    assert.deepEqual(comParcial, ["custo_detalhado_total"]);
   });
 });
 
