@@ -38,12 +38,13 @@ export type VeiculoParsed = {
    * Oracle preenche o valor real; o parser manual de XLSX grava sempre 0.
    *
    * NOTA: `custo_adm` e `custo_despesas_gerais` (colunas NULLABLE SEM
-   * DEFAULT no banco) NÃO têm campo aqui de propósito — nenhum CODIGO_CUSTO
-   * foi encontrado pra essas duas categorias (provável rateio calculado pelo
-   * motor do relatório NBS, fora de escopo), e NULL precisa continuar
-   * significando "não apurado". Nunca adicionar esses dois campos aqui como
-   * `number` — isso forçaria toRow() a sempre gravar algum valor (mesmo que
-   * 0) e apagaria essa distinção.
+   * DEFAULT no banco) NÃO têm CODIGO_CUSTO mapeado (provável rateio calculado
+   * pelo motor do relatório NBS, fora de escopo) — por isso NENHUM sync/parser
+   * escreve valor nelas (`toRow()` em `lib/data/veiculos.ts` omite as duas de
+   * propósito, deixando o Postgres gravar NULL). Os dois campos abaixo são
+   * só de LEITURA (export/exibição): `fromRow()` lê o que já está no banco
+   * (sempre NULL hoje) sem jamais inventar um 0. Nunca tornar esses dois
+   * campos `number` obrigatório — isso apagaria a distinção "não apurado".
    */
   custo_impostos: number;
   custo_revisoes: number;
@@ -51,6 +52,10 @@ export type VeiculoParsed = {
   custo_acessorios: number;
   custo_forplan: number;
   custo_comissoes: number;
+  /** Só leitura — ver NOTA acima. Sempre `null` até existir fórmula de cálculo. */
+  custo_adm?: number | null;
+  /** Só leitura — ver NOTA acima. Sempre `null` até existir fórmula de cálculo. */
+  custo_despesas_gerais?: number | null;
 };
 
 export type SnapshotMeta = {
