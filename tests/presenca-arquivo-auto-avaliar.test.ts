@@ -24,6 +24,7 @@ import {
   diffPresencaNoArquivo,
   LIMITE_SUSPEITA_ARQUIVO_PARCIAL,
   pareceArquivoParcial,
+  placasDeOutrasLojas,
   placasVistasNoArquivo,
   STATUS_ATIVOS_NO_ANUNCIO,
   type RepasseRefPresenca,
@@ -99,6 +100,36 @@ describe("placasVistasNoArquivo", () => {
   it("deduplica placa que aparece nas duas listas", () => {
     const vistas = placasVistasNoArquivo([{ placa_norm: "ABC1D23" }], [{ placa_norm: "ABC1D23" }]);
     assert.equal(vistas.size, 1);
+  });
+});
+
+// ─── placasDeOutrasLojas — a metade que a RPC de reconciliação espera ────────
+
+describe("placasDeOutrasLojas", () => {
+  it("devolve só as placas de outra loja, não as da loja alvo", () => {
+    const placas = placasDeOutrasLojas(LINHAS_OUTRA_LOJA);
+    assert.deepEqual([...placas].sort(), [...OUTRA_LOJA].sort());
+  });
+
+  it("placa vazia não entra — mesmo filtro de placasVistasNoArquivo", () => {
+    const placas = placasDeOutrasLojas([{ placa_norm: "" }, { placa_norm: "ABC1D23" }]);
+    assert.deepEqual(placas, ["ABC1D23"]);
+  });
+
+  it("deduplica", () => {
+    const placas = placasDeOutrasLojas([{ placa_norm: "ABC1D23" }, { placa_norm: "ABC1D23" }]);
+    assert.deepEqual(placas, ["ABC1D23"]);
+  });
+
+  it("lista vazia devolve array vazio", () => {
+    assert.deepEqual(placasDeOutrasLojas([]), []);
+  });
+
+  it("é exatamente a metade 'outra loja' de placasVistasNoArquivo — mesma fonte, sem duplicar o filtro", () => {
+    const todas = placasVistasNoArquivo(LINHAS_MATRIZ, LINHAS_OUTRA_LOJA);
+    const soOutras = placasDeOutrasLojas(LINHAS_OUTRA_LOJA);
+    for (const p of soOutras) assert.ok(todas.has(p));
+    for (const p of [...BATERAM, REAPARECEU]) assert.ok(!soOutras.includes(p));
   });
 });
 

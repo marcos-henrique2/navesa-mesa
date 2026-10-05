@@ -31,7 +31,10 @@ import {
   type OfertasMeta,
   type PayloadSyncArquivo,
 } from "@/lib/parsers/auto-avaliar-ofertas-xls";
-import { placasVistasNoArquivo } from "@/lib/repasses/presenca-arquivo-auto-avaliar";
+import {
+  placasDeOutrasLojas,
+  placasVistasNoArquivo,
+} from "@/lib/repasses/presenca-arquivo-auto-avaliar";
 import { previewSyncArquivo } from "@/lib/repasses/sync-arquivo-auto-avaliar-queries";
 import type { RelatorioSync } from "@/lib/repasses/sync-arquivo-auto-avaliar";
 import { SyncOfertasConferencia } from "@/components/repasses/SyncOfertasConferencia";
@@ -48,6 +51,12 @@ type ConferenciaOfertas = {
    * senão carro transferido de loja é acusado de ter sumido.
    */
   placasNoArquivo: ReadonlySet<string>;
+  /**
+   * Só a metade "outra loja" de `placasNoArquivo` — o que a RPC de sync
+   * (migration 045) espera em `placas_outras_lojas` pra reconciliar sem acusar
+   * de vendido/saiu um carro só transferido de loja. Mesmo parser, mesmo dado.
+   */
+  placasOutrasLojas: ReadonlyArray<string>;
   payload: PayloadSyncArquivo;
   preview: RelatorioSync;
 };
@@ -90,12 +99,14 @@ export function ImportarPorArquivo() {
       }
 
       const payload = montarPayloadSyncArquivo(parse.linhas);
-      const preview = await previewSyncArquivo(payload);
+      const placasOutrasLojas = placasDeOutrasLojas(parse.outra_loja);
+      const preview = await previewSyncArquivo(payload, { placasOutrasLojas });
       setConferencia({
         arquivoNome: file.name,
         meta: parse.meta,
         outraLoja: parse.outra_loja,
         placasNoArquivo: placasVistasNoArquivo(parse.linhas, parse.outra_loja),
+        placasOutrasLojas,
         payload,
         preview,
       });
@@ -206,6 +217,7 @@ export function ImportarPorArquivo() {
           meta={conferencia.meta}
           outraLoja={conferencia.outraLoja}
           placasNoArquivo={conferencia.placasNoArquivo}
+          placasOutrasLojas={conferencia.placasOutrasLojas}
           payload={conferencia.payload}
           preview={conferencia.preview}
           onAplicado={(relatorio) => {

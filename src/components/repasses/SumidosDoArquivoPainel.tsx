@@ -30,6 +30,31 @@
  * A regra do universo de placas — comparar contra TODAS as linhas do arquivo, de
  * qualquer loja — mora no módulo puro e é o que impede acusar de "saiu do
  * anúncio" um carro que só mudou de loja. Aqui só se renderiza o resultado.
+ *
+ * ┌─ DECISÃO (migration 045): por que este painel continua existindo ──────────┐
+ * │ Desde a 045, `ImportarPorArquivo`/`SyncOfertasConferencia` já reconciliam   │
+ * │ `canal=auto_avaliar AND status='subido'` automaticamente ao gravar — é o    │
+ * │ bloco "Reconciliação automática" acima deste painel na tela. Isso NÃO torna │
+ * │ este painel redundante, por três motivos:                                   │
+ * │                                                                              │
+ * │ 1. ESCOPO DIFERENTE. A RPC só reconcilia `status='subido'`. Um repasse já    │
+ * │    `'marcado'` cuja placa sumiu do arquivo não é tocado por ela — mas ainda  │
+ * │    entra em `STATUS_ATIVOS_NO_ANUNCIO` aqui e aparece em `sumiram`.          │
+ * │ 2. A RECONCILIAÇÃO AUTOMÁTICA NUNCA DELETA. Ela só marca `vendido` (cruzou   │
+ * │    com `vendas`) ou `marcado` (não cruzou) — nunca remove o repasse. Pra     │
+ * │    carro que saiu do anúncio SEM vender (ex.: devolução de consignado),      │
+ * │    "Remover" aqui continua sendo a única forma de tirá-lo da lista.          │
+ * │ 3. `'marcado'` genérico ≠ venda registrada. Quando a reconciliação           │
+ * │    automática marca `'marcado'` por falta de cruzamento com `vendas`         │
+ * │    (venda ainda não importada do NBS), o carro aparece de novo aqui — ainda  │
+ * │    `'marcado'`, ainda sem placa no arquivo — e o Marcos pode usar "Marcar    │
+ * │    como vendido" pra registrar o valor/data reais quando descobrir a venda,  │
+ * │    em vez de ficar com um `'marcado'` genérico pra sempre.                   │
+ * │                                                                              │
+ * │ O que MUDA: o painel passa a recarregar (`recarregarToken`) depois que a     │
+ * │ sincronização grava, pra não operar sobre um `'subido'` que a reconciliação  │
+ * │ automática já resolveu na mesma sessão — ver o `useEffect` abaixo.           │
+ * └──────────────────────────────────────────────────────────────────────────────┘
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -80,6 +105,13 @@ export type SumidosDoArquivoPainelProps = {
    */
   placasNoArquivo: ReadonlySet<string>;
   /**
+   * Muda a cada gravação bem-sucedida da sincronização (ver `aplicacoes` em
+   * `SyncOfertasConferencia`) e dispara um refetch — sem isso, um repasse que a
+   * reconciliação automática ACABOU de mover de `'subido'` ficaria preso na tela
+   * com o status antigo até o Marcos clicar "Tentar de novo" manualmente.
+   */
+  recarregarToken?: number;
+  /**
    * Avisa o pai que ESTE painel já gravou no banco (venda registrada ou repasse
    * removido). Existe porque o rodapé da conferência promete "nada é gravado até
    * você clicar" e oferece "Descartar": sem esse sinal, o Marcos remove 6 carros,
@@ -95,6 +127,7 @@ export type SumidosDoArquivoPainelProps = {
 
 export function SumidosDoArquivoPainel({
   placasNoArquivo,
+  recarregarToken = 0,
   onGravou,
 }: SumidosDoArquivoPainelProps) {
   const { removerLocalmente: removerChassiEmRepasse } = useChassisEmRepasse();
@@ -129,11 +162,13 @@ export function SumidosDoArquivoPainel({
     }
   }
 
-  // Só na montagem: o fetch não depende de `placasNoArquivo` (a comparação é o
-  // `useMemo` abaixo), e o painel remonta a cada upload novo.
+  // Monta + toda vez que `recarregarToken` muda (gravação da sincronização
+  // principal). Não depende de `placasNoArquivo` (a comparação é o `useMemo`
+  // abaixo). `carregar` de propósito fora do array: é recriada a cada render e
+  // entrar no array causaria refetch em loop.
   useEffect(() => {
     void carregar();
-  }, []);
+  }, [recarregarToken]);
 
   const diff = useMemo(
     () => diffPresencaNoArquivo(repasses ?? [], placasNoArquivo),

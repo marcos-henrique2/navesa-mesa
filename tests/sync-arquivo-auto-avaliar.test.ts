@@ -105,6 +105,10 @@ describe("lerRelatorioSync — leitura do contrato §5", () => {
       ignoradas: 0,
       campos_a_alterar: 104,
       linhas_gravadas: 0,
+      reconciliar: 0,
+      reconciliados_vendidos: 0,
+      reconciliados_marcados: 0,
+      reconciliacao_pendente_confirmacao: false,
     });
   });
 
@@ -310,6 +314,90 @@ describe("Rótulos pt-BR", () => {
     assert.match(rotuloMotivoIgnorada("valor_compra_zerado"), /custo-base/);
     assert.match(rotuloMotivoIgnorada("repasse_ambiguo"), /mais de um repasse ativo/i);
     assert.match(rotuloMotivoIgnorada("placa_duplicada_no_arquivo"), /repetida/);
+  });
+});
+
+describe("lerRelatorioSync — reconciliação automática (migration 045)", () => {
+  it("lê a_reconciliar e risco_reconciliacao quando a RPC manda reconciliar_sumidos", () => {
+    const r = lerRelatorioSync({
+      resumo: {
+        reconciliar: 2,
+        reconciliados_vendidos: 0,
+        reconciliados_marcados: 0,
+        reconciliacao_pendente_confirmacao: false,
+      },
+      a_reconciliar: [
+        {
+          repasse_id: 501,
+          placa: "ABC1D23",
+          modelo: "MODELO X",
+          novo_status: "vendido",
+          data_vendido: "2026-08-10",
+          valor_vendido: 95000,
+        },
+        {
+          repasse_id: 502,
+          placa: "DEF4G56",
+          modelo: "MODELO Y",
+          novo_status: "marcado",
+          data_vendido: null,
+          valor_vendido: null,
+        },
+      ],
+      risco_reconciliacao: { total: 2, universo: 10, proporcao: 0.2, exige_confirmacao: false },
+    });
+
+    assert.equal(r.resumo.reconciliar, 2);
+    assert.equal(r.a_reconciliar.length, 2);
+    assert.deepEqual(r.a_reconciliar[0], {
+      repasse_id: 501,
+      placa: "ABC1D23",
+      modelo: "MODELO X",
+      novo_status: "vendido",
+      data_vendido: "2026-08-10",
+      valor_vendido: 95000,
+    });
+    assert.equal(r.a_reconciliar[1].novo_status, "marcado");
+    assert.equal(r.a_reconciliar[1].valor_vendido, null);
+    assert.deepEqual(r.risco_reconciliacao, {
+      total: 2,
+      universo: 10,
+      proporcao: 0.2,
+      exige_confirmacao: false,
+    });
+  });
+
+  it("payload antigo (sem as chaves novas) lê zero/false — comportamento idêntico ao pré-045", () => {
+    const r = lerRelatorioSync({
+      resumo: { linhas_no_arquivo: 1, com_alteracao: 1 },
+    });
+    assert.equal(r.resumo.reconciliar, 0);
+    assert.equal(r.resumo.reconciliados_vendidos, 0);
+    assert.equal(r.resumo.reconciliados_marcados, 0);
+    assert.equal(r.resumo.reconciliacao_pendente_confirmacao, false);
+    assert.deepEqual(r.a_reconciliar, []);
+    assert.deepEqual(r.risco_reconciliacao, {
+      total: 0,
+      universo: 0,
+      proporcao: 0,
+      exige_confirmacao: false,
+    });
+  });
+
+  it("novo_status desconhecido/ausente cai em 'marcado' — nunca afirma venda sem a RPC dizer", () => {
+    const r = lerRelatorioSync({
+      a_reconciliar: [{ repasse_id: 1, placa: "X", modelo: null, novo_status: "qualquer_coisa" }],
+    });
+    assert.equal(r.a_reconciliar[0].novo_status, "marcado");
+  });
+
+  it("reconciliacao_pendente_confirmacao true é lido quando a trava de risco bloqueou a escrita", () => {
+    const r = lerRelatorioSync({
+      resumo: { reconciliar: 8, reconciliacao_pendente_confirmacao: true },
+      risco_reconciliacao: { total: 8, universo: 20, proporcao: 0.4, exige_confirmacao: true },
+    });
+    assert.equal(r.resumo.reconciliacao_pendente_confirmacao, true);
+    assert.equal(r.risco_reconciliacao.exige_confirmacao, true);
   });
 });
 

@@ -1,0 +1,63 @@
+-- Navesa Mesa — Migration 044: normaliza placa com separador em `repasses`
+-- =====================================================================================
+-- INVESTIGAÇÃO (05/10/2026, a pedido do Marcos): a reconciliação de status de `repasses`
+-- (canal='auto_avaliar') depende de casar `placa` por PLACA NORMALIZADA —
+-- `regexp_replace(upper(placa), '[^A-Z0-9]', '', 'g')`, a MESMA expressão do índice
+-- funcional `idx_repasses_placa_norm` (migration 025) e de `normalizarPlaca()` em
+-- src/lib/utils/placa.ts. 8 linhas de `repasses` estão gravadas com hífen
+-- (ex.: "PRT-7140" em vez de "PRT7140") — provavelmente entraram por colagem manual
+-- antes da normalização ter sido reforçada nos importadores. Esse formato não quebra
+-- o ÍNDICE (ele é funcional e normaliza na leitura), mas quebra qualquer comparação
+-- por IGUALDADE direta contra `placa` crua — e é exatamente isso que a migration 045
+-- (reconciliação automática do fluxo de arquivo) precisa fazer contra o conjunto de
+-- placas do arquivo.
+--
+-- VERIFICADO contra produção (projeto Supabase "mesa", só leitura, sem nenhum UPDATE)
+-- antes de decidir este SQL:
+--   • `SELECT ... WHERE placa <> regexp_replace(upper(placa), '[^A-Z0-9]', '', 'g')`
+--     devolve EXATAMENTE 8 linhas (ids 359, 395, 396, 419, 461, 474, 481, 532) — todas
+--     canal='auto_avaliar', todas com hífen, nenhuma com placa NULL nem minúscula.
+--   • Nenhuma colisão: nenhuma das 8 formas normalizadas já existe em OUTRA linha de
+--     `repasses` (checado com self-join). O UPDATE não cria placa duplicada.
+--   • Nenhuma constraint de unicidade é sobre `placa` (as únicas de 009/010 são sobre
+--     `chassi`), então não há risco de 23505.
+--
+-- POR QUE A CONDIÇÃO É `placa <> normalizado` E NÃO `placa ~ '-'`:
+--   `~ '-'` só pega hífen. A forma geral (mesma expressão dos índices/normalizarPlaca)
+--   também corrige espaço, ponto ou minúscula se algum dia aparecer — e é isto que
+--   torna o UPDATE AUTO-IDEMPOTENTE: depois de rodar uma vez, a condição do WHERE fica
+--   falsa para todo mundo, então rodar de novo não faz nada (0 linhas), sem precisar de
+--   `IF NOT EXISTS` nem de uma tabela de controle.
+--
+-- O QUE ESTA MIGRATION NÃO FAZ (por design, não por limitação):
+--   • Não corrige o excesso de repasses 'marcado' (acumulado por falta de reconciliação
+--     automática no fluxo de arquivo — causa raiz documentada na migration 045). Essa
+--     correção é um REIMPORT pela tela normal, feito pelo Marcos, depois que a 045
+--     estiver no ar — não uma migration de dados.
+--   • Não roda contra produção a partir daqui: é só o DDL. Quem aplica em produção é o
+--     fluxo normal de deploy (Supabase migration), não este agente.
+-- =====================================================================================
+
+UPDATE repasses
+SET placa = regexp_replace(upper(placa), '[^A-Z0-9]', '', 'g')
+WHERE placa IS NOT NULL
+  AND placa <> regexp_replace(upper(placa), '[^A-Z0-9]', '', 'g');
+
+-- =====================================================================================
+-- VERIFICAÇÃO PÓS-MIGRATION (rodar manualmente depois de aplicar)
+-- =====================================================================================
+-- 1) Nenhuma placa fora da forma normalizada (esperado: 0 linhas):
+--      SELECT id, placa FROM repasses
+--       WHERE placa IS NOT NULL
+--         AND placa <> regexp_replace(upper(placa), '[^A-Z0-9]', '', 'g');
+--
+-- 2) As 8 linhas identificadas na investigação viraram a forma sem separador
+--    (esperado: PRM2590, QTQ0226, QEG0036, PQX7080, PQX6187, QTS3730, PRV8911, PRT7140):
+--      SELECT id, placa FROM repasses
+--       WHERE id IN (359, 395, 396, 419, 461, 474, 481, 532) ORDER BY id;
+--
+-- 3) Idempotência: rodar a migration 2x não altera nenhuma linha na segunda vez
+--    (a condição do WHERE já é falsa pra todo mundo depois da 1ª execução).
+-- =====================================================================================
+-- FIM da migration 044
+-- =====================================================================================
