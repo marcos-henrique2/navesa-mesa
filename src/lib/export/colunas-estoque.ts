@@ -102,8 +102,9 @@ export type ColunaEstoque = {
   /**
    * Indicador de confiança exibido no modal (ícone + tooltip), quando a
    * coluna merece aviso. Ausente = confiança alta/média, sem aviso.
-   *  - "baixa": a categoria tem CODIGO_CUSTO mapeado no Oracle, mas veio
-   *    zerada na maioria da amostra testada.
+   *  - "baixa": a categoria tem fonte mapeada no Oracle (CODIGO_CUSTO ou
+   *    coluna direta), mas veio zerada em toda a amostra testada até agora
+   *    (sem exemplo não-zero pra confirmar o valor, só a ausência de erro).
    *  - "nao_apurado": a coluna pode vir em BRANCO (não R$ 0,00) — ainda não
    *    existe fórmula de cálculo definida pra essa categoria.
    */
@@ -152,7 +153,16 @@ export const COLUNAS_ESTOQUE: readonly ColunaEstoque[] = [
   { key: "patio", label: "Localização", formato: "texto", agregacao: "nenhuma", grupo: "localizacao_status", getValor: (v) => v.patio.trim() || null },
   { key: "valoriza", label: "Valoriza (bônus fábrica)", formato: "moeda", agregacao: "soma", grupo: "custos", getValor: (v) => v.valoriza },
   { key: "custo_revisoes", label: "Revisões", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", getValor: (v) => v.custo_revisoes },
-  { key: "custo_forplan", label: "Forplan", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", getValor: (v) => v.custo_forplan },
+  // custo_forplan: confiança baixa REMOVIDA em 05/10/2026 — fonte corrigida
+  // pra NBS.VEICULOS.CUSTO_FORPLAN_FINAL (coluna direta, não CODIGO_CUSTO),
+  // confirmada batendo ao centavo contra o relatório nativo PDF em 3
+  // veículos. Ver migration 043 e custos-estoque-detalhado.ts.
+  { key: "custo_forplan", label: "Forplan", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", getValor: (v) => v.custo_forplan },
+  // custo_holdback: fonte corrigida em 05/10/2026 pra NBS.VEICULOS.HOLD_BACK_FINAL
+  // (coluna direta, mesmo padrão de custo_forplan) — mas sem exemplo
+  // não-zero no PDF de hoje pra confirmar valor (os ~283 veículos testados
+  // vieram todos R$0,00 tanto no PDF quanto no Oracle). Confiança continua
+  // "baixa" até aparecer um veículo com HoldBack real pra validar.
   { key: "custo_holdback", label: "HoldBack", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", getValor: (v) => v.custo_holdback },
   { key: "custo_acessorios", label: "Acessórios", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", getValor: (v) => v.custo_acessorios },
   { key: "custo_impostos", label: "Impostos", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", getValor: (v) => v.custo_impostos },

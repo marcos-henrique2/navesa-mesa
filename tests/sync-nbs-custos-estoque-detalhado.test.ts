@@ -1,27 +1,36 @@
 /**
- * Testes de custos de estoque detalhados (6 categorias do relatório nativo
- * NBS "Custos de Veículos em Estoque") no sync Oracle -> Supabase.
+ * Testes de custos de estoque detalhados (relatório nativo NBS "Custos de
+ * Veículos em Estoque") no sync Oracle -> Supabase.
  *
  * Por que existe:
  *   `veiculos.custo_total` hoje é um valor AGREGADO vindo direto do Oracle.
- *   Esta migration (040_custos_estoque_detalhado_em_veiculos.sql) quebra esse
- *   agregado em 6 categorias individuais (Impostos, Revisões, HoldBack,
- *   Acessórios, Forplan, Comissões), cada uma vinda de
- *   NBS.VEICULOS_CUSTOS_ESPECIFICOS filtrada por um conjunto de CODIGO_CUSTO
- *   diferente, somada por chassi_resumido+loja atual — mesmo padrão de
- *   valoriza.ts, mas rodando UMA QUERY POR CATEGORIA (6 no total) em vez de
- *   um IN() gigante com todos os códigos juntos: testado com 73 códigos numa
- *   query só e precisou ser cancelado depois de 15+min contra a tabela
- *   (55,9 milhões de linhas, sem índice em CODIGO_CUSTO). Ver
- *   scripts/sync-nbs/custos-estoque-detalhado.ts e cabeçalho da migration 040
- *   pra detalhes de confiança por categoria e códigos candidatos descartados.
+ *   A migration 040 (040_custos_estoque_detalhado_em_veiculos.sql) quebrou
+ *   esse agregado em 6 colunas individuais (Impostos, Revisões, HoldBack,
+ *   Acessórios, Forplan, Comissões).
+ *
+ *   ATUALIZADO 05/10/2026 (migration 043): Forplan e HoldBack SAÍRAM do
+ *   mecanismo de CODIGO_CUSTO coberto por este módulo — são colunas DIRETAS
+ *   em NBS.VEICULOS (CUSTO_FORPLAN_FINAL, HOLD_BACK_FINAL), confirmado
+ *   batendo ao centavo contra o relatório nativo PDF em 3 veículos. Agora
+ *   são lidas em mapear-veiculo.ts pelo mesmo mecanismo de custo_total
+ *   (candidato de coluna via get()), não por este módulo. Este módulo (e os
+ *   testes abaixo) cobre só as 4 categorias que CONTINUAM vindo de
+ *   NBS.VEICULOS_CUSTOS_ESPECIFICOS filtrada por CODIGO_CUSTO (Impostos,
+ *   Revisões, Acessórios, Comissões), somada por chassi_resumido+loja atual
+ *   — mesmo padrão de valoriza.ts, rodando UMA QUERY POR CATEGORIA (em vez
+ *   de um IN() gigante com todos os códigos juntos: testado com 73 códigos
+ *   numa query só e precisou ser cancelado depois de 15+min contra a tabela,
+ *   55,9 milhões de linhas, sem índice em CODIGO_CUSTO). Ver
+ *   scripts/sync-nbs/custos-estoque-detalhado.ts e cabeçalhos das migrations
+ *   040/043 pra detalhes de confiança por categoria e códigos candidatos
+ *   descartados.
  *
  *   `custo_adm` e `custo_despesas_gerais` são OUTRAS 2 colunas da mesma
  *   migration (NULLABLE SEM DEFAULT) que ficam FORA deste módulo de
  *   propósito: nenhum CODIGO_CUSTO foi encontrado pra elas (hipótese: rateio
  *   calculado pelo motor do relatório NBS). Não devem ser escritas por código
  *   algum nesta rodada — NULL = "não apurado", diferente de "fato conhecido
- *   de custo zero" (0) das outras 6 categorias.
+ *   de custo zero" (0) das outras categorias.
  */
 
 import { describe, it } from "node:test";
@@ -29,9 +38,7 @@ import assert from "node:assert/strict";
 import {
   CODIGOS_CUSTO_IMPOSTOS,
   CODIGOS_CUSTO_REVISOES,
-  CODIGOS_CUSTO_HOLDBACK,
   CODIGOS_CUSTO_ACESSORIOS,
-  CODIGOS_CUSTO_FORPLAN,
   CODIGOS_CUSTO_COMISSOES,
   CODIGOS_POR_CATEGORIA,
   sqlSelectCustosPorCategoria,
@@ -44,14 +51,8 @@ import { mapearVeiculo } from "../scripts/sync-nbs/mapear-veiculo";
 import { toRow } from "../src/lib/data/veiculos";
 import { veiculo } from "./_mocks";
 
-const CATEGORIAS: CategoriaCustoDetalhado[] = [
-  "custo_impostos",
-  "custo_revisoes",
-  "custo_holdback",
-  "custo_acessorios",
-  "custo_forplan",
-  "custo_comissoes",
-];
+/** As 4 categorias que ainda vêm de NBS.VEICULOS_CUSTOS_ESPECIFICOS por CODIGO_CUSTO. */
+const CATEGORIAS: CategoriaCustoDetalhado[] = ["custo_impostos", "custo_revisoes", "custo_acessorios", "custo_comissoes"];
 
 describe("sqlSelectCustosPorCategoria — uma query por categoria, nunca um IN() combinado", () => {
   it("monta SELECT ... GROUP BY CHASSI_RESUMIDO, COD_EMPRESA contra NBS.VEICULOS_CUSTOS_ESPECIFICOS", () => {
@@ -84,20 +85,17 @@ describe("sqlSelectCustosPorCategoria — uma query por categoria, nunca um IN()
     for (const codigo of CODIGOS_CUSTO_REVISOES) assert.match(sql, new RegExp(`\\b${codigo}\\b`));
   });
 
-  it("custo_holdback filtra 144 e 681", () => {
-    assert.deepEqual([...CODIGOS_CUSTO_HOLDBACK], [144, 681]);
-  });
-
   it("custo_acessorios filtra 146, 424 e 640", () => {
     assert.deepEqual([...CODIGOS_CUSTO_ACESSORIOS], [146, 424, 640]);
   });
 
-  it("custo_forplan filtra só o candidato único 133 (\"Foorplan\", typo do NBS)", () => {
-    assert.deepEqual([...CODIGOS_CUSTO_FORPLAN], [133]);
+  it("CODIGOS_POR_CATEGORIA cobre exatamente as 4 categorias implementadas (não ADM/Despesas Gerais, não Forplan/HoldBack)", () => {
+    assert.deepEqual(Object.keys(CODIGOS_POR_CATEGORIA).sort(), [...CATEGORIAS].sort());
   });
 
-  it("CODIGOS_POR_CATEGORIA cobre exatamente as 6 categorias implementadas (não ADM/Despesas Gerais)", () => {
-    assert.deepEqual(Object.keys(CODIGOS_POR_CATEGORIA).sort(), [...CATEGORIAS].sort());
+  it("CODIGOS_POR_CATEGORIA NÃO tem mais custo_forplan/custo_holdback (migration 043 — colunas diretas)", () => {
+    assert.ok(!("custo_forplan" in CODIGOS_POR_CATEGORIA));
+    assert.ok(!("custo_holdback" in CODIGOS_POR_CATEGORIA));
   });
 });
 
@@ -163,8 +161,8 @@ describe("buscarCustoDetalhado — regras gerais (mesmo contrato de buscarValori
   });
 });
 
-describe("mapearVeiculo — 6 categorias via mapasCustosDetalhados (CHASSI_RESUMIDO + LOJA_ATUAL da row)", () => {
-  it("row com CHASSI_RESUMIDO/LOJA_ATUAL presentes nos Maps -> todas as 6 categorias preenchidas", () => {
+describe("mapearVeiculo — 4 categorias via mapasCustosDetalhados (CHASSI_RESUMIDO + LOJA_ATUAL da row)", () => {
+  it("row com CHASSI_RESUMIDO/LOJA_ATUAL presentes nos Maps -> todas as 4 categorias preenchidas", () => {
     const mapasCustosDetalhados = Object.fromEntries(
       CATEGORIAS.map((categoria, i) => [
         categoria,
@@ -176,13 +174,11 @@ describe("mapearVeiculo — 6 categorias via mapasCustosDetalhados (CHASSI_RESUM
 
     assert.equal(v.custo_impostos, 100);
     assert.equal(v.custo_revisoes, 200);
-    assert.equal(v.custo_holdback, 300);
-    assert.equal(v.custo_acessorios, 400);
-    assert.equal(v.custo_forplan, 500);
-    assert.equal(v.custo_comissoes, 600);
+    assert.equal(v.custo_acessorios, 300);
+    assert.equal(v.custo_comissoes, 400);
   });
 
-  it("row sem entrada correspondente nos Maps -> todas as 6 categorias 0 (não null)", () => {
+  it("row sem entrada correspondente nos Maps -> todas as 4 categorias 0 (não null)", () => {
     const mapasCustosDetalhados = Object.fromEntries(
       CATEGORIAS.map((categoria) => [
         categoria,
@@ -197,12 +193,12 @@ describe("mapearVeiculo — 6 categorias via mapasCustosDetalhados (CHASSI_RESUM
     }
   });
 
-  it("sem mapasCustosDetalhados nos lookups (não fornecido) -> todas as 6 categorias 0, não lança erro", () => {
+  it("sem mapasCustosDetalhados nos lookups (não fornecido) -> todas as 4 categorias 0, não lança erro", () => {
     const { veiculo: v } = mapearVeiculo({ CHASSI_RESUMIDO: "SCR3B78", LOJA_ATUAL: 2 });
     for (const categoria of CATEGORIAS) assert.equal(v[categoria], 0);
   });
 
-  it("nenhuma das 6 categorias é reportada em camposSemFonte (são campos computados, não colunas diretas)", () => {
+  it("nenhuma das 4 categorias é reportada em camposSemFonte (são campos computados, não colunas diretas)", () => {
     const { camposSemFonte } = mapearVeiculo({});
     for (const categoria of CATEGORIAS) assert.ok(!camposSemFonte.includes(categoria));
   });
@@ -219,8 +215,39 @@ describe("mapearVeiculo — 6 categorias via mapasCustosDetalhados (CHASSI_RESUM
   });
 });
 
+describe("mapearVeiculo — custo_forplan/custo_holdback via coluna DIRETA (migration 043, não mais mapasCustosDetalhados)", () => {
+  it("lê CUSTO_FORPLAN_FINAL e HOLD_BACK_FINAL direto da row (mesmo padrão de custo_total)", () => {
+    const { veiculo: v } = mapearVeiculo({ CUSTO_FORPLAN_FINAL: 9667.36, HOLD_BACK_FINAL: 0 });
+    assert.equal(v.custo_forplan, 9667.36);
+    assert.equal(v.custo_holdback, 0);
+  });
+
+  it("CUSTO_FORPLAN_FINAL/HOLD_BACK_FINAL ausentes ou NULL (carro sem fechamento ainda) -> 0, nunca null", () => {
+    const { veiculo: v1 } = mapearVeiculo({});
+    assert.equal(v1.custo_forplan, 0);
+    assert.equal(v1.custo_holdback, 0);
+
+    const { veiculo: v2 } = mapearVeiculo({ CUSTO_FORPLAN_FINAL: null, HOLD_BACK_FINAL: null });
+    assert.equal(v2.custo_forplan, 0);
+    assert.equal(v2.custo_holdback, 0);
+  });
+
+  it("mapasCustosDetalhados não afeta mais custo_forplan/custo_holdback (só as 4 categorias via CODIGO_CUSTO)", () => {
+    const mapasCustosDetalhados = {
+      custo_forplan: construirMapaCustoDetalhado([{ chassiResumido: "SCR3B78", codEmpresa: 2, total: 99999 }]),
+    } as unknown as Record<CategoriaCustoDetalhado, Map<string, number>>;
+
+    const { veiculo: v } = mapearVeiculo(
+      { CHASSI_RESUMIDO: "SCR3B78", LOJA_ATUAL: 2, CUSTO_FORPLAN_FINAL: 123.45 },
+      { mapasCustosDetalhados },
+    );
+    // Se ainda lesse do Map, daria 99999 — tem que vir da coluna direta (123.45).
+    assert.equal(v.custo_forplan, 123.45);
+  });
+});
+
 describe("toRow (src/lib/data/veiculos.ts) — payload do upsert/insert nunca grava custo_adm/custo_despesas_gerais", () => {
-  it("payload inclui as 6 categorias implementadas com o valor do VeiculoParsed", () => {
+  it("payload inclui as 6 colunas de custo detalhado com o valor do VeiculoParsed (4 via CODIGO_CUSTO + 2 via coluna direta)", () => {
     const v = veiculo({
       custo_impostos: 541,
       custo_revisoes: 230,

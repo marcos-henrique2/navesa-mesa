@@ -57,6 +57,17 @@ const CANDIDATOS: Record<keyof VeiculoParsed, string[]> = {
   preco_venda: ["PRECO_TABELA"],
   valor_aquisicao: ["TOTAL_NOTA_FABRICA", "VALOR_AQUISICAO"],
   custo_total: ["CUSTO_TOTAL", "CUSTO_TOTAL_FINAL"],
+  // custo_forplan/custo_holdback: ATUALIZADO 05/10/2026 — são colunas
+  // DIRETAS em NBS.VEICULOS (confirmado batendo ao centavo contra o
+  // relatório nativo PDF "Custos de Veículos em Estoque" em 3 veículos, ver
+  // supabase/migrations/043_corrige_fonte_forplan_holdback.sql), NÃO um
+  // CODIGO_CUSTO em NBS.VEICULOS_CUSTOS_ESPECIFICOS como as outras 4
+  // categorias abaixo. Mesmo padrão de custo_total: candidato de coluna
+  // direta, não busca em Map. Ausência de valor (NULL, carro sem fechamento
+  // de forplan ainda) cai pro ?? 0 em mapearVeiculo() — mesmo contrato
+  // "zero = fato conhecido" das outras categorias.
+  custo_forplan: ["CUSTO_FORPLAN_FINAL"],
+  custo_holdback: ["HOLD_BACK_FINAL"],
   // DIAS_PATIO/DPT NÃO existem em NBS.VEICULOS (confirmado via
   // ALL_TAB_COLUMNS) — existiam só no Excel manual antigo, como valor
   // pré-calculado pelo próprio NBS. Dias de pátio = dias desde a entrada do
@@ -80,15 +91,14 @@ const CANDIDATOS: Record<keyof VeiculoParsed, string[]> = {
   // valoriza é derivado (busca em mapaValoriza por CHASSI_RESUMIDO+LOJA_ATUAL,
   // ver mapearVeiculo abaixo) — sem coluna própria em NBS.VEICULOS.
   valoriza: [],
-  // custo_impostos/revisoes/holdback/acessorios/forplan/comissoes são
-  // derivados (busca em mapasCustosDetalhados por CHASSI_RESUMIDO+LOJA_ATUAL,
-  // mesmo padrão de valoriza acima, ver custos-estoque-detalhado.ts) — sem
-  // coluna própria em NBS.VEICULOS.
+  // custo_impostos/revisoes/acessorios/comissoes são derivados (busca em
+  // mapasCustosDetalhados por CHASSI_RESUMIDO+LOJA_ATUAL, mesmo padrão de
+  // valoriza acima, ver custos-estoque-detalhado.ts) — sem coluna própria em
+  // NBS.VEICULOS. custo_forplan/custo_holdback NÃO entram aqui (têm coluna
+  // própria, ver CANDIDATOS acima) — ver nota 05/10/2026.
   custo_impostos: [],
   custo_revisoes: [],
-  custo_holdback: [],
   custo_acessorios: [],
-  custo_forplan: [],
   custo_comissoes: [],
   // custo_adm/custo_despesas_gerais existem em VeiculoParsed só pra LEITURA
   // (export/exibição — ver nota em nbs-xlsx.ts). Sem CODIGO_CUSTO mapeado,
@@ -109,9 +119,7 @@ const CAMPOS_COMPUTADOS = new Set([
   "valoriza",
   "custo_impostos",
   "custo_revisoes",
-  "custo_holdback",
   "custo_acessorios",
-  "custo_forplan",
   "custo_comissoes",
 ]);
 
@@ -365,11 +373,12 @@ export function mapearVeiculo(row: Record<string, unknown>, lookups: LookupsVeic
   const lojaAtual = asInt(row["LOJA_ATUAL"]);
   const valoriza = buscarValoriza(lookups.mapaValoriza ?? new Map(), chassiResumido, lojaAtual);
 
-  // custo_impostos/revisoes/holdback/acessorios/forplan/comissoes = busca no
-  // Map de cada categoria (mesma chave chassi_resumido+loja_atual de
-  // valoriza acima, ver custos-estoque-detalhado.ts). custo_adm/
-  // custo_despesas_gerais ficam de fora de propósito (sem CODIGO_CUSTO
-  // mapeado) — nem são calculados aqui, nem têm campo em VeiculoParsed.
+  // custo_impostos/revisoes/acessorios/comissoes = busca no Map de cada
+  // categoria (mesma chave chassi_resumido+loja_atual de valoriza acima, ver
+  // custos-estoque-detalhado.ts). custo_forplan/custo_holdback NÃO usam mais
+  // isso (ver get() acima, coluna direta) — e custo_adm/custo_despesas_gerais
+  // ficam de fora de propósito (sem CODIGO_CUSTO mapeado) — nem são
+  // calculados aqui, nem têm campo em VeiculoParsed.
   const buscaCategoria = (categoria: CategoriaCustoDetalhado) =>
     buscarCustoDetalhado(lookups.mapasCustosDetalhados?.[categoria] ?? new Map(), chassiResumido, lojaAtual);
 
@@ -396,9 +405,9 @@ export function mapearVeiculo(row: Record<string, unknown>, lookups: LookupsVeic
     valoriza,
     custo_impostos: buscaCategoria("custo_impostos"),
     custo_revisoes: buscaCategoria("custo_revisoes"),
-    custo_holdback: buscaCategoria("custo_holdback"),
+    custo_holdback: asNum(get("custo_holdback")) ?? 0,
     custo_acessorios: buscaCategoria("custo_acessorios"),
-    custo_forplan: buscaCategoria("custo_forplan"),
+    custo_forplan: asNum(get("custo_forplan")) ?? 0,
     custo_comissoes: buscaCategoria("custo_comissoes"),
   };
 

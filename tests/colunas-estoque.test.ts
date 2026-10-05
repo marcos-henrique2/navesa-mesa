@@ -177,8 +177,11 @@ describe("colunas-estoque (catálogo)", () => {
     assert.equal(new Set(COLUNAS_ESTOQUE.map((c) => c.grupo)).size, GRUPOS_ESTOQUE.length);
   });
 
-  it("confiança baixa só nas 4 colunas de custo Oracle pouco confirmadas", () => {
-    const esperadoBaixa: ColunaKey[] = ["custo_forplan", "custo_holdback", "custo_acessorios", "custo_comissoes"];
+  it("confiança baixa só nas 3 colunas de custo Oracle pouco confirmadas", () => {
+    // custo_forplan SAIU dessa lista em 05/10/2026: fonte corrigida pra
+    // NBS.VEICULOS.CUSTO_FORPLAN_FINAL (coluna direta), confirmada ao
+    // centavo contra o relatório nativo PDF em 3 veículos — ver migration 043.
+    const esperadoBaixa: ColunaKey[] = ["custo_holdback", "custo_acessorios", "custo_comissoes"];
     for (const key of esperadoBaixa) {
       assert.equal(getColuna(key)!.confianca, "baixa", `${key} deveria ser confiança baixa`);
     }
@@ -189,16 +192,17 @@ describe("colunas-estoque (catálogo)", () => {
     assert.equal(getColuna("custo_despesas_gerais")!.confianca, "nao_apurado");
   });
 
-  it("custo_impostos e custo_revisoes NÃO têm indicador de confiança", () => {
+  it("custo_impostos, custo_revisoes e custo_forplan NÃO têm indicador de confiança", () => {
     assert.equal(getColuna("custo_impostos")!.confianca, undefined);
     assert.equal(getColuna("custo_revisoes")!.confianca, undefined);
+    assert.equal(getColuna("custo_forplan")!.confianca, undefined);
   });
 
-  it("nenhuma outra coluna tem indicador de confiança além das 6 esperadas", () => {
+  it("nenhuma outra coluna tem indicador de confiança além das 5 esperadas", () => {
     const comConfianca = COLUNAS_ESTOQUE.filter((c) => c.confianca != null).map((c) => c.key).sort();
     assert.deepEqual(
       comConfianca,
-      ["custo_acessorios", "custo_adm", "custo_comissoes", "custo_despesas_gerais", "custo_forplan", "custo_holdback"].sort(),
+      ["custo_acessorios", "custo_adm", "custo_comissoes", "custo_despesas_gerais", "custo_holdback"].sort(),
     );
   });
 });

@@ -2,25 +2,42 @@ import type { Connection } from "oracledb";
 
 /**
  * Custos de estoque detalhados (relatório nativo NBS "Custos de Veículos em
- * Estoque") — quebra o CUSTO_TOTAL_FINAL agregado em 6 categorias
- * individuais, mesma fonte e mesma técnica de valoriza.ts
- * (NBS.VEICULOS_CUSTOS_ESPECIFICOS, filtro só por CODIGO_CUSTO, sem JOIN,
- * cruzamento em memória via Map chassi_resumido+loja). Ver investigação
- * completa (confiança por categoria, códigos candidatos testados e
- * descartados) em supabase/migrations/040_custos_estoque_detalhado_em_veiculos.sql.
+ * Estoque") — quebra o CUSTO_TOTAL_FINAL agregado em categorias individuais.
+ *
+ * ATUALIZADO 05/10/2026 (investigação Dara, ver migration 043): Forplan sem
+ * HoldBack e HoldBack NÃO vêm mais daqui — ver
+ * supabase/migrations/043_corrige_fonte_forplan_holdback.sql pro motivo
+ * completo. Resumo: são colunas DIRETAS em NBS.VEICULOS
+ * (CUSTO_FORPLAN_FINAL, HOLD_BACK_FINAL), não um CODIGO_CUSTO em
+ * NBS.VEICULOS_CUSTOS_ESPECIFICOS — confirmado batendo ao centavo contra o
+ * relatório nativo PDF "Custos de Veículos em Estoque" de 05/10/2026 em 3
+ * veículos (AMAROK chassi 163765/empresa 2, RANGER chassi 175371/empresa 2,
+ * RANGER chassi 178346/empresa 2). Esse módulo agora só cobre as 4
+ * categorias restantes (Impostos, Revisões, Acessórios, Comissões), que
+ * continuam vindo de NBS.VEICULOS_CUSTOS_ESPECIFICOS por CODIGO_CUSTO — ver
+ * mapear-veiculo.ts pra onde custo_forplan/custo_holdback são lidos agora
+ * (direto de NBS.VEICULOS, mesmo padrão de custo_total).
+ *
+ * Mesma fonte e mesma técnica de valoriza.ts (NBS.VEICULOS_CUSTOS_ESPECIFICOS,
+ * filtro só por CODIGO_CUSTO, sem JOIN, cruzamento em memória via Map
+ * chassi_resumido+loja). Ver investigação completa original (confiança por
+ * categoria, códigos candidatos testados e descartados) em
+ * supabase/migrations/040_custos_estoque_detalhado_em_veiculos.sql.
  *
  * ADM e Despesas Gerais ficam FORA deste módulo: nenhum CODIGO_CUSTO foi
  * encontrado pra elas (hipótese: rateio calculado pelo motor do relatório
  * NBS, não um lançamento por veículo) — as colunas no banco são NULLABLE SEM
  * DEFAULT (NULL = "não apurado") e não devem ser escritas por código algum.
  *
- * ⚠️ PERFORMANCE: uma única query com todos os ~73 códigos das 6 categorias
- * num IN() gigante contra NBS.VEICULOS_CUSTOS_ESPECIFICOS (55,9 milhões de
+ * ⚠️ PERFORMANCE: uma única query com todos os códigos das categorias num
+ * IN() gigante contra NBS.VEICULOS_CUSTOS_ESPECIFICOS (55,9 milhões de
  * linhas, sem índice em CODIGO_CUSTO) foi testada e precisou ser CANCELADA
- * depois de 15+ minutos. Rodar uma query por categoria (6 no total) é mais
- * previsível — medido contra o Oracle real em 02/10/2026: 190.196ms (~3,2min)
- * sequencial (ver carregarMapasCustosDetalhados abaixo) — mesma decisão de
- * valoriza.ts, replicada aqui por categoria em vez de programa de bônus.
+ * depois de 15+ minutos. Rodar uma query por categoria é mais previsível —
+ * medido contra o Oracle real em 02/10/2026: 190.196ms (~3,2min) sequencial
+ * pras 6 categorias originais (ver carregarMapasCustosDetalhados abaixo) —
+ * mesma decisão de valoriza.ts, replicada aqui por categoria em vez de
+ * programa de bônus. Com Forplan/HoldBack removidos daqui, agora são só 4
+ * categorias/queries.
  */
 export const CODIGOS_CUSTO_IMPOSTOS = [
   142, 143, 268, 363, 404, 409, 410, 413, 414, 420, 422, 423, 437, 490, 526, 572, 605, 623, 686, 690,
@@ -31,33 +48,31 @@ export const CODIGOS_CUSTO_REVISOES = [
   569, 570, 571, 573, 574, 575, 576, 577, 606, 629, 630, 631, 650,
 ] as const;
 
-export const CODIGOS_CUSTO_HOLDBACK = [144, 681] as const;
-
 export const CODIGOS_CUSTO_ACESSORIOS = [146, 424, 640] as const;
-
-export const CODIGOS_CUSTO_FORPLAN = [133] as const;
 
 // 490 ("Imposto Comissão sobre Venda Direta") NÃO entra aqui de propósito —
 // está em CODIGOS_CUSTO_IMPOSTOS. Código ambíguo entre as duas categorias;
 // decisão (Marcos, 02/10/2026): só em Impostos, pra evitar dupla contagem.
+//
+// NOTA 05/10/2026: cruzando contra o PDF de hoje, um veículo (RANGER chassi
+// 175371/empresa 2) tem Comissões=406,48 no PDF mas NENHUM CODIGO_CUSTO
+// desta lista nem combinação óbvia de outros códigos lançados pra esse
+// veículo soma esse valor — igual pra uma parte do Impostos do mesmo
+// veículo (sobra ~R$343 não explicado pelos códigos 142/143). Achado em
+// aberto: Comissões pode ter uma fonte adicional (campo direto em
+// NBS.VEICULOS, como Forplan/HoldBack, ou outro CODIGO_CUSTO fora desta
+// lista) que não deu tempo de isolar nesta rodada — mantido como baixa
+// confiança, não mude sem revalidar.
 export const CODIGOS_CUSTO_COMISSOES = [129, 239, 273, 297, 447, 498, 529, 545, 658] as const;
 
 /** Nome da categoria -> campo canônico correspondente em VeiculoParsed. */
-export type CategoriaCustoDetalhado =
-  | "custo_impostos"
-  | "custo_revisoes"
-  | "custo_holdback"
-  | "custo_acessorios"
-  | "custo_forplan"
-  | "custo_comissoes";
+export type CategoriaCustoDetalhado = "custo_impostos" | "custo_revisoes" | "custo_acessorios" | "custo_comissoes";
 
 /** Códigos de custo por categoria, na mesma ordem em que as queries são montadas/rodadas. */
 export const CODIGOS_POR_CATEGORIA: Record<CategoriaCustoDetalhado, readonly number[]> = {
   custo_impostos: CODIGOS_CUSTO_IMPOSTOS,
   custo_revisoes: CODIGOS_CUSTO_REVISOES,
-  custo_holdback: CODIGOS_CUSTO_HOLDBACK,
   custo_acessorios: CODIGOS_CUSTO_ACESSORIOS,
-  custo_forplan: CODIGOS_CUSTO_FORPLAN,
   custo_comissoes: CODIGOS_CUSTO_COMISSOES,
 };
 
