@@ -21,6 +21,7 @@
  */
 
 import { formatBRLCents, formatInt } from "@/lib/utils";
+import type { RiscoReconciliacao } from "@/lib/repasses/import-auto-avaliar";
 
 // ─── Contrato de saída (§5) ──────────────────────────────────────────────────
 
@@ -107,6 +108,33 @@ export type ResumoSync = {
   campos_a_alterar: number;
   /** 0 no preview; ROW_COUNT real no aplicado. */
   linhas_gravadas: number;
+  /** = `a_reconciliar.length` — candidato é a priori, não depende de ter sido gravado. */
+  reconciliar: number;
+  /** 0 no preview, ou quando a reconciliação ficou pendente de confirmação; ROW_COUNT real no aplicado. */
+  reconciliados_vendidos: number;
+  /** Idem, pro lado "marcado" (sumiu sem cruzar com `vendas`). */
+  reconciliados_marcados: number;
+  /**
+   * true quando a reconciliação tinha candidatos, a trava de risco (>= 5 carros E
+   * > 30% do universo subido) exigiu confirmação, e esta chamada NÃO escreveu
+   * nada em `status` por falta de `confirmar_reconciliacao_arriscada: true`.
+   */
+  reconciliacao_pendente_confirmacao: boolean;
+};
+
+/**
+ * Um candidato (ou já reconciliado, no modo aplicado) a sair de
+ * `canal=auto_avaliar/status=subido` porque a placa sumiu do arquivo+outras
+ * lojas. `migration 045`.
+ */
+export type ItemReconciliar = {
+  repasse_id: number;
+  placa: string | null;
+  modelo: string | null;
+  novo_status: "vendido" | "marcado";
+  /** ISO (YYYY-MM-DD), só quando `novo_status === "vendido"` (cruzou com `vendas`). */
+  data_vendido: string | null;
+  valor_vendido: number | null;
 };
 
 export type RelatorioSync = {
@@ -121,6 +149,10 @@ export type RelatorioSync = {
   sem_alteracao: ItemSemAlteracao[];
   nao_encontradas: ItemNaoEncontrada[];
   ignoradas: ItemIgnorada[];
+  /** Vazio quando o payload não mandou `reconciliar_sumidos: true`. */
+  a_reconciliar: ItemReconciliar[];
+  /** Mesmo formato de `RiscoReconciliacao` do fluxo de texto — ver import-auto-avaliar.ts. */
+  risco_reconciliacao: RiscoReconciliacao;
 };
 
 // ─── Leitura defensiva do JSONB (sem `any`) ──────────────────────────────────
@@ -185,6 +217,32 @@ function lerResumo(v: unknown): ResumoSync {
     ignoradas: int(r.ignoradas),
     campos_a_alterar: int(r.campos_a_alterar),
     linhas_gravadas: int(r.linhas_gravadas),
+    reconciliar: int(r.reconciliar),
+    reconciliados_vendidos: int(r.reconciliados_vendidos),
+    reconciliados_marcados: int(r.reconciliados_marcados),
+    reconciliacao_pendente_confirmacao: r.reconciliacao_pendente_confirmacao === true,
+  };
+}
+
+function lerItemReconciliar(raw: Record<string, unknown>): ItemReconciliar {
+  const status = raw.novo_status === "vendido" ? "vendido" : "marcado";
+  return {
+    repasse_id: int(raw.repasse_id),
+    placa: str(raw.placa),
+    modelo: str(raw.modelo),
+    novo_status: status,
+    data_vendido: str(raw.data_vendido),
+    valor_vendido: num(raw.valor_vendido),
+  };
+}
+
+function lerRisco(v: unknown): RiscoReconciliacao {
+  const r = isRecord(v) ? v : {};
+  return {
+    total: int(r.total),
+    universo: int(r.universo),
+    proporcao: num(r.proporcao) ?? 0,
+    exige_confirmacao: r.exige_confirmacao === true,
   };
 }
 
@@ -229,6 +287,8 @@ export function lerRelatorioSync(raw: unknown): RelatorioSync {
       motivo: codigo(e.motivo, "nenhum_campo_observado"),
       repasse_ids: listaIds(e.repasse_ids),
     })),
+    a_reconciliar: itens(r.a_reconciliar).map(lerItemReconciliar),
+    risco_reconciliacao: lerRisco(r.risco_reconciliacao),
   };
 }
 

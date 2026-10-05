@@ -58,7 +58,7 @@ import {
 } from "@/lib/repasses/sync-arquivo-auto-avaliar";
 import { aplicarSyncArquivo } from "@/lib/repasses/sync-arquivo-auto-avaliar-queries";
 import { SumidosDoArquivoPainel } from "./SumidosDoArquivoPainel";
-import { cn, formatInt } from "@/lib/utils";
+import { cn, formatBRLCents, formatInt } from "@/lib/utils";
 
 export type SyncOfertasConferenciaProps = {
   arquivoNome: string;
@@ -71,6 +71,12 @@ export type SyncOfertasConferenciaProps = {
    * (a RPC só enxerga o payload da loja alvo, e por isso não pode calculá-lo).
    */
   placasNoArquivo: ReadonlySet<string>;
+  /**
+   * Só a metade "outra loja" de `placasNoArquivo` — vai em `placas_outras_lojas`
+   * nas duas chamadas de RPC (preview e aplicar), pra reconciliação automática
+   * (migration 045) não acusar de vendido/saiu um carro só transferido de loja.
+   */
+  placasOutrasLojas: ReadonlyArray<string>;
   /** O mesmo payload bruto do preview: a RPC de aplicar recalcula o diff do zero. */
   payload: PayloadSyncArquivo;
   preview: RelatorioSync;
@@ -84,6 +90,7 @@ export function SyncOfertasConferencia({
   meta,
   outraLoja,
   placasNoArquivo,
+  placasOutrasLojas,
   payload,
   preview,
   onFechar,
@@ -92,6 +99,15 @@ export function SyncOfertasConferencia({
   const [aplicando, setAplicando] = useState(false);
   const [aplicado, setAplicado] = useState<RelatorioSync | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  /**
+   * Quantas vezes a RPC de aplicar foi chamada com sucesso (1ª gravação + a
+   * eventual 2ª, de confirmação da reconciliação arriscada). O painel "saíram do
+   * Auto Avaliar" usa isto como gatilho pra recarregar — ver nota ali.
+   */
+  const [aplicacoes, setAplicacoes] = useState(0);
+  /** Checkbox do 2º passo — mesma UX do fluxo de texto (`listaCompletaConfirmada`). */
+  const [confirmandoReconciliacao, setConfirmandoReconciliacao] = useState(false);
+  const [reconciliando, setReconciliando] = useState(false);
   /**
    * Gravações feitas pelo painel de "saíram do Auto Avaliar", que acontecem FORA
    * do ciclo do Aplicar. Sem esse contador o rodapé continuaria dizendo "nada é
@@ -108,6 +124,24 @@ export function SyncOfertasConferencia({
   const comTroca = useMemo(() => ordenados.filter(temValorTrocado), [ordenados]);
   const soPreenche = useMemo(() => ordenados.filter((i) => !temValorTrocado(i)), [ordenados]);
 
+  // ─── Reconciliação automática (migration 045) ────────────────────────────
+  const risco = rel.risco_reconciliacao;
+  const reconVendidos = useMemo(
+    () => rel.a_reconciliar.filter((i) => i.novo_status === "vendido"),
+    [rel],
+  );
+  const reconMarcados = useMemo(
+    () => rel.a_reconciliar.filter((i) => i.novo_status === "marcado"),
+    [rel],
+  );
+  /**
+   * true depois de uma 1ª gravação que sincronizou valores mas travou a
+   * reconciliação por risco — é o "resposta veio com
+   * resumo.reconciliacao_pendente_confirmacao=true" do handoff da Dara.
+   */
+  const reconciliacaoPendente =
+    aplicado != null && aplicado.resumo.reconciliacao_pendente_confirmacao;
+
   // Deriva entre a conferência e o OK: alguém editou o carro no meio do caminho.
   const deriva =
     aplicado != null && aplicado.resumo.com_alteracao !== preview.resumo.com_alteracao;
@@ -123,13 +157,51 @@ export function SyncOfertasConferencia({
     setAplicando(true);
     setErro(null);
     try {
-      const resultado = await aplicarSyncArquivo(payload);
+      // 1ª chamada: sempre sem `confirmar_reconciliacao_arriscada`. Sincroniza os
+      // valores e reconcilia status, SALVO se o risco travar — nesse caso o
+      // `resumo.reconciliacao_pendente_confirmacao` volta true e o 2º passo
+      // (`confirmarReconciliacao`) é quem completa.
+      const resultado = await aplicarSyncArquivo(payload, { placasOutrasLojas });
       setAplicado(resultado);
+      setAplicacoes((n) => n + 1);
       onAplicado(resultado);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Erro desconhecido ao gravar.");
     } finally {
       setAplicando(false);
+    }
+  }
+
+  /**
+   * 2º passo da trava de risco — mesma UX do fluxo de texto, só que aqui "mandar
+   * a lista já filtrada" não existe: o 2º passo é rodar a MESMA RPC de novo com
+   * `confirmar_reconciliacao_arriscada: true`. Idempotente: os valores (já
+   * gravados na 1ª chamada) não mudam de novo, só a reconciliação passa a escrever.
+   */
+  async function confirmarReconciliacao() {
+    if (reconciliando || !confirmandoReconciliacao) return;
+    setReconciliando(true);
+    setErro(null);
+    try {
+      const resultado = await aplicarSyncArquivo(payload, {
+        placasOutrasLojas,
+        confirmarReconciliacaoArriscada: true,
+      });
+      // `linhas_gravadas` da 2ª chamada vem 0 (os valores já foram gravados na
+      // 1ª — nada fica `IS DISTINCT FROM` de novo). Preserva o número real da 1ª
+      // gravação; só os campos de reconciliação vêm frescos desta chamada.
+      const merged: RelatorioSync =
+        aplicado == null
+          ? resultado
+          : { ...resultado, resumo: { ...resultado.resumo, linhas_gravadas: aplicado.resumo.linhas_gravadas } };
+      setAplicado(merged);
+      setAplicacoes((n) => n + 1);
+      setConfirmandoReconciliacao(false);
+      onAplicado(merged);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Falha ao confirmar a reconciliação.");
+    } finally {
+      setReconciliando(false);
     }
   }
 
@@ -221,8 +293,9 @@ export function SyncOfertasConferencia({
           )}
 
           {/* ─── Resumo ───────────────────────────────────────────────────── */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <Tile rotulo="Vão mudar" valor={rel.resumo.com_alteracao} tom="sky" />
+            <Tile rotulo="Reconciliar" valor={rel.resumo.reconciliar} tom={rel.resumo.reconciliar > 0 ? "rose" : "neutro"} />
             <Tile rotulo="Sem alteração" valor={rel.resumo.sem_alteracao} tom="neutro" />
             <Tile rotulo="Não encontradas" valor={rel.resumo.nao_encontradas} tom="neutro" />
             <Tile rotulo="Ignoradas" valor={rel.resumo.ignoradas} tom="neutro" />
@@ -291,9 +364,151 @@ export function SyncOfertasConferencia({
             )}
           </section>
 
+          {/* ─── Grupo: reconciliação automática de status (migration 045) ── */}
+          <section
+            className={cn(
+              "rounded-xl border p-4",
+              rel.resumo.reconciliar === 0
+                ? "border-[var(--border-soft)] bg-[var(--bg-surface)]"
+                : "border-2 border-rose-400 bg-rose-50 dark:border-rose-700 dark:bg-rose-950/40",
+            )}
+          >
+            <h3
+              className={cn(
+                "inline-flex items-center gap-2 text-sm font-semibold",
+                rel.resumo.reconciliar === 0
+                  ? "text-[var(--text-strong)]"
+                  : "font-bold text-rose-800 dark:text-rose-300",
+              )}
+            >
+              <ShieldAlert
+                className={cn(
+                  "h-4 w-4",
+                  rel.resumo.reconciliar === 0
+                    ? "text-[var(--text-muted)]"
+                    : "text-rose-600 dark:text-rose-400",
+                )}
+              />
+              Reconciliação automática ({formatInt(rel.resumo.reconciliar)})
+            </h3>
+            <p className="mt-0.5 text-xs text-[var(--text-muted)]">
+              Carros <strong>subidos</strong> cuja placa não aparece nem na Matriz nem nas outras
+              lojas deste arquivo — ao gravar, saem de &quot;subido&quot; sozinhos: viram{" "}
+              <strong>vendido</strong> quando cruzam com uma venda do NBS, ou <strong>marcado</strong>{" "}
+              quando não cruzam. Não tem desfazer.
+            </p>
+
+            {rel.resumo.reconciliar === 0 ? (
+              <p className="mt-3 text-xs text-[var(--text-muted)]">
+                Nenhum carro subido sumiu desta comparação.
+              </p>
+            ) : (
+              <>
+                <p className="mt-2 text-sm font-semibold text-rose-800 dark:text-rose-300">
+                  {formatInt(rel.resumo.reconciliar)}{" "}
+                  {rel.resumo.reconciliar === 1 ? "carro vai" : "carros vão"} mudar de status
+                  {risco.universo > 0
+                    ? ` — ${Math.round(risco.proporcao * 100)}% dos ${formatInt(risco.universo)} subidos`
+                    : ""}
+                  {!aplicado
+                    ? "."
+                    : aplicado.resumo.reconciliacao_pendente_confirmacao
+                      ? " (ainda não gravado — veja a confirmação abaixo)."
+                      : aplicado.resumo.reconciliados_vendidos + aplicado.resumo.reconciliados_marcados > 0
+                        ? ` — ${formatInt(aplicado.resumo.reconciliados_vendidos)} vendido${aplicado.resumo.reconciliados_vendidos === 1 ? "" : "s"}, ${formatInt(aplicado.resumo.reconciliados_marcados)} marcado${aplicado.resumo.reconciliados_marcados === 1 ? "" : "s"}.`
+                        : "."}
+                </p>
+                <ul className="mt-3 space-y-1.5 text-xs">
+                  {reconVendidos.map((r) => (
+                    <li key={r.repasse_id} className="flex items-center justify-between gap-2">
+                      <span className="truncate">
+                        <span className="font-mono font-medium text-[var(--text-strong)]">
+                          {r.placa ?? "sem placa"}
+                        </span>{" "}
+                        {r.modelo ?? "—"}
+                      </span>
+                      <span
+                        className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase text-emerald-700 dark:text-emerald-300 ${
+                          reconciliacaoPendente
+                            ? "border border-dashed border-emerald-400 dark:border-emerald-700"
+                            : "bg-emerald-100 dark:bg-emerald-950"
+                        }`}
+                      >
+                        {reconciliacaoPendente ? "vai virar vendido" : "vendido"}{" "}
+                        {r.valor_vendido != null ? formatBRLCents(r.valor_vendido) : ""}
+                      </span>
+                    </li>
+                  ))}
+                  {reconMarcados.map((r) => (
+                    <li key={r.repasse_id} className="flex items-center justify-between gap-2">
+                      <span className="truncate">
+                        <span className="font-mono font-medium text-[var(--text-strong)]">
+                          {r.placa ?? "sem placa"}
+                        </span>{" "}
+                        {r.modelo ?? "—"}
+                      </span>
+                      <span
+                        className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-700 dark:text-amber-300 ${
+                          reconciliacaoPendente
+                            ? "border border-dashed border-amber-400 dark:border-amber-700"
+                            : "bg-amber-100 dark:bg-amber-950"
+                        }`}
+                      >
+                        {reconciliacaoPendente ? "vai virar marcado" : "marcado"}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+
+            {/* 2º passo da trava de risco — só aparece depois da 1ª gravação travar. */}
+            {reconciliacaoPendente && (
+              <div className="mt-4 rounded-lg border-2 border-rose-400 bg-rose-100/60 p-3 dark:border-rose-700 dark:bg-rose-950/60">
+                <p className="inline-flex items-center gap-1.5 text-xs font-bold text-rose-900 dark:text-rose-200">
+                  <AlertTriangle className="h-3.5 w-3.5" /> Reconciliação em massa — confirme antes
+                  de gravar
+                </p>
+                <p className="mt-1 text-xs text-rose-900 dark:text-rose-200">
+                  {formatInt(risco.total)} de {formatInt(risco.universo)} carros subidos (
+                  {Math.round(risco.proporcao * 100)}%) vão mudar de status porque não apareceram
+                  neste arquivo. Isso é esperado se o arquivo tem a lista INTEIRA do Auto Avaliar.
+                  Se o download saiu paginado, cortado ou incompleto, cancele e suba o arquivo de
+                  novo — reverter depois é carro por carro.
+                </p>
+                <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm font-medium text-rose-900 dark:text-rose-200">
+                  <input
+                    type="checkbox"
+                    checked={confirmandoReconciliacao}
+                    onChange={(e) => setConfirmandoReconciliacao(e.target.checked)}
+                    disabled={reconciliando}
+                    className="mt-0.5 h-4 w-4 shrink-0 accent-rose-600"
+                  />
+                  Confirmo que este arquivo reflete a lista completa e atual do Auto Avaliar.
+                </label>
+                <button
+                  type="button"
+                  onClick={() => void confirmarReconciliacao()}
+                  disabled={!confirmandoReconciliacao || reconciliando}
+                  className="mt-3 inline-flex items-center gap-2 rounded-md bg-rose-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-rose-800 disabled:opacity-50"
+                >
+                  {reconciliando ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  )}
+                  {reconciliando
+                    ? "Confirmando…"
+                    : `Confirmar reconciliação (${formatInt(risco.total)})`}
+                </button>
+              </div>
+            )}
+          </section>
+
           {/* ─── Grupo: saíram do arquivo (diff de conjunto, no cliente) ──── */}
           <SumidosDoArquivoPainel
             placasNoArquivo={placasNoArquivo}
+            recarregarToken={aplicacoes}
             onGravou={(n) => setGravadoNoPainel((v) => v + n)}
           />
 
@@ -412,8 +627,19 @@ export function SyncOfertasConferencia({
         <div className="sticky bottom-0 flex flex-wrap items-center justify-between gap-3 rounded-b-xl border-t border-[var(--border-soft)] bg-[var(--bg-surface)] p-4">
           <span className="min-w-0 flex-1 text-xs text-[var(--text-muted)]">
             {aplicado
-              ? `${formatInt(aplicado.resumo.linhas_gravadas)} gravados · ${formatInt(rel.resumo.sem_alteracao)} sem alteração · ${formatInt(rel.resumo.nao_encontradas)} não encontradas · ${formatInt(rel.resumo.ignoradas)} ignoradas`
+              ? `${formatInt(aplicado.resumo.linhas_gravadas)} gravados · ${formatInt(aplicado.resumo.reconciliados_vendidos)} reconciliados vendido · ${formatInt(aplicado.resumo.reconciliados_marcados)} reconciliados marcado · ${formatInt(rel.resumo.sem_alteracao)} sem alteração · ${formatInt(rel.resumo.nao_encontradas)} não encontradas · ${formatInt(rel.resumo.ignoradas)} ignoradas`
               : "A SINCRONIZAÇÃO não grava nada até você clicar. O sistema recalcula tudo de novo no clique — nunca grava o que está na tela."}
+            {reconciliacaoPendente && (
+              <span className="mt-1 flex items-start gap-1.5 font-medium text-rose-800 dark:text-rose-300">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <span>
+                  A reconciliação de {formatInt(risco.total)} carro
+                  {risco.total === 1 ? "" : "s"} ainda não foi gravada — confirme no bloco
+                  &quot;Reconciliação automática&quot; acima, ou feche e suba o arquivo de novo
+                  depois.
+                </span>
+              </span>
+            )}
             {gravadoNoPainel > 0 && (
               <span className="mt-1 flex items-start gap-1.5 font-medium text-amber-800 dark:text-amber-300">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -430,7 +656,7 @@ export function SyncOfertasConferencia({
             <button
               type="button"
               onClick={onFechar}
-              disabled={aplicando}
+              disabled={aplicando || reconciliando}
               className="inline-flex items-center gap-2 rounded-md border border-[var(--border-base)] px-4 py-2 text-sm font-medium text-[var(--text-body)] hover:bg-[var(--bg-muted)] disabled:opacity-50"
             >
               {aplicado ? <CheckCircle2 className="h-4 w-4" /> : <Trash2 className="h-4 w-4" />}
@@ -566,15 +792,15 @@ function Tile({
 }: {
   rotulo: string;
   valor: number;
-  tom: "sky" | "neutro";
+  tom: "sky" | "rose" | "neutro";
 }) {
   return (
     <div
       className={cn(
         "rounded-lg border px-3 py-2",
-        tom === "sky"
-          ? "border-sky-300 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/30"
-          : "border-[var(--border-soft)] bg-[var(--bg-surface)]",
+        tom === "sky" && "border-sky-300 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/30",
+        tom === "rose" && "border-rose-300 bg-rose-50 dark:border-rose-800 dark:bg-rose-950/30",
+        tom === "neutro" && "border-[var(--border-soft)] bg-[var(--bg-surface)]",
       )}
     >
       <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">
@@ -583,7 +809,9 @@ function Tile({
       <p
         className={cn(
           "mt-0.5 text-xl font-bold tabular-nums",
-          tom === "sky" ? "text-sky-800 dark:text-sky-300" : "text-[var(--text-strong)]",
+          tom === "sky" && "text-sky-800 dark:text-sky-300",
+          tom === "rose" && "text-rose-800 dark:text-rose-300",
+          tom === "neutro" && "text-[var(--text-strong)]",
         )}
       >
         {formatInt(valor)}

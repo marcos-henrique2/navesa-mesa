@@ -124,6 +124,25 @@ export function placasVistasNoArquivo(
   return vistas;
 }
 
+/**
+ * Só a metade "outra loja" de `placasVistasNoArquivo` — é o `placas_outras_lojas`
+ * que a RPC `sincronizar_repasse_arquivo_auto_avaliar[_preview]` espera (migration
+ * 045) pra reconciliar status sem acusar de vendido/saiu um carro que só foi
+ * transferido pra outra loja no mesmo arquivo.
+ *
+ * Mesmo filtro de "placa vazia não entra" de `placasVistasNoArquivo` — ESTE é o
+ * motivo de a função existir separada em vez de inlinear
+ * `parse.outra_loja.map(o => o.placa_norm)` no call site: duplicar o filtro é
+ * como a regra se desalinha silenciosamente de `placasVistasNoArquivo`.
+ */
+export function placasDeOutrasLojas(
+  linhasOutraLoja: ReadonlyArray<{ placa_norm: string }>,
+): string[] {
+  const vistas = new Set<string>();
+  for (const l of linhasOutraLoja) if (l.placa_norm !== "") vistas.add(l.placa_norm);
+  return [...vistas];
+}
+
 // ─── Diff ────────────────────────────────────────────────────────────────────
 
 /**
