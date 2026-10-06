@@ -17,20 +17,28 @@
  */
 
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
+import type { CustoEstoqueDetalhado } from "@/lib/parsers/nbs-custos-estoque-pdf";
 import type { ColunaAgregacao, ColunaDef } from "@/lib/export/relatorio/tipos";
 import { calcularCustoReal } from "@/lib/export/custo-real";
+import { resolverCustoComFallbackManual } from "@/lib/export/custo-estoque-fallback";
 
 /**
- * Veículo enriquecido com o nome da loja já resolvido (como o gerencial usa) e,
- * opcionalmente, o preço FIPE já resolvido (batch) — ver coluna `fipe` abaixo.
- * `fipe` NÃO é preenchido pelo catálogo (depende de fonte externa/Supabase):
- * quem monta a lista de veículos pro modal/exportação é responsável por
- * resolver `fipe` ANTES, com o mesmo critério do Vendas Matriz (só preenche
- * quando `plausibilidadeVerificada === true`).
+ * Veículo enriquecido com o nome da loja já resolvido (como o gerencial usa),
+ * opcionalmente o preço FIPE já resolvido (batch) e, opcionalmente, o
+ * registro manual de custos de estoque (upload do PDF "Custos de Veículos em
+ * Estoque" em /upload) — ver colunas `fipe` e `custo_holdback`/
+ * `custo_acessorios`/`custo_comissoes`/`custo_adm`/`custo_despesas_gerais`
+ * abaixo. Nenhum dos dois é preenchido pelo catálogo (dependem de fonte
+ * externa/Supabase): quem monta a lista de veículos pro modal/exportação é
+ * responsável por resolvê-los ANTES — `fipe` com o mesmo critério do Vendas
+ * Matriz (só preenche quando `plausibilidadeVerificada === true`),
+ * `custoEstoqueManual` buscando por placa normalizada em
+ * `custosEstoquePorPlaca` (store `useInventory`).
  */
 export type VeiculoExportavel = VeiculoParsed & {
   empresa_nome?: string | null;
   fipe?: number | null;
+  custoEstoqueManual?: CustoEstoqueDetalhado | null;
 };
 
 /**
@@ -136,6 +144,15 @@ export type ColunaEstoque = {
    *    mapeada mede outra coisa.
    */
   confianca?: "baixa" | "nao_apurado" | "parcial" | "diverge_relatorio";
+  /**
+   * true quando o getValor desta coluna cai pro registro MANUAL de
+   * `custos_estoque_detalhado` (upload do PDF "Custos de Veículos em
+   * Estoque" em /upload) sempre que o automático (sync Oracle) vem sem dado
+   * — ver `resolverCustoComFallbackManual`. Usado só pra UI (ícone extra no
+   * modal avisando que o valor exportado PODE ter vindo de upload manual,
+   * possivelmente desatualizado); não afeta o valor em si.
+   */
+  fallbackManual?: boolean;
 };
 
 function fmtAno(fab: number | null, mod: number | null): string | null {
@@ -198,8 +215,16 @@ export const COLUNAS_ESTOQUE: readonly ColunaEstoque[] = [
   // não-zero no PDF de hoje pra confirmar valor (os ~283 veículos testados
   // vieram todos R$0,00 tanto no PDF quanto no Oracle). Confiança continua
   // "baixa" até aparecer um veículo com HoldBack real pra validar.
-  { key: "custo_holdback", label: "HoldBack", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", getValor: (v) => v.custo_holdback },
-  { key: "custo_acessorios", label: "Acessórios", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", getValor: (v) => v.custo_acessorios },
+  //
+  // FALLBACK MANUAL (06/10/2026): investigação confirmou que HoldBack/
+  // Acessórios/Comissões/ADM/Despesas Gerais não têm fonte automática
+  // confiável via Oracle (ver migration 047) — quando o automático vem SEM
+  // DADO (0 pras 3 primeiras, null pras 2 últimas), usa o registro manual de
+  // `custos_estoque_detalhado` (upload do PDF em /upload) como alternativa.
+  // Automático prevalece quando tem valor não-zero (mais fresco — sync a
+  // cada 2h — vs. manual, que só atualiza quando alguém sobe o PDF de novo).
+  { key: "custo_holdback", label: "HoldBack", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_holdback, v.custoEstoqueManual?.holdback) },
+  { key: "custo_acessorios", label: "Acessórios", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_acessorios, v.custoEstoqueManual?.acessorios) },
   // custo_impostos: confianca "diverge_relatorio" ADICIONADA em 05/10/2026 (migration
   // 046) — a soma dos 20 CODIGO_CUSTO (ICMS/PIS/COFINS lançados na aquisição) é um dado
   // REAL, mas confirmado que NUNCA bate com a coluna "Impostos" do relatório nativo NBS
@@ -207,18 +232,25 @@ export const COLUNAS_ESTOQUE: readonly ColunaEstoque[] = [
   // consegue ler — ver migration 046, caso definitivo: chassi com ZERO lançamentos mas
   // Impostos=R$499,50 no relatório nativo). Era "sem indicador" até aqui por engano
   // (migration 040 validou só magnitude plausível, nunca o valor exato contra o PDF).
+  // Sem fallbackManual: diferente das outras 5, aqui o automático é um dado
+  // REAL só que DIFERENTE do relatório — não há "sem dado" pra cair no manual.
   { key: "custo_impostos", label: "Impostos", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "diverge_relatorio", getValor: (v) => v.custo_impostos },
-  { key: "custo_comissoes", label: "Comissões", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", getValor: (v) => v.custo_comissoes },
-  { key: "custo_adm", label: "ADM", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "nao_apurado", getValor: (v) => v.custo_adm ?? null },
-  { key: "custo_despesas_gerais", label: "Despesas Gerais", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "nao_apurado", getValor: (v) => v.custo_despesas_gerais ?? null },
+  { key: "custo_comissoes", label: "Comissões", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_comissoes, v.custoEstoqueManual?.comissoes) },
+  { key: "custo_adm", label: "ADM", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "nao_apurado", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_adm, v.custoEstoqueManual?.adm) },
+  { key: "custo_despesas_gerais", label: "Despesas Gerais", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "nao_apurado", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_despesas_gerais, v.custoEstoqueManual?.desp_gerais) },
   // custo_detalhado_total: soma das OUTRAS 7 categorias (exclui Forplan —
   // esclarecido pelo Marcos em 05/10/2026: Forplan é custo FINANCEIRO (floor
   // plan), conceitualmente diferente do "custo que o carro teve"; continua
   // tendo sua própria coluna, só não entra nesta soma). Trata null de
   // ADM/Despesas Gerais como 0 (NÃO propagar null — se propagasse, a coluna
   // ficaria "—" pra quase todo carro, já que essas duas são "não apurado" na
-  // maioria). As outras 5 categorias são sempre `number` no VeiculoParsed
-  // (nunca null), daí não precisarem de fallback.
+  // maioria).
+  //
+  // HoldBack/Acessórios/Comissões/ADM/Despesas Gerais entram aqui JÁ com o
+  // fallback manual resolvido (mesma chamada de resolverCustoComFallbackManual
+  // usada nas colunas individuais acima) — senão o total divergiria da soma
+  // do que o Marcos vê nas 5 colunas quando o fallback entra em ação.
+  // Revisões e Impostos não têm fallback (sem fallbackManual), entram direto.
   //
   // NOTA 05/10/2026 (migration 046): custo_impostos entra nesta soma com
   // confiança "diverge_relatorio" (ver acima) — mede ICMS/PIS/COFINS
@@ -235,12 +267,12 @@ export const COLUNAS_ESTOQUE: readonly ColunaEstoque[] = [
     confianca: "parcial",
     getValor: (v) =>
       v.custo_revisoes +
-      v.custo_holdback +
-      v.custo_acessorios +
+      (resolverCustoComFallbackManual(v.custo_holdback, v.custoEstoqueManual?.holdback) ?? 0) +
+      (resolverCustoComFallbackManual(v.custo_acessorios, v.custoEstoqueManual?.acessorios) ?? 0) +
       v.custo_impostos +
-      v.custo_comissoes +
-      (v.custo_adm ?? 0) +
-      (v.custo_despesas_gerais ?? 0),
+      (resolverCustoComFallbackManual(v.custo_comissoes, v.custoEstoqueManual?.comissoes) ?? 0) +
+      (resolverCustoComFallbackManual(v.custo_adm, v.custoEstoqueManual?.adm) ?? 0) +
+      (resolverCustoComFallbackManual(v.custo_despesas_gerais, v.custoEstoqueManual?.desp_gerais) ?? 0),
   },
 ];
 

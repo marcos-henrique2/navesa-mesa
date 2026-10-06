@@ -1,6 +1,7 @@
 import type { VendaParsed } from "@/lib/parsers/nbs-vendas-xlsx";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import type { CustoDetalhado } from "@/lib/parsers/nbs-custos-xls";
+import type { CustoEstoqueDetalhado } from "@/lib/parsers/nbs-custos-estoque-pdf";
 import type { Repasse } from "@/lib/repasses/types";
 import type { LinhaVendaMatriz } from "@/lib/export/vendas-matriz/tipos";
 
@@ -105,6 +106,30 @@ export function veiculo(over: Partial<VeiculoParsed> = {}): VeiculoParsed {
     custo_comissoes: 0,
     ...over,
   } as VeiculoParsed;
+}
+
+/** Cria um CustoEstoqueDetalhado completo com defaults (registro manual do upload do PDF "Custos de Veículos em Estoque" em /upload). */
+export function custoEstoqueDetalhado(over: Partial<CustoEstoqueDetalhado> = {}): CustoEstoqueDetalhado {
+  return {
+    placa: "ABC1D23",
+    modelo: "MODELO TESTE",
+    dias_patio: 20,
+    nota_fabrica: 80000,
+    revisoes: 500,
+    forplan: 2000,
+    holdback: 0,
+    acessorios: 0,
+    adm: 0,
+    impostos: 1000,
+    comissoes: 0,
+    desp_gerais: 0,
+    custo_total: 80000,
+    tabela: 100000,
+    lucro_bruto: 20000,
+    bonus: 0,
+    ganhos_indiretos: 0,
+    ...over,
+  };
 }
 
 /** Cria uma LinhaVendaMatriz completa com defaults; sobrescreva o que o teste precisar. */
