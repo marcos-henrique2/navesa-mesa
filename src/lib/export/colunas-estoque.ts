@@ -133,8 +133,17 @@ export type ColunaEstoque = {
    *    `custo_detalhado_total` mistura categorias confirmadas com "baixa" e
    *    "nao_apurado") — o total pode estar subestimado mesmo sem nenhuma
    *    categoria individual estar "errada".
+   *  - "diverge_relatorio": a coluna TEM fonte real e confirmada no Oracle
+   *    (não vem zerada), mas o valor que ela soma é um custo DIFERENTE do que
+   *    o relatório nativo NBS "Custos de Veículos em Estoque" mostra na
+   *    coluna de mesmo nome — confirmado em 05/10/2026 (migration 046) que
+   *    esse valor é CALCULADO pelo motor do relatório (dado fiscal fora das
+   *    tabelas que o sync Oracle consegue ler), não soma de lançamentos.
+   *    Diferente de "baixa" (onde a fonte pode estar certa mas só não foi
+   *    confirmada por falta de exemplo não-zero): aqui já sabemos que a fonte
+   *    mapeada mede outra coisa.
    */
-  confianca?: "baixa" | "nao_apurado" | "parcial";
+  confianca?: "baixa" | "nao_apurado" | "parcial" | "diverge_relatorio";
   /**
    * true quando o getValor desta coluna cai pro registro MANUAL de
    * `custos_estoque_detalhado` (upload do PDF "Custos de Veículos em
@@ -216,7 +225,16 @@ export const COLUNAS_ESTOQUE: readonly ColunaEstoque[] = [
   // cada 2h — vs. manual, que só atualiza quando alguém sobe o PDF de novo).
   { key: "custo_holdback", label: "HoldBack", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_holdback, v.custoEstoqueManual?.holdback) },
   { key: "custo_acessorios", label: "Acessórios", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_acessorios, v.custoEstoqueManual?.acessorios) },
-  { key: "custo_impostos", label: "Impostos", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", getValor: (v) => v.custo_impostos },
+  // custo_impostos: confianca "diverge_relatorio" ADICIONADA em 05/10/2026 (migration
+  // 046) — a soma dos 20 CODIGO_CUSTO (ICMS/PIS/COFINS lançados na aquisição) é um dado
+  // REAL, mas confirmado que NUNCA bate com a coluna "Impostos" do relatório nativo NBS
+  // (que é calculada pelo motor do relatório, fora das tabelas que o sync Oracle
+  // consegue ler — ver migration 046, caso definitivo: chassi com ZERO lançamentos mas
+  // Impostos=R$499,50 no relatório nativo). Era "sem indicador" até aqui por engano
+  // (migration 040 validou só magnitude plausível, nunca o valor exato contra o PDF).
+  // Sem fallbackManual: diferente das outras 5, aqui o automático é um dado
+  // REAL só que DIFERENTE do relatório — não há "sem dado" pra cair no manual.
+  { key: "custo_impostos", label: "Impostos", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "diverge_relatorio", getValor: (v) => v.custo_impostos },
   { key: "custo_comissoes", label: "Comissões", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_comissoes, v.custoEstoqueManual?.comissoes) },
   { key: "custo_adm", label: "ADM", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "nao_apurado", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_adm, v.custoEstoqueManual?.adm) },
   { key: "custo_despesas_gerais", label: "Despesas Gerais", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "nao_apurado", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_despesas_gerais, v.custoEstoqueManual?.desp_gerais) },
@@ -232,8 +250,14 @@ export const COLUNAS_ESTOQUE: readonly ColunaEstoque[] = [
   // fallback manual resolvido (mesma chamada de resolverCustoComFallbackManual
   // usada nas colunas individuais acima) — senão o total divergiria da soma
   // do que o Marcos vê nas 5 colunas quando o fallback entra em ação.
-  // Revisões e Impostos não têm fallback (sem confianca/fallbackManual),
-  // entram direto.
+  // Revisões e Impostos não têm fallback (sem fallbackManual), entram direto.
+  //
+  // NOTA 05/10/2026 (migration 046): custo_impostos entra nesta soma com
+  // confiança "diverge_relatorio" (ver acima) — mede ICMS/PIS/COFINS
+  // REALMENTE lançados na aquisição, mas isso é um valor DIFERENTE do que o
+  // relatório nativo chama de "Impostos". O texto do tooltip "parcial" abaixo
+  // já cobre isso de forma genérica ("confiança baixa ou ainda não
+  // apuradas") — não precisou de categoria nova na lista do tooltip.
   {
     key: "custo_detalhado_total",
     label: "Custos detalhados (total, sem Forplan)",
