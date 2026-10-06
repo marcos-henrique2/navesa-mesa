@@ -99,8 +99,10 @@ const TEXTO_CONFIANCA_BAIXA =
   "Confiança baixa: na amostra testada esse valor veio zerado na maioria dos carros. O código de custo existe no Oracle mas ainda não foi confirmado. Use com cautela.";
 const TEXTO_NAO_APURADO =
   "Não apurado: aparece como — no Excel (não é R$ 0,00) — ainda não existe fórmula de cálculo definida pra essa categoria.";
+const TEXTO_DIVERGE_RELATORIO =
+  "Este valor é real (imposto efetivamente lançado na aquisição), mas é DIFERENTE do que o relatório nativo NBS mostra na coluna de mesmo nome — aquele valor é calculado internamente pelo NBS e não está disponível pra nós. Não compare os dois diretamente.";
 const TEXTO_CUSTO_DETALHADO_PARCIAL =
-  "Esta soma inclui categorias com confiança baixa ou ainda não apuradas (HoldBack, Acessórios, Comissões, ADM, Despesas Gerais) — pode estar subestimada. Use com cautela.";
+  "Esta soma inclui categorias com confiança baixa, ainda não apuradas ou que divergem do relatório nativo (HoldBack, Acessórios, Comissões, ADM, Despesas Gerais, Impostos) — pode estar subestimada ou não bater com o relatório nativo. Use com cautela.";
 
 function todayISOLocal(): string {
   const d = new Date();
@@ -125,6 +127,13 @@ function IconeConfianca({ confianca }: { confianca: ColunaEstoque["confianca"] }
   if (confianca === "parcial") {
     return (
       <Tooltip content={TEXTO_CUSTO_DETALHADO_PARCIAL} ariaLabel={TEXTO_CUSTO_DETALHADO_PARCIAL} side="top">
+        <TriangleAlert size={13} className="text-amber-600 dark:text-amber-400" aria-hidden="true" />
+      </Tooltip>
+    );
+  }
+  if (confianca === "diverge_relatorio") {
+    return (
+      <Tooltip content={TEXTO_DIVERGE_RELATORIO} ariaLabel={TEXTO_DIVERGE_RELATORIO} side="top">
         <TriangleAlert size={13} className="text-amber-600 dark:text-amber-400" aria-hidden="true" />
       </Tooltip>
     );

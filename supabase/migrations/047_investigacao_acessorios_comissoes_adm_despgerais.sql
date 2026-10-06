@@ -1,0 +1,172 @@
+-- Navesa Mesa — Migration 047: investigação das 4 categorias restantes do
+-- relatório nativo NBS "Custos de Veículos em Estoque" sem fonte confirmada
+-- (Acessórios, Comissões, ADM, Despesas Gerais) — a pedido do Marcos, mesma
+-- metodologia que achou Forplan/HoldBack (colunas diretas, migration 043) e
+-- o piso de Impostos (migration 046).
+-- =====================================================================================
+-- MÉTODO (06/10/2026, Dara): reextração do PDF "Custos de Veículos em Estoque"
+-- com o parser corrigido (ordem de STREAM dos caracteres via
+-- `extract_words(use_text_flow=True)` do pdfplumber, não posição X ordenada —
+-- resolve a sobreposição visual Modelo/Placa quando o nome do modelo é longo,
+-- ex. placa embutida em "CDSGF9C59" = trim "CD" + placa "SGF9C59"). Validado
+-- em 3 PDFs independentes (05/10 "gabarito", 05/10 "ee", 06/10 — 286 a 289
+-- veículos cada): colunas identificadas por clustering do x1 (borda direita,
+-- números são right-aligned) de 14 valores financeiros por linha, calibrado
+-- por página. Confiança do parser: o piso de Impostos (0,95% sobre Tabela,
+-- achado na migration 046) bate EXATO nos 3 PDFs (38-39 de 286-289 veículos
+-- na casa decimal, 0 violações abaixo do piso) — usado aqui como gabarito de
+-- que o mapeamento de colunas está certo antes de testar as 4 categorias
+-- novas.
+--
+-- Decodificação placa->chassi: PLACA_USADO (inclui formato antigo com hífen,
+-- ex. "NVO-0860" — a regex anterior só cobria AAA9A99/AAA9999 sem hífen).
+-- Desambiguação de PLACA_USADO duplicado (mesma placa, históricos diferentes
+-- no Oracle): escolhida a linha cujo PRECO_TABELA bate exato com a coluna
+-- "Tabela" do PDF — 286/286 bateram exato, confirmando chassi+loja corretos
+-- em 100% dos casos antes de qualquer comparação de custo.
+--
+-- ===================================================================================
+-- ACESSÓRIOS — mantém confiança BAIXA (sem mudança de comportamento)
+--
+-- Acessórios = R$0,00 em TODOS os veículos testados: 286/286 (06/10), 286/286
+-- (05/10 "ee"), 289/289 (05/10 "gabarito") — 861 observações, 3 extrações
+-- independentes, zero exceção. Isso é consistência (0=0), não confirmação
+-- positiva: os CODIGO_CUSTO já usados pelo sync (146 "Cortesia Acessórios",
+-- 424 "Acessórios", 640 "Acessórios Interno" — ver migration 040) retornam
+-- SOMA ZERO pra todos os 286 veículos cruzados individualmente (sem filtro de
+-- código, lançamentos completos de cada chassi/loja verificados um a um) —
+-- bate com o relatório. Mas os 3 códigos SÃO usados ativamente na base: 184,5k
+-- /189,1k/11,6k linhas, R$3.889.510,46/R$1.199.756,32/R$76.855,09 somados na
+-- tabela inteira (confirmado 06/10/2026) — ou seja, não são códigos mortos,
+-- só não se aplicam a NENHUM dos 286 veículos do estoque atual (provavelmente
+-- carros novos ou já faturados, fora desta amostra). Sem veículo com
+-- Acessórios>0 no relatório nativo nos 3 PDFs disponíveis, não há como testar
+-- se os códigos reproduzem um valor POSITIVO exato — fica confiança BAIXA
+-- (consistente, não confirmada), sem mudança de código.
+--
+-- ===================================================================================
+-- COMISSÕES — confiança MÉDIA, achado novo (provisão percentual, não lançamento)
+--
+-- Comissões não-zero em só 20/286 veículos (06/10) e 19/286,289 nos PDFs de
+-- 05/10 — mesma ordem de grandeza. CONFIRMADO (de novo) que os 9 CODIGO_CUSTO
+-- já mapeados pelo sync (129,239,273,297,447,498,529,545,658 — migration 040)
+-- NUNCA aparecem em NENHUM dos 20 veículos com Comissões>0 no relatório —
+-- zero ocorrência, mesmo sem filtro de código (lançamentos completos
+-- verificados). Caso definitivo: placa TFC0C29 (mesmo chassi do caso
+-- definitivo de Impostos na migration 046) tem Comissões=R$499,50 no
+-- relatório mas ZERO lançamentos de QUALQUER CODIGO_CUSTO.
+--
+-- ACHADO NOVO — Comissões, quando aparece, é uma PROVISÃO PERCENTUAL EXATA,
+-- não um lançamento: nos 20 veículos com Comissões>0 (06/10/2026), a razão
+-- Comissões/Tabela é EXATAMENTE 0,5000% em 12/20 e a razão Comissões/LucroBruto
+-- é EXATAMENTE 5,0000% em 7/20 (1 exceção em 8,0000% de LucroBruto, placa
+-- SGF9C59) — zero desvio na 4ª casa decimal em ambos os grupos. Confirma a
+-- hipótese de entrada desta investigação ("comissão em estoque é provisão
+-- calculada simulando a venda, não uma comissão real lançada").
+--
+-- O que NÃO foi isolado: qual critério decide ENTRE as duas fórmulas (0,5% de
+-- Tabela vs 5% de Lucro Bruto) pra um veículo específico. Testado e
+-- descartado: COD_CLASSE_VENDA (classe 9 "FINANCIAMENTO" aparece nos dois
+-- grupos), RESERVADO/STATUS (mistura S/N e E/V nos dois grupos sem padrão
+-- limpo), NOVO_USADO (100% "U" nos 20, sem variação). Observação parcial não
+-- confirmada: pares de veículos com o MESMO COD_MODELO caem no MESMO grupo
+-- (SCJ0A79/SDC3F89 = COD_MODELO 4085778, ambos 0,5%Tabela; SDN5I15/SDH2A13 =
+-- COD_MODELO 3995153, ambos 5%LucroBruto) — sugere que o critério pode ser
+-- por modelo/linha (programa de incentivo do fabricante?), mas com só 2 pares
+-- de evidência não é confirmação, e não há dado acessível via Oracle pra
+-- testar essa hipótese além de COD_MODELO coincidir.
+--
+-- Fora de escopo mudar código de sync: a fórmula percentual não é preditiva
+-- (não dá pra saber ANTES qual das 2-3 taxas usar pra um veículo arbitrário),
+-- mesma limitação do componente variável de Impostos na migration 046.
+--
+-- ===================================================================================
+-- DESPESAS GERAIS — confiança MÉDIA-ALTA, achado novo (categoria "resíduo")
+--
+-- Despesas Gerais não-zero em 232/286 veículos (06/10) — categoria com mais
+-- dado das 4 investigadas, soma R$1.073.021,72 no período. CONFIRMADO que
+-- OUTRAS_DESP (coluna direta em NBS.VEICULOS, candidata mais óbvia pelo nome)
+-- é ZERO em TODOS os 286 veículos — não é a fonte (e é zero na tabela inteira
+-- por amostra, não só nestes 286). PATIO_VALOR_DIA/PATIO_CARENCIA (hipótese de
+-- custo de pátio por dia) também descartados: ambos ZERO em 100% dos 286
+-- veículos — colunas mortas nesta instância do NBS (não aplicável a este
+-- rateio). FUNDIF, TCIF_VEIC, TCIF_RAT_CAPA, CMT, SERV_ASSESSORIA: idem,
+-- zero em todos.
+--
+-- ACHADO — Despesas Gerais bate com uma fórmula de RESÍDUO: soma de TODOS os
+-- CODIGO_CUSTO lançados pro veículo em NBS.VEICULOS_CUSTOS_ESPECIFICOS, MENOS
+-- os códigos já atribuídos a Impostos/Revisões/Acessórios/Comissões (as 4
+-- listas da migration 040), MENOS o código 620 (natureza não identificada —
+-- sem tabela de descrição de CODIGO_CUSTO acessível via Oracle — mas valores
+-- grandes e redondos, R$5.000 a R$40.000, incompatíveis com despesa
+-- administrativa; padrão consistente com floor-plan/bônus de fábrica, não
+-- custo operacional). Essa fórmula bate EXATO (diferença <R$0,01) em 208/232
+-- veículos testados (89,7%). Caso definitivo de validação: placas RVG2D82 e
+-- RTJ6D76 têm Despesas Gerais>0 no relatório (R$1.240 e R$2.350) mas ZERO
+-- lançamentos de qualquer CODIGO_CUSTO — igual aos casos definitivos de
+-- Impostos/Comissões, confirma que o relatório calcula algo que não é só
+-- lançamento puro, mas aqui o resíduo das OUTRAS categorias explica a maior
+-- parte dos casos restantes.
+--
+-- Os 24/232 casos (10,3%) que não batem exato não têm padrão único — alguns
+-- sugerem que um código específico (ex. 269 "Revisão" num caso) às vezes
+-- conta para Despesas Gerais em vez da categoria "dona" do código, indicando
+-- que a classificação de categoria do motor do relatório NBS não é 100%
+-- idêntica às 4 listas de CODIGO_CUSTO fixadas na migration 040 (que foram
+-- validadas por "ordem de grandeza plausível", não por bater exato contra
+-- este relatório).
+--
+-- DECISÃO (Dara, 06/10/2026): NÃO implementar essa fórmula de resíduo no sync
+-- apesar de 89,7% de acerto, por dois motivos: (1) AGENTS.md regra 4 deste
+-- projeto trata qualquer divergência de R$0,01+ contra o NBS como bug
+-- crítico — uma fórmula com 10,3% de erro conhecido introduziria exatamente
+-- esse tipo de bug em produção; (2) a query exigida (SUM com NOT IN de uma
+-- lista grande de códigos excluídos, agrupado por chassi+loja) inverte o
+-- padrão de filtro das outras categorias (IN de poucos códigos) e tende a
+-- escanear quase a tabela inteira (55,9 milhões de linhas, sem índice em
+-- CODIGO_CUSTO) — mesmo risco de performance que a migration 040 já descartou
+-- para um IN() grande. Documentado aqui pra decisão de produto (Morgan/Aria)
+-- se valer a pena uma estimativa explícita (ex. campo
+-- custo_despesas_gerais_estimado, separado do campo "apurado"), igual
+-- cogitado para Impostos na migration 046.
+--
+-- ===================================================================================
+-- ADM — confiança BAIXA confirmada, limitação real de acesso a dado
+--
+-- ADM = R$0,00 em TODOS os veículos testados: 286/286 (06/10), 286/286
+-- (05/10 "ee"), 289/289 (05/10 "gabarito") — mesma consistência de Acessórios,
+-- 861 observações sem exceção. Diferente de Acessórios, aqui NÃO há sinal de
+-- que o mecanismo exista noutro lugar: a única coluna com "ADM" no nome em
+-- todo o schema NBS (IMPORT_ADM, pensada pra custo administrativo de
+-- importação) é ZERO em TODAS as 269.444 linhas de NBS.VEICULOS (tabela
+-- inteira, não só os 286 do estoque atual) — coluna morta nesta instância,
+-- não um caso de "não se aplica a estes veículos". Busca em ALL_TAB_COLUMNS
+-- (OWNER='NBS', tabelas VEICULO%) por padrões ADM/DESPESA/DESP/COMISSAO/
+-- ACESSORIO/RATEIO não revelou nenhuma outra coluna candidata além das já
+-- testadas (ver também VALOR_RATEIO, confirmado zero nas 269.444 linhas, e
+-- VEICULOS_CLASSE_VENDA.PERC_COMISSAO, que é NULL até na amostra verificada —
+-- tabela de regras de comissão por classe de venda, não de ADM).
+--
+-- Sem nenhum veículo com ADM>0 em nenhum dos 3 PDFs (05/10 ×2, 06/10), não há
+-- como testar padrão percentual (razão sempre 0/x=0, sem informação) nem
+-- validar CODIGO_CUSTO por soma (nenhum valor positivo pra comparar). CONCLUSÃO:
+-- limitação real do acesso Oracle disponível — ADM é provavelmente calculado
+-- por um motor de rateio do NBS sobre dado não exposto nas tabelas
+-- consultáveis pelo usuário `comissao` (mesma hipótese da migration 040,
+-- agora testada mais a fundo e não refutada nem confirmada). Sem mudança de
+-- código: custo_adm continua NULL ("não apurado"), nunca escrito pelo sync.
+--
+-- Idempotente (COMMENT ON COLUMN sempre substitui o anterior). Rodar 2x sem erro.
+-- =====================================================================================
+
+COMMENT ON COLUMN public.veiculos.custo_acessorios IS
+  'Categoria "Acessorios" do relatorio nativo NBS "Custos de Veiculos em Estoque". CODIGO_CUSTO (NBS.VEICULOS_CUSTOS_ESPECIFICOS): 146 "Cortesia Acessorios", 424 "Acessorios", 640 "Acessorios Interno". CONFIANCA BAIXA (revalidado 06/10/2026, migration 047): Acessorios = R$0,00 em TODOS os 861 veiculos testados em 3 extracoes de PDF independentes (286+286+289, 05/10 e 06/10/2026) e a soma destes 3 codigos tambem e ZERO nos mesmos 286 veiculos verificados individualmente sem filtro de codigo — bate (0=0), mas e confirmacao negativa, nao positiva: nenhum veiculo do estoque atual tem Acessorios>0 no relatorio nativo pra validar se a formula reproduz um valor exato. Os 3 codigos SAO usados ativamente na base inteira (184,5k/189,1k/11,6k linhas, R$3,89M/R$1,20M/R$76,9k somados) — nao sao codigos mortos, so nao se aplicam a nenhum veiculo desta amostra (provavelmente novos ou ja faturados). NUNCA null: ausencia de lancamento e fato conhecido (zero), mesmo padrao de valoriza.';
+
+COMMENT ON COLUMN public.veiculos.custo_comissoes IS
+  'Categoria "Comissoes" do relatorio nativo NBS "Custos de Veiculos em Estoque". CODIGO_CUSTO candidatos (NBS.VEICULOS_CUSTOS_ESPECIFICOS): 129,239,273,297,447,498,529,545,658. CONFIANCA BAIXA quanto a estes codigos — CONFIRMADO (06/10/2026, migration 047) que NUNCA aparecem em NENHUM dos veiculos com Comissoes>0 no relatorio nativo (20/286 testados individualmente sem filtro de codigo, zero ocorrencia). Caso definitivo: placa TFC0C29 tem Comissoes=R$499,50 no relatorio mas ZERO lancamentos de qualquer CODIGO_CUSTO. ACHADO (migration 047): quando Comissoes>0, e uma PROVISAO PERCENTUAL EXATA sobre Tabela ou Lucro Bruto, nao um lancamento real — confirmado em 20/286 veiculos (06/10/2026): razao Comissoes/Tabela = EXATAMENTE 0,5000% em 12/20, razao Comissoes/LucroBruto = EXATAMENTE 5,0000% em 7/20 (1 excecao em 8,0000%). Criterio que decide qual das formulas usar NAO foi isolado (testado e descartado: COD_CLASSE_VENDA, RESERVADO/STATUS, NOVO_USADO — todos sem padrao limpo; indicio fraco e nao confirmado: pares de veiculos com mesmo COD_MODELO caem no mesmo grupo). Esta coluna (custo_comissoes, soma dos 9 CODIGO_CUSTO) continua sendo dado REAL (comissao de venda efetivamente lancada, tipicamente so apos a venda) mas NAO deve ser tratada como equivalente a "Comissoes" do relatorio nativo de estoque — ver migration 047 para evidencia completa. NUNCA null: ausencia de lancamento e fato conhecido (zero).';
+
+COMMENT ON COLUMN public.veiculos.custo_despesas_gerais IS
+  'Categoria "Despesas Gerais" do relatorio nativo NBS "Custos de Veiculos em Estoque". NENHUMA coluna direta em NBS.VEICULOS encontrada (OUTRAS_DESP — candidato mais obvio pelo nome — e ZERO em TODOS os 286 veiculos testados e na tabela inteira; PATIO_VALOR_DIA/PATIO_CARENCIA/FUNDIF/TCIF_VEIC/TCIF_RAT_CAPA/CMT/SERV_ASSESSORIA idem, todas zero, confirmado 06/10/2026 migration 047). ACHADO (confianca MEDIA-ALTA, migration 047): bate com formula de RESIDUO — soma de TODOS os CODIGO_CUSTO lancados pro veiculo em NBS.VEICULOS_CUSTOS_ESPECIFICOS, MENOS os codigos ja atribuidos a Impostos/Revisoes/Acessorios/Comissoes (migration 040), MENOS o codigo 620 (natureza nao identificada, valores redondos de R$5.000-R$40.000, padrao compativel com floor-plan/bonus de fabrica). Bate EXATO (diferenca <R$0,01) em 208/232 veiculos testados (89,7%) — caso definitivo de residuo puro: placas RVG2D82/RTJ6D76 tem Despesas Gerais>0 (R$1.240/R$2.350) mas ZERO lancamentos de qualquer CODIGO_CUSTO. Os 24/232 casos (10,3%) que nao batem sugerem que a classificacao de categoria do motor do relatorio NBS nao e 100% identica as 4 listas fixadas na migration 040. NAO implementado no sync (decisao Dara 06/10/2026): 10,3% de erro conhecido violaria a regra deste projeto de "qualquer divergencia de R$0,01+ e bug critico" (AGENTS.md), e a query exigida (NOT IN de lista grande, agrupado por chassi+loja) tende a escanear quase a tabela inteira (55,9 milhoes de linhas sem indice em CODIGO_CUSTO) — mesmo risco de performance ja descartado na migration 040. NULLABLE SEM DEFAULT (nao mudou): NULL continua significando "nao apurado", nao "fato conhecido de zero" — decisao de implementar uma estimativa explicita (campo separado) e decisao de produto (Morgan/Aria), nao da Dara. Ver migration 047 para evidencia completa.';
+
+COMMENT ON COLUMN public.veiculos.custo_adm IS
+  'Categoria "ADM" do relatorio nativo NBS "Custos de Veiculos em Estoque". NENHUM CODIGO_CUSTO encontrado em NBS.VEICULOS_CUSTOS_ESPECIFICOS (541 tipos, busca exaustiva por "admin" nao bateu, migration 040). CONFIANCA BAIXA CONFIRMADA (06/10/2026, migration 047), limitacao real de acesso: ADM = R$0,00 em TODOS os 861 veiculos testados em 3 extracoes de PDF independentes (286+286+289, 05/10 e 06/10/2026), sem NENHUMA exceção — impossivel testar padrao percentual (razao sempre 0/x) ou validar CODIGO_CUSTO por soma (nenhum valor positivo pra comparar). A unica coluna com "ADM" no nome em todo o schema NBS (IMPORT_ADM) e ZERO em TODAS as 269.444 linhas de NBS.VEICULOS (tabela inteira, nao so o estoque atual) — coluna morta nesta instancia, nao "nao se aplica a estes veiculos". Busca em ALL_TAB_COLUMNS (OWNER=NBS, tabelas VEICULO%) por padroes ADM/DESPESA/DESP/COMISSAO/ACESSORIO/RATEIO nao revelou outra coluna candidata (VALOR_RATEIO tambem zero nas 269.444 linhas; VEICULOS_CLASSE_VENDA.PERC_COMISSAO e NULL na amostra verificada e e sobre classe de venda, nao ADM). Hipotese nao refutada nem confirmada: motor de rateio do NBS sobre dado nao exposto nas tabelas consultaveis pelo usuario comissao. NULLABLE SEM DEFAULT (nao mudou): NULL = "nao apurado", nunca escrito pelo sync. Ver migration 047 para evidencia completa.';
