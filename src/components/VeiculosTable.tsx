@@ -13,7 +13,7 @@ import {
 import { ArrowUpDown, ArrowUp, ArrowDown, AlertTriangle, X, ClipboardCheck, BarChart3, Repeat, BadgeAlert, FileSpreadsheet } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { classificarPatio } from "@/lib/inventory/status";
-import { normalizarIdentificador } from "@/lib/utils/placa";
+import { normalizarIdentificador, normalizarPlaca } from "@/lib/utils/placa";
 import { estaReservado } from "@/lib/inventory/reservado";
 import { CAUTELAR_ICONE, CAUTELAR_LABEL } from "@/lib/inventory/cautelar";
 import { cn, formatBRL, formatInt } from "@/lib/utils";
@@ -78,6 +78,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
     idadeMin, setIdadeMin, idadeMax, setIdadeMax,
     margemMin, setMargemMin, margemMax, setMargemMax,
     fipeBatch,
+    custosEstoquePorPlaca,
     chassisEmRepasse, marcarChassiEmRepasse,
     modoPrioridade, fecharModoPrioridade,
     filtered,
@@ -525,6 +526,12 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
           ...v,
           empresa_nome: lojas[v.cod_empresa]?.nome?.trim() ?? null,
           fipe: fipePorChassi.get(normalizarIdentificador(v.chassi)) ?? null,
+          // Fallback manual (HoldBack/Acessórios/Comissões/ADM/Despesas
+          // Gerais — ver colunas-estoque.ts): registro do upload do PDF
+          // "Custos de Veículos em Estoque" (/upload), já carregado no
+          // store global (mesmo dataset que VeiculoDetalhe/SimuladorPreco
+          // usam), buscado por placa normalizada.
+          custoEstoqueManual: custosEstoquePorPlaca[normalizarPlaca(v.placa)] ?? null,
         }))}
         filtroLoja={
           filtroLoja === "all"

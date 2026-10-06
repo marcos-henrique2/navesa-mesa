@@ -20,7 +20,7 @@ import {
   type ColunaKey,
   type GrupoColuna,
 } from "@/lib/export/colunas-estoque";
-import { veiculo } from "./_mocks";
+import { veiculo, custoEstoqueDetalhado } from "./_mocks";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 
 describe("colunas-estoque (catálogo)", () => {
@@ -291,6 +291,93 @@ describe("colunas-estoque (catálogo)", () => {
   it("confiança 'parcial' só em custo_detalhado_total", () => {
     const comParcial = COLUNAS_ESTOQUE.filter((c) => c.confianca === "parcial").map((c) => c.key);
     assert.deepEqual(comParcial, ["custo_detalhado_total"]);
+  });
+
+  it("fallbackManual marcado só nas 5 categorias sem fonte automática confiável (migration 047)", () => {
+    const comFallback = COLUNAS_ESTOQUE.filter((c) => c.fallbackManual === true).map((c) => c.key).sort();
+    assert.deepEqual(
+      comFallback,
+      ["custo_acessorios", "custo_adm", "custo_comissoes", "custo_despesas_gerais", "custo_holdback"].sort(),
+    );
+    // custo_impostos, custo_revisoes, custo_detalhado_total e custo_forplan NÃO têm fallback manual.
+    for (const key of ["custo_impostos", "custo_revisoes", "custo_detalhado_total", "custo_forplan"] as ColunaKey[]) {
+      assert.equal(getColuna(key)!.fallbackManual, undefined, `${key} não deveria ter fallbackManual`);
+    }
+  });
+
+  describe("fallback manual (custo_holdback/custo_acessorios/custo_comissoes/custo_adm/custo_despesas_gerais)", () => {
+    it("custo_holdback: automático zerado + manual presente usa o manual", () => {
+      const col = getColuna("custo_holdback")!;
+      const v = { ...veiculo({ custo_holdback: 0 }), custoEstoqueManual: custoEstoqueDetalhado({ holdback: 500 }) };
+      assert.equal(col.getValor(v), 500);
+    });
+
+    it("custo_holdback: automático não-zero prevalece sobre o manual", () => {
+      const col = getColuna("custo_holdback")!;
+      const v = { ...veiculo({ custo_holdback: 300 }), custoEstoqueManual: custoEstoqueDetalhado({ holdback: 500 }) };
+      assert.equal(col.getValor(v), 300);
+    });
+
+    it("custo_holdback: nem automático nem manual tem valor → 0 (padrão já estabelecido)", () => {
+      const col = getColuna("custo_holdback")!;
+      assert.equal(col.getValor(veiculo({ custo_holdback: 0 })), 0);
+      assert.equal(col.getValor({ ...veiculo({ custo_holdback: 0 }), custoEstoqueManual: null }), 0);
+    });
+
+    it("custo_acessorios e custo_comissoes seguem o mesmo fallback", () => {
+      const acessorios = getColuna("custo_acessorios")!;
+      const comissoes = getColuna("custo_comissoes")!;
+      const v = {
+        ...veiculo({ custo_acessorios: 0, custo_comissoes: 0 }),
+        custoEstoqueManual: custoEstoqueDetalhado({ acessorios: 120, comissoes: 340 }),
+      };
+      assert.equal(acessorios.getValor(v), 120);
+      assert.equal(comissoes.getValor(v), 340);
+    });
+
+    it("custo_adm: automático null + manual presente usa o manual", () => {
+      const col = getColuna("custo_adm")!;
+      const v = { ...veiculo({ custo_adm: null }), custoEstoqueManual: custoEstoqueDetalhado({ adm: 75 }) };
+      assert.equal(col.getValor(v), 75);
+    });
+
+    it("custo_adm: nem automático nem manual tem valor → null (padrão 'não apurado', não vira 0)", () => {
+      const col = getColuna("custo_adm")!;
+      assert.equal(col.getValor(veiculo({ custo_adm: null })), null);
+      assert.equal(col.getValor({ ...veiculo({ custo_adm: null }), custoEstoqueManual: null }), null);
+    });
+
+    it("custo_despesas_gerais: mesmo fallback de custo_adm", () => {
+      const col = getColuna("custo_despesas_gerais")!;
+      assert.equal(col.getValor(veiculo({ custo_despesas_gerais: null })), null);
+      const v = { ...veiculo({ custo_despesas_gerais: null }), custoEstoqueManual: custoEstoqueDetalhado({ desp_gerais: 60 }) };
+      assert.equal(col.getValor(v), 60);
+    });
+
+    it("sem custoEstoqueManual (campo ausente): comporta-se como se não houvesse manual", () => {
+      assert.equal(getColuna("custo_holdback")!.getValor(veiculo({ custo_holdback: 0 })), 0);
+      assert.equal(getColuna("custo_adm")!.getValor(veiculo({ custo_adm: null })), null);
+    });
+
+    it("custo_detalhado_total usa o MESMO fallback resolvido das 5 colunas (não diverge do que é exibido)", () => {
+      const col = getColuna("custo_detalhado_total")!;
+      const v = {
+        ...veiculo({
+          custo_revisoes: 100,
+          custo_forplan: 999, // excluído do total — não deve entrar na soma
+          custo_holdback: 0, // zerado → cai pro manual
+          custo_acessorios: 0, // zerado → cai pro manual
+          custo_impostos: 500,
+          custo_comissoes: 600, // não-zero → NÃO cai pro manual
+          custo_adm: null, // null → cai pro manual
+          custo_despesas_gerais: null, // null → cai pro manual
+        }),
+        custoEstoqueManual: custoEstoqueDetalhado({ holdback: 50, acessorios: 40, comissoes: 9999, adm: 10, desp_gerais: 5 }),
+      };
+      // 100 (revisoes) + 50 (holdback via manual) + 40 (acessorios via manual) + 500 (impostos)
+      // + 600 (comissoes automático, NÃO o manual 9999) + 10 (adm via manual) + 5 (desp_gerais via manual) = 1305
+      assert.equal(col.getValor(v), 1305);
+    });
   });
 });
 

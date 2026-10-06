@@ -37,6 +37,7 @@ import {
   Search,
   Trash2,
   TriangleAlert,
+  UploadCloud,
   X,
 } from "lucide-react";
 import {
@@ -96,11 +97,13 @@ export type ConfigurarRelatorioEstoqueModalProps = {
 };
 
 const TEXTO_CONFIANCA_BAIXA =
-  "Confiança baixa: na amostra testada esse valor veio zerado na maioria dos carros. O código de custo existe no Oracle mas ainda não foi confirmado. Use com cautela.";
+  "Confiança baixa: na amostra testada esse valor veio zerado na maioria dos carros. O código de custo existe no Oracle mas ainda não foi confirmado — salvo quando o ícone de upload ao lado indica que veio do PDF subido manualmente. Use com cautela.";
 const TEXTO_NAO_APURADO =
-  "Não apurado: aparece como — no Excel (não é R$ 0,00) — ainda não existe fórmula de cálculo definida pra essa categoria.";
+  "Não apurado: aparece como — no Excel (não é R$ 0,00) — ainda não existe fórmula de cálculo definida pra essa categoria, salvo quando o ícone de upload ao lado indica que veio do PDF subido manualmente.";
 const TEXTO_CUSTO_DETALHADO_PARCIAL =
   "Esta soma inclui categorias com confiança baixa ou ainda não apuradas (HoldBack, Acessórios, Comissões, ADM, Despesas Gerais) — pode estar subestimada. Use com cautela.";
+const TEXTO_FALLBACK_MANUAL =
+  "Pode vir do upload manual: quando o valor automático (Oracle) vier zerado/não apurado, esta coluna usa o relatório \"Custos de Veículos em Estoque\" (PDF subido na tela Upload) como alternativa. Esse valor só atualiza quando alguém sobe o PDF de novo — pode estar desatualizado.";
 
 function todayISOLocal(): string {
   const d = new Date();
@@ -130,6 +133,16 @@ function IconeConfianca({ confianca }: { confianca: ColunaEstoque["confianca"] }
     );
   }
   return null;
+}
+
+/** Ícone extra (independente de `confianca`) avisando que a coluna pode cair pro upload manual. */
+function IconeFallbackManual({ ativo }: { ativo?: boolean }) {
+  if (!ativo) return null;
+  return (
+    <Tooltip content={TEXTO_FALLBACK_MANUAL} ariaLabel={TEXTO_FALLBACK_MANUAL} side="top">
+      <UploadCloud size={13} className="text-blue-600 dark:text-blue-400" aria-hidden="true" />
+    </Tooltip>
+  );
 }
 
 export function ConfigurarRelatorioEstoqueModal({
@@ -500,6 +513,7 @@ export function ConfigurarRelatorioEstoqueModal({
                             />
                             <span>{c.label}</span>
                             <IconeConfianca confianca={c.confianca} />
+                            <IconeFallbackManual ativo={c.fallbackManual} />
                           </label>
                         ))}
                       </div>

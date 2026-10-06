@@ -55,7 +55,7 @@ export type UseVeiculosTableProps = {
 };
 
 export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = {}) {
-  const { veiculos, vendas, lojas, isHydrated } = useInventory();
+  const { veiculos, vendas, lojas, custosEstoquePorPlaca, isHydrated } = useInventory();
 
   const [statusFiltro, setStatusFiltro] = usePersistedState<StatusFiltro>("veiculos:statusFiltro", "all");
   const [search, setSearch] = usePersistedState<string>("veiculos:search", "");
@@ -522,6 +522,7 @@ export function useVeiculosTable({ filtrosPrioridade }: UseVeiculosTableProps = 
     cautelares,
     flags,
     fipeBatch,
+    custosEstoquePorPlaca,
     chassisEmRepasse,
     marcarChassiEmRepasse,
     refreshChassisEmRepasse,
