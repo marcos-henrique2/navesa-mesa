@@ -75,7 +75,7 @@ export type CustosEstoquePdfMeta = {
   arquivo_nome: string;
   empresa: string;        // ex: "NAVESA"
   filial: string;         // ex: "02 NAVESA FORD AEROPORTO"
-  cod_empresa: number;    // extraído do prefixo da filial (ex: 2)
+  cod_empresa: number | null; // extraído do prefixo da filial (ex: 2); null = não apurado (NUNCA gravar 0 como valor real)
   data_impressao: Date | null;
   total_veiculos: number;
 };
@@ -116,11 +116,11 @@ function pareceNumero(s: string): boolean {
   return /^-?\d{1,3}(\.\d{3})*,\d{2}$|^-?\d+,\d{2}$/.test(s.trim());
 }
 
-type Item = { str: string; x: number; y: number };
-type Linha = { y: number; itens: Item[] };
+export type Item = { str: string; x: number; y: number };
+export type Linha = { y: number; itens: Item[] };
 
 /** Agrupa text items em linhas por proximidade vertical. */
-function agruparLinhas(items: Item[], tolY: number = 3): Linha[] {
+export function agruparLinhas(items: Item[], tolY: number = 3): Linha[] {
   const sorted = [...items].sort((a, b) => b.y - a.y);
   const linhas: Linha[] = [];
   for (const it of sorted) {
@@ -321,31 +321,57 @@ function extrairDado(linha: Linha, warnings: string[]): CustoEstoqueDetalhado | 
 
 // ─── Metadata ──────────────────────────────────────────────────────────────
 
-function extrairMeta(linhas: Linha[], arquivoNome: string): Omit<CustosEstoquePdfMeta, "total_veiculos"> {
+/**
+ * Extrai metadata (Empresa/Filial/Data) do cabeçalho da página 1.
+ *
+ * IMPORTANTE: não confiamos em qual "linha" (bucket por tolerância de Y em
+ * agruparLinhas) cada rótulo cai. O pdfjs reporta cada text item com seu
+ * próprio y vindo do transform do PDF, e rótulo ("Filial:") e valor
+ * ("02 NAVESA FORD AEROPORTO...") podem ser fragmentos distintos — se a
+ * diferença de Y entre eles for maior que a tolerância usada no agrupamento,
+ * eles caem em "linhas" diferentes e um regex rodando só contra a linha do
+ * rótulo nunca vê o valor (foi o que aconteceu aqui: `cod_empresa` gravava 0
+ * em quase 100% das cargas desde 03/06/2026).
+ *
+ * Por isso concatenamos TODO o texto da página (na ordem top-to-bottom,
+ * left-to-right que `agruparLinhas` já garante) numa única string e rodamos
+ * os regexes contra ela — independe de qual bucket de linha cada rótulo caiu.
+ */
+export function extrairMeta(
+  linhas: Linha[],
+  arquivoNome: string,
+  warnings: string[],
+): Omit<CustosEstoquePdfMeta, "total_veiculos"> {
+  const textoPagina = linhas.map((l) => l.itens.map((i) => i.str).join(" ")).join(" ");
+
   let empresa = "";
+  const mE = textoPagina.match(/Empresa:\s*([A-Z0-9\s]+?)(?:\s+P[áa]gina:|$)/i);
+  if (mE) empresa = mE[1].trim();
+
+  // "Filial: 02 NAVESA FORD AEROPORTO Data de Impressão: 03/06/2026"
   let filial = "";
+  const mF = textoPagina.match(/Filial:\s*(\d+\s+[^]+?)(?:\s+Data de Impress|$)/i);
+  if (mF) filial = mF[1].trim();
+
   let dataImpressao: Date | null = null;
+  // Tolerante a "ã"/"o" fragmentados em text items separados pelo pdfjs (acento como item próprio).
+  const mD = textoPagina.match(/Data de Impress\s*[ãa]\s*o\s*:\s*(\d{2})\/(\d{2})\/(\d{4})/i);
+  if (mD) dataImpressao = new Date(Number.parseInt(mD[3], 10), Number.parseInt(mD[2], 10) - 1, Number.parseInt(mD[1], 10));
 
-  for (const l of linhas) {
-    const concat = l.itens.map((i) => i.str).join(" ");
-    if (concat.startsWith("Empresa:")) {
-      // "Empresa: NAVESA Página: 1"
-      const m = concat.match(/Empresa:\s*([A-Z0-9\s]+?)(?:\s+Página:|$)/i);
-      if (m) empresa = m[1].trim();
-    }
-    if (concat.startsWith("Filial:")) {
-      // "Filial: 02 NAVESA FORD AEROPORTO Data de Impressão: 03/06/2026"
-      const mF = concat.match(/Filial:\s*(\d+\s+[^]+?)(?:\s+Data de Impress|$)/i);
-      if (mF) filial = mF[1].trim();
-      const mD = concat.match(/Data de Impress[ãa]o:\s*(\d{2})\/(\d{2})\/(\d{4})/i);
-      if (mD) dataImpressao = new Date(Number.parseInt(mD[3], 10), Number.parseInt(mD[2], 10) - 1, Number.parseInt(mD[1], 10));
-    }
-    if (empresa && filial && dataImpressao) break;
-  }
-
-  // cod_empresa: primeiro número da filial ("02 NAVESA..." → 2)
+  // cod_empresa: primeiro número da filial ("02 NAVESA..." → 2).
+  // NUNCA grava 0 como se fosse um cod_empresa real — 0 não é um código de loja
+  // válido, é só o valor padrão de `Number.parseInt` numa string vazia. Quando a
+  // extração falha, o valor correto é "não apurado" (null), igual ao padrão já
+  // usado no resto do projeto (ver isLojaIgnorada / buscarCustoDetalhado).
   const codMatch = filial.match(/^(\d+)\s/);
-  const cod_empresa = codMatch ? Number.parseInt(codMatch[1], 10) : 0;
+  let cod_empresa: number | null = null;
+  if (codMatch) {
+    cod_empresa = Number.parseInt(codMatch[1], 10);
+  } else if (filial) {
+    warnings.push(`cod_empresa não apurado: não consegui extrair o código numérico do texto da filial ("${filial}").`);
+  } else {
+    warnings.push(`cod_empresa não apurado: não encontrei "Filial:" no cabeçalho do PDF (Empresa="${empresa || "?"}").`);
+  }
 
   return { arquivo_nome: arquivoNome, empresa, filial, cod_empresa, data_impressao: dataImpressao };
 }
@@ -379,7 +405,7 @@ export async function parseNbsCustosEstoquePdf(
 
     // Captura meta na primeira página
     if (p === 1) {
-      metaParcial = extrairMeta(linhas, fileName);
+      metaParcial = extrairMeta(linhas, fileName, warnings);
     }
 
     for (const l of linhas) {

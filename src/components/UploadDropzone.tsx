@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
-import { UploadCloud, FileSpreadsheet, AlertCircle, CheckCircle2, Loader2, RotateCcw } from "lucide-react";
+import { UploadCloud, FileSpreadsheet, AlertCircle, AlertTriangle, CheckCircle2, Loader2, RotateCcw } from "lucide-react";
 import { parseNbsXlsx } from "@/lib/parsers/nbs-xlsx";
 import { parseNbsVendasXlsx } from "@/lib/parsers/nbs-vendas-xlsx";
 import { parseNbsCustosXls } from "@/lib/parsers/nbs-custos-xls";
@@ -81,6 +81,7 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
   const [fileName, setFileName] = useState<string | null>(null);
   const [resultCount, setResultCount] = useState<number | null>(null);
   const [mergeFeedback, setMergeFeedback] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
 
   const resetar = useCallback(() => {
     setStatus("idle");
@@ -88,6 +89,7 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
     setFileName(null);
     setResultCount(null);
     setMergeFeedback(null);
+    setWarnings([]);
   }, []);
 
   const onDrop = useCallback(
@@ -99,6 +101,7 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
       setStatus("parsing");
       setError(null);
       setMergeFeedback(null);
+      setWarnings([]);
 
       try {
         const buf = await file.arrayBuffer();
@@ -107,10 +110,12 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
           const result = await parseNbsXlsx(buf, file.name);
           await setFromParse(result);
           setResultCount(result.meta.total_veiculos);
+          setWarnings(result.warnings);
         } else if (modo === "vendas") {
           const result = await parseNbsVendasXlsx(buf, file.name);
           const delta = await setVendasFromParse(result);
           setResultCount(result.meta.total_vendas);
+          setWarnings(result.warnings);
           if (delta.mantidas > 0 || delta.substituidas > 0) {
             const partes: string[] = [];
             partes.push(`+${delta.novas} novas`);
@@ -122,6 +127,7 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
           const result = await parseNbsCustosXls(buf, file.name);
           const delta = await setCustosFromParse(result);
           setResultCount(result.meta.total_vendas);
+          setWarnings(result.warnings);
           if (delta.mantidos > 0 || delta.substituidos > 0) {
             const partes: string[] = [];
             partes.push(`+${delta.novos} novos`);
@@ -134,6 +140,7 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
           const result = await parseNbsCustosEstoquePdf(buf, file.name);
           const delta = await setCustosEstoqueFromParse(result);
           setResultCount(result.meta.total_veiculos);
+          setWarnings(result.warnings);
           if (delta.mantidos > 0 || delta.substituidos > 0) {
             const partes: string[] = [];
             partes.push(`+${delta.novos} novos`);
@@ -267,6 +274,18 @@ export function UploadDropzone({ modo }: { modo: Modo }) {
                     <p className="mt-1 text-[11px] text-[var(--text-muted)]">
                       Merge incremental: {mergeFeedback}
                     </p>
+                  )}
+                  {warnings.length > 0 && (
+                    <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-2.5 dark:border-amber-800 dark:bg-amber-950/40">
+                      <p className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-800 dark:text-amber-300">
+                        <AlertTriangle className="h-3.5 w-3.5" /> Avisos ({warnings.length})
+                      </p>
+                      <ul className="mt-1 max-h-40 space-y-1 overflow-y-auto text-[11px] text-amber-900 dark:text-amber-200">
+                        {warnings.map((w, idx) => (
+                          <li key={idx}>{w}</li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
                   <button
                     type="button"

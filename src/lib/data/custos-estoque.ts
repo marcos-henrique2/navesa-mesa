@@ -7,7 +7,7 @@ type CustoEstoqueRow = CustoEstoqueDetalhado & {
   cod_empresa: number | null;
 };
 
-function toRow(c: CustoEstoqueDetalhado, codEmpresa: number): Record<string, unknown> {
+function toRow(c: CustoEstoqueDetalhado, codEmpresa: number | null): Record<string, unknown> {
   return {
     placa: c.placa,
     cod_empresa: codEmpresa,
@@ -72,7 +72,7 @@ export async function listCustosEstoque(): Promise<{ itens: CustoEstoqueDetalhad
  */
 export async function upsertCustosEstoque(
   itens: CustoEstoqueDetalhado[],
-  codEmpresa: number,
+  codEmpresa: number | null,
 ): Promise<{ total: number; duplicatasIgnoradas: number }> {
   if (itens.length === 0) return { total: 0, duplicatasIgnoradas: 0 };
 
