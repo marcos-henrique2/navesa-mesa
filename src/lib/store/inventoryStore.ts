@@ -128,7 +128,7 @@ function derivarCustosEstoqueMeta(qt: number): CustosEstoquePdfMeta | null {
     arquivo_nome: "supabase",
     empresa: "",
     filial: "",
-    cod_empresa: 0,
+    cod_empresa: null, // não apurado — este meta é reconstruído pós-load, não vem de um PDF específico
     data_impressao: null,
     total_veiculos: qt,
   };
