@@ -267,13 +267,18 @@ describe("colunas-estoque (catálogo)", () => {
     assert.equal(getColuna("custo_despesas_gerais")!.confianca, "nao_apurado");
   });
 
-  it("custo_impostos, custo_revisoes e custo_forplan NÃO têm indicador de confiança", () => {
-    assert.equal(getColuna("custo_impostos")!.confianca, undefined);
+  it("custo_revisoes e custo_forplan NÃO têm indicador de confiança", () => {
     assert.equal(getColuna("custo_revisoes")!.confianca, undefined);
     assert.equal(getColuna("custo_forplan")!.confianca, undefined);
   });
 
-  it("nenhuma outra coluna tem indicador de confiança além das 6 esperadas", () => {
+  it("confiança 'diverge_relatorio' só em custo_impostos (migration 046: soma de CODIGO_CUSTO real, mas diverge do valor calculado do relatório nativo)", () => {
+    assert.equal(getColuna("custo_impostos")!.confianca, "diverge_relatorio");
+    const comDivergeRelatorio = COLUNAS_ESTOQUE.filter((c) => c.confianca === "diverge_relatorio").map((c) => c.key);
+    assert.deepEqual(comDivergeRelatorio, ["custo_impostos"]);
+  });
+
+  it("nenhuma outra coluna tem indicador de confiança além das 7 esperadas", () => {
     const comConfianca = COLUNAS_ESTOQUE.filter((c) => c.confianca != null).map((c) => c.key).sort();
     assert.deepEqual(
       comConfianca,
@@ -284,6 +289,7 @@ describe("colunas-estoque (catálogo)", () => {
         "custo_despesas_gerais",
         "custo_detalhado_total",
         "custo_holdback",
+        "custo_impostos",
       ].sort(),
     );
   });

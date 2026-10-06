@@ -1,0 +1,93 @@
+-- Navesa Mesa — Migration 046: custo_impostos ≠ "Impostos" do relatório nativo (confiança BAIXA,
+-- piso estatístico encontrado via Tabela, "93% zerado" da versão anterior desta migration era BUG)
+-- =====================================================================================
+-- Migration 040 (01/10/2026) deu confiança ALTA pra custo_impostos (soma dos CODIGO_CUSTO
+-- 142,143,268,363,404,409,410,413,414,420,422,423,437,490,526,572,605,623,686,690 em
+-- NBS.VEICULOS_CUSTOS_ESPECIFICOS) com base em "não-zero em 14/15 veículos testados,
+-- ordem de grandeza plausível (~0,5-2% do custo_total)". Essa validação NUNCA comparou o
+-- valor centavo-a-centavo contra a coluna "Impostos" do relatório nativo NBS "Custos de
+-- Veículos em Estoque".
+--
+-- INVESTIGAÇÃO 05/10/2026 (Dara, a pedido do Marcos, motivada por um caso real: RANGER
+-- XLT 3.0, placa SDN5A95, Impostos=R$2.534,92/DespGerais=R$1.988,00 no relatório mas
+-- NENHUM lançamento em NBS.VEICULOS_CUSTOS_ESPECIFICOS pra esse chassi).
+--
+-- PASSO 1 — confirmado em 11 veículos que a soma dos 20 CODIGO_CUSTO da migration 040
+-- NUNCA bate com o Impostos do relatório nativo. Caso definitivo: placa TFC0C29
+-- (chassi187673/empresa2) tem ZERO lançamentos de QUALQUER CODIGO_CUSTO (testado sem
+-- filtro contra os 541 tipos existentes) mas Impostos do relatório = R$499,50.
+--
+-- PASSO 2 — Impostos não é coluna direta em NBS.VEICULOS (só existem COD_EMPRESA_FINAL,
+-- CUSTO_FORPLAN_FINAL, CUSTO_TOTAL_FINAL, HOLD_BACK_FINAL, MARGEM_FINAL) nem em nenhuma
+-- coluna fiscal testada (ALIQ_ICMS, BASE_ICMS, RATEIO_ICMS, VALOR_ICMS_PROP etc. — todas
+-- 0/NULL independente do Impostos do relatório). Repetida em 05/10/2026: nenhuma tabela
+-- Oracle (qualquer schema) com nome contendo NOTA/FISCAL/TRIBUT/NF, nem NBS com ICMS/ST/
+-- PRESUM/MVA além das já conhecidas CUSTOS_ESPECIFICOS/VEICULOS_CUSTOS_ESPECIFICOS.
+--
+-- ===================================================================================
+-- CORREÇÃO 05/10/2026 (2ª rodada, a pedido do Marcos) — A VERSÃO ANTERIOR DESTA MIGRATION
+-- TINHA UM ERRO DE EXTRAÇÃO, NÃO UM ACHADO REAL:
+--
+-- A 1ª rodada desta investigação (mesmo dia) relatou "267/286 (93%) veículos com
+-- Impostos=R$0,00 exato" e "|r| máximo 0,109 com Nota Fábrica/Forplan/Custo Total/dias
+-- pátio/ADM — praticamente nenhuma correlação". O Marcos contestou com print da PÁGINA 6
+-- do relatório `custos-ee-05-10-2026.pdf` (linhas #186–#222, 37 Rangers): NENHUMA delas
+-- tinha Impostos zerado, contradizendo direto a estatística de 93%.
+--
+-- Reextração completa e CORRETA do PDF (pdfplumber, nível de caractere — o relatório NBS
+-- sobrepõe 3 campos no mesmo intervalo de X quando o nome do modelo é longo: cauda do
+-- Modelo, Placa+DiasPátio, e Nota Fábrica, todos desenhados em ORDEM DE STREAM diferente
+-- da ordem visual, o que corrompe a extração ingênua por posição/palavra). Resultado:
+--   • 286/286 veículos do relatório (8 páginas, 05/10/2026): ZERO com Impostos=R$0,00.
+--     O "93% zerado" da 1ª rodada era um bug de alinhamento de coluna na extração antiga
+--     (o script anterior lia uma coluna errada como "Impostos", não a coluna real).
+--   • Página 6 (37 Rangers, #186–#222): 37/37 (100%) com Impostos não-zero — bate exato
+--     com o que o Marcos apontou. Faixa: R$1.358,41 a R$6.174,00.
+--   • Cruzamento das 286 placas decodificadas contra NBS.VEICULOS.CUSTO_TOTAL_FINAL:
+--     10/286 (3,5%) com custo FECHADO (IS NOT NULL), 276/286 (96,5%) sem — consistente
+--     com o achado da migration 040 (só uma fração mínima do estoque tem custo fechado
+--     no Oracle). Impostos nunca é zero em NENHUM dos dois grupos — a hipótese "zerado =
+--     custo não fechado" não se sustenta porque não existem zeros pra explicar.
+--
+-- ACHADO NOVO — Impostos tem um PISO estatístico claro em função de "Tabela" (preço de
+-- tabela/venda do próprio relatório), nunca testado na 1ª rodada:
+--   • Regressão linear Impostos ~ Tabela nos 286 veículos: R²=0,74 (vs. R² praticamente
+--     zero contra Nota Fábrica, Custo Total ou dias de pátio).
+--   • Razão Impostos/Tabela tem PISO EXATO de 0,9500% — 38/286 veículos (13,3%) batem
+--     esse percentual à casa decimal (ex.: Tabela=225.000,00 → Impostos=2.137,50 =
+--     225000×0,0095 exato; confirmado em 38 valores de Tabela distintos). ZERO veículos
+--     (0/286) ficam ABAIXO desse piso — "excess" = Impostos − 0,95%×Tabela nunca é
+--     negativo em nenhum dos 286 casos.
+--   • Entre os 10 veículos com custo FECHADO: razão Impostos/Tabela fica em 0,95%–1,88%
+--     (média 1,52%, desvio 0,30 = CV 19,7%). Entre os 276 NÃO-fechados: 0,95%–2,94%
+--     (média 1,37%, desvio 0,35 = CV 25,5%). Fechado é um pouco mais concentrado mas
+--     NÃO produz percentual fixo único — o piso de 0,95% é o único valor exato e
+--     repetido, o resto varia continuamente acima dele.
+--   • O "excesso" acima do piso (média R$679,89, até R$3.285,00) NÃO correlaciona bem com
+--     nenhuma variável acessível neste sync: margem Tabela−CustoTotal (r=0,23), Tabela
+--     (r=0,33), Nota Fábrica (r=0,02), Custo Total (r=0,10). Por loja: médias de excesso
+--     diferentes (loja 2: R$750; loja 9: R$508; loja 3: R$175) sugerem componente real
+--     por estado/loja, mas sem dado acessível pra isolar qual.
+--
+-- CONCLUSÃO REVISADA: Impostos NÃO é soma de CODIGO_CUSTO (confirmado, ver PASSO 1) nem
+-- coluna direta em NBS.VEICULOS (confirmado, ver PASSO 2) — nisso a investigação original
+-- continua correta. MAS não é "sem padrão nenhum": o relatório nativo aplica um PISO de
+-- 0,95% sobre "Tabela" (provavelmente uma provisão mínima de ICMS-ST sobre preço de
+-- revenda presumido, calculada pelo motor do relatório, não por lançamento individual) e
+-- soma algo variável por cima, não rastreável nas tabelas que este sync Oracle lê. Ou
+-- seja: metade do problema tem fórmula conhecida (o piso), a outra metade continua sendo
+-- uma limitação real de acesso a dado fiscal. custo_impostos (soma dos 20 CODIGO_CUSTO)
+-- continua sendo um dado REAL e útil (ICMS/PIS/COFINS efetivamente lançados na aquisição),
+-- só não deve ser apresentado como equivalente ao "Impostos" do relatório nativo — são
+-- coisas diferentes que coincidem de nome.
+--
+-- Fora de escopo mudar código de sync/UI aqui (só a investigação, por pedido explícito).
+-- Se o Marcos quiser expor uma ESTIMATIVA (ex.: GREATEST(custo_impostos_lancado, 0,95% ×
+-- preco_tabela)) como campo novo, isso é decisão de produto (Morgan/Aria) + implementação
+-- do Dex — a Dara só documenta o piso encontrado aqui.
+--
+-- Idempotente (COMMENT ON COLUMN sempre substitui o anterior). Rodar 2x sem erro.
+-- =====================================================================================
+
+COMMENT ON COLUMN public.veiculos.custo_impostos IS
+  'Soma dos CODIGO_CUSTO (ICMS/PIS/COFINS/variantes por loja, lista completa em scripts/sync-nbs/custos-estoque-detalhado.ts): 142,143,268,363,404,409,410,413,414,420,422,423,437,490,526,572,605,623,686,690 — lancamentos REAIS de imposto na aquisicao do veiculo (NBS.VEICULOS_CUSTOS_ESPECIFICOS). CONFIANCA BAIXA, DIVERGE DO RELATORIO NATIVO (confirmado 05/10/2026, migration 046): este valor NUNCA bate com a coluna "Impostos" do relatorio nativo NBS "Custos de Veiculos em Estoque" — caso definitivo chassi187673/placa TFC0C29 tem ZERO lancamentos de qualquer CODIGO_CUSTO mas Impostos do relatorio = R$499,50. O "Impostos" do relatorio nativo tem um PISO matematico de 0,95% sobre a coluna "Tabela" do proprio relatorio (confirmado em 38/286 veiculos batendo exato, 0/286 abaixo do piso, R2=0,74 na regressao contra Tabela) mais um componente variavel acima do piso que NAO correlaciona com nenhuma coluna acessivel via Oracle (NotaFabrica r=0,02, CustoTotal r=0,10) — fechado vs nao-fechado (NBS.VEICULOS.CUSTO_TOTAL_FINAL) nao explica essa variacao. Esta coluna (custo_impostos) continua sendo dado REAL e util (imposto efetivamente lancado na aquisicao), so NAO deve ser tratada como equivalente ao "Impostos" exibido no relatorio nativo. Ver migration 046 para evidencia completa (286 veiculos, 2 extracoes de PDF, piso de 0,95% sobre Tabela). NUNCA null: ausencia de lancamento e fato conhecido (zero).';
