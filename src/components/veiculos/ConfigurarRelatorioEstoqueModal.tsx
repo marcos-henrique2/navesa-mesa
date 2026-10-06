@@ -101,7 +101,7 @@ const TEXTO_CONFIANCA_BAIXA =
 const TEXTO_NAO_APURADO =
   "Não apurado: aparece como — no Excel (não é R$ 0,00) — ainda não existe fórmula de cálculo definida pra essa categoria, salvo quando o ícone de upload ao lado indica que veio do PDF subido manualmente.";
 const TEXTO_DIVERGE_RELATORIO =
-  "Este valor é real (imposto efetivamente lançado na aquisição), mas é DIFERENTE do que o relatório nativo NBS mostra na coluna de mesmo nome — aquele valor é calculado internamente pelo NBS e não está disponível pra nós. Não compare os dois diretamente.";
+  "Quando automático (Oracle): este valor é real (imposto efetivamente lançado na aquisição), mas é DIFERENTE do que o relatório nativo NBS mostra na coluna de mesmo nome — aquele valor é calculado internamente pelo NBS e não está disponível pra nós. Não compare os dois diretamente. Quando vier do upload manual (ícone de upload ao lado) — isto é, quando o automático vier zerado —, é o valor real do relatório nativo, já que vem do PDF dele.";
 const TEXTO_CUSTO_DETALHADO_PARCIAL =
   "Esta soma inclui categorias com confiança baixa, ainda não apuradas ou que divergem do relatório nativo (HoldBack, Acessórios, Comissões, ADM, Despesas Gerais, Impostos) — pode estar subestimada ou não bater com o relatório nativo. Use com cautela.";
 const TEXTO_FALLBACK_MANUAL =
