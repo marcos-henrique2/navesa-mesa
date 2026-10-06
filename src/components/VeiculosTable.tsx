@@ -527,7 +527,7 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
           empresa_nome: lojas[v.cod_empresa]?.nome?.trim() ?? null,
           fipe: fipePorChassi.get(normalizarIdentificador(v.chassi)) ?? null,
           // Fallback manual (HoldBack/Acessórios/Comissões/ADM/Despesas
-          // Gerais — ver colunas-estoque.ts): registro do upload do PDF
+          // Gerais/Impostos — ver colunas-estoque.ts): registro do upload do PDF
           // "Custos de Veículos em Estoque" (/upload), já carregado no
           // store global (mesmo dataset que VeiculoDetalhe/SimuladorPreco
           // usam), buscado por placa normalizada.
