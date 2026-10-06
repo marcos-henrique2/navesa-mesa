@@ -143,9 +143,9 @@ export function agruparLinhas(items: Item[], tolY: number = 3): Linha[] {
  *   Forplan sem HB:   278-310
  *   HoldBack:         335-345  (sempre 0 no sample)
  *   Acessórios:       380-390  (sempre 0 no sample)
- *   Comissões:        415-420  (sempre 0 no sample — header diz Comissões em x=476 mas dados estão antes)
- *   ADM:              440-460
- *   Impostos:         480-510
+ *   ADM:              415-420
+ *   Impostos:         440-460
+ *   Comissões:        480-510
  *   Desp.Gerais:      540-575
  *   Custo Total:      605-620
  *   Tabela:           648-660
@@ -153,11 +153,20 @@ export function agruparLinhas(items: Item[], tolY: number = 3): Linha[] {
  *   Bônus:            760-770  (sempre 0 no sample)
  *   Ganhos Indiretos: 780-810
  *
- * IMPORTANTE: o header visual do PDF diz "ADM, Impostos, Comissões, Desp.Gerais"
- * nessa ordem (x 404, 437, 476, 518). Mas os VALORES caem em colunas diferentes:
- * descobrimos pelo total agregado que a ordem real é "Comissões=0, ADM, Impostos,
- * Desp.Gerais". Isso é um bug/quirk do NBS (header desalinhado) — confiamos no
- * total agregado que bate, não no header visual.
+ * CORREÇÃO (2026-10-06, fix/custos-estoque-colunas-trocadas): as faixas 410-430 /
+ * 435-470 / 475-515 estavam rotuladas "comissoes" / "adm" / "impostos", nessa
+ * ordem — uma troca cíclica herdada da suposição original (ver histórico git,
+ * commit 9d96e68) de que "Comissões" era sempre 0 e viria primeiro. Investigação
+ * cruzando coordenadas X reais extraídas de um PDF de amostra contra o Oracle
+ * (placa SDL6D60/chassi 179794) confirmou que o x real de cada coluna é:
+ * ADM=417,6 (cai em 410-430), Impostos=443,6 (cai em 435-470), Comissões=500,1
+ * (cai em 475-515). Ou seja, os RANGES de X sempre estiveram certos — só os
+ * RÓTULOS (qual campo cada faixa alimenta) estavam na ordem errada. O total
+ * agregado (`custo_total`) sempre bateu porque é invariante à ordem das
+ * parcelas — por isso o bug passou 4+ meses sem ser detectado. Essa troca NÃO
+ * é corrigida retroativamente: todo registro já gravado em
+ * `custos_estoque_detalhado` antes deste fix mantém ADM/Impostos/Comissões
+ * trocados entre si; só uploads feitos a partir de agora vêm corretos.
  */
 type ColKey =
   | "nota_fabrica" | "revisoes" | "forplan" | "holdback" | "acessorios"
@@ -170,9 +179,9 @@ const FAIXAS: { key: ColKey; xMin: number; xMax: number }[] = [
   { key: "forplan",          xMin: 275, xMax: 315 },
   { key: "holdback",         xMin: 330, xMax: 350 },
   { key: "acessorios",       xMin: 375, xMax: 395 },
-  { key: "comissoes",        xMin: 410, xMax: 430 },
-  { key: "adm",              xMin: 435, xMax: 470 },
-  { key: "impostos",         xMin: 475, xMax: 515 },
+  { key: "adm",              xMin: 410, xMax: 430 },
+  { key: "impostos",         xMin: 435, xMax: 470 },
+  { key: "comissoes",        xMin: 475, xMax: 515 },
   { key: "desp_gerais",      xMin: 530, xMax: 580 },
   { key: "custo_total",      xMin: 600, xMax: 630 },
   { key: "tabela",           xMin: 645, xMax: 670 },
@@ -235,7 +244,7 @@ function ehLinhaDeDado(linha: Linha): boolean {
  * Estratégia: pra cada valor numérico (BR-format) na linha, determina a coluna
  * pelo X dele usando as faixas calibradas em FAIXAS.
  */
-function extrairDado(linha: Linha, warnings: string[]): CustoEstoqueDetalhado | null {
+export function extrairDado(linha: Linha, warnings: string[]): CustoEstoqueDetalhado | null {
   const loc = localizarPlaca(linha);
   if (!loc) return null;
   const placa = normalizarPlaca(loc.placa);
