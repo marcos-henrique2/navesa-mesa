@@ -1,5 +1,5 @@
 /**
- * VENDAS USADOS MATRIZ — mapa de colunas das abas 1/2 (32 colunas, B..AG — A em branco).
+ * VENDAS USADOS MATRIZ — mapa de colunas das abas 1/2 (36 colunas, B..AJ — A em branco).
  *
  * Números são 1-indexed conforme exceljs (A=1, B=2, …). `M, P, Q, R, T, V, X, Z, AA, AB`
  * são sempre fórmulas — ver `aba-detalhe.ts`.
@@ -46,10 +46,17 @@ export const COL = {
    * verdade (SUMIFS/COUNTIFS), não só um filtro em JS — ver ressalva em tipos.ts.
    */
   AH_CONSIGNADO: 34,
+  /**
+   * ADM (valor + %) — custo novo, mesmo padrão de par das outras 4 colunas de custo
+   * (S/T, U/V, W/X, Y/Z). Adicionado ao FIM (após AH_CONSIGNADO) pra não deslocar
+   * nenhuma coluna já existente/testada — mesmo motivo documentado em AH_CONSIGNADO.
+   */
+  AI_ADM: 35,
+  AJ_PCT_ADM: 36,
 } as const;
 
-/** Última coluna com dado (AH) — a largura do título mergeado B..AH usa isso. */
-export const ULTIMA_COL = COL.AH_CONSIGNADO;
+/** Última coluna com dado (AJ) — a largura do título mergeado B..AJ usa isso. */
+export const ULTIMA_COL = COL.AJ_PCT_ADM;
 
 /**
  * Linha 1 = espaçador em branco (baixa, sem título — igual ao arquivo original),
@@ -96,6 +103,8 @@ export const HEADERS: Record<number, string> = {
   [COL.AF_LOJISTA]: "LOJISTA",
   [COL.AG_VENDEDOR]: "VENDEDOR",
   [COL.AH_CONSIGNADO]: "CONSIGNADO",
+  [COL.AI_ADM]: "ADM",
+  [COL.AJ_PCT_ADM]: "%",
 };
 
 export const COL_WIDTHS: Record<number, number> = {
@@ -134,6 +143,8 @@ export const COL_WIDTHS: Record<number, number> = {
   [COL.AF_LOJISTA]: 9,
   [COL.AG_VENDEDOR]: 22,
   [COL.AH_CONSIGNADO]: 12,
+  [COL.AI_ADM]: 12,
+  [COL.AJ_PCT_ADM]: 8,
 };
 
 // Formatos numéricos (mesma convenção de analise-navesa.ts)

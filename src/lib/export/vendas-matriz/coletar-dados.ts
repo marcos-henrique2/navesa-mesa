@@ -103,6 +103,9 @@ export function mapearLinha(
     // em `vendas`) — mantém 100% dependente do upload manual.
     impostos: custo?.impostos ?? null,
     comissao: custo?.comissoes ?? (v.comissao_vendedor ?? null),
+    // Sem fonte automática Oracle pra ADM em `vendas` (mesmo caso de impostos acima) —
+    // 100% dependente do upload manual.
+    adm: custo?.adm ?? null,
 
     usadoNaTroca: v.placa_troca != null,
     financiou: v.financiado,

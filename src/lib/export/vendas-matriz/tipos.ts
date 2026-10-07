@@ -3,8 +3,8 @@
  *
  * `LinhaVendaMatriz` é a linha "achatada" que alimenta as abas 1 e 2 (o mesmo
  * renderer é usado pelas duas — a única diferença é o subconjunto de linhas).
- * Os campos aqui são os valores BRUTOS (K, L, N, O, S, U, W, Y…); as colunas
- * calculadas (M, P, Q, R, T, V, X, Z, AA, AB) são sempre fórmulas de verdade
+ * Os campos aqui são os valores BRUTOS (K, L, N, O, S, U, W, Y, AI…); as colunas
+ * calculadas (M, P, Q, R, T, V, X, Z, AA, AB, AJ) são sempre fórmulas de verdade
  * escritas pelo renderer — nunca persistidas aqui.
  */
 
@@ -46,6 +46,10 @@ export type LinhaVendaMatriz = {
   forplan: number | null;
   impostos: number | null;
   comissao: number | null;
+
+  // AI — ADM (custo novo, mesmo padrão 100% dependente do upload manual que os 4 acima;
+  // sem fonte automática Oracle em `vendas`, ver coletar-dados.ts).
+  adm: number | null;
 
   // AC..AG — flags e identificação
   usadoNaTroca: boolean;
@@ -91,10 +95,16 @@ export function calcularDerivadosLinha(l: LinhaVendaMatriz): DerivadosLinha {
   // Q = O - M
   const lucroBruto = l.valorVenda != null && custoReal != null ? l.valorVenda - custoReal : null;
 
-  // AA = Q - S - U - W - Y
+  // AA = Q - S - U - W - Y - AI (ADM é custo real do carro pra loja, reduz a margem líquida
+  // igual aos outros 4 — decisão confirmada com o Marcos, 07/10/2026)
   const margemLiquida =
     lucroBruto != null
-      ? lucroBruto - (l.despesaGeral ?? 0) - (l.forplan ?? 0) - (l.impostos ?? 0) - (l.comissao ?? 0)
+      ? lucroBruto -
+        (l.despesaGeral ?? 0) -
+        (l.forplan ?? 0) -
+        (l.impostos ?? 0) -
+        (l.comissao ?? 0) -
+        (l.adm ?? 0)
       : null;
 
   return { custoReal, lucroBruto, margemLiquida };

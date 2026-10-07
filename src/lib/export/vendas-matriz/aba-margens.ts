@@ -171,6 +171,7 @@ function renderBloco(
   const forplanTotal = somaCampo(linhas, (l) => l.forplan);
   const impostosTotal = somaCampo(linhas, (l) => l.impostos);
   const comissaoTotal = somaCampo(linhas, (l) => l.comissao);
+  const admTotal = somaCampo(linhas, (l) => l.adm);
   const margemLiquidaTotal = somaCampo(linhas, (l) => calcularDerivadosLinha(l).margemLiquida);
   const diasEstoqueMedio = mediaCampo(linhas, (l) => l.diasEstoque);
 
@@ -203,6 +204,7 @@ function renderBloco(
   linha("F Plan", fSum(COL.U_FPLAN), forplanTotal, FMT_MONEY, { comPct: true, pctResult: pct(forplanTotal) });
   linha("Impostos", fSum(COL.W_IMPOSTOS), impostosTotal, FMT_MONEY, { comPct: true, pctResult: pct(impostosTotal) });
   linha("Comissão", fSum(COL.Y_COMISSAO), comissaoTotal, FMT_MONEY, { comPct: true, pctResult: pct(comissaoTotal) });
+  linha("ADM", fSum(COL.AI_ADM), admTotal, FMT_MONEY, { comPct: true, pctResult: pct(admTotal) });
   const rMargemLiquida = linha("Margem Líquida", fSum(COL.AA_MARGEM_LIQUIDA), margemLiquidaTotal, FMT_MONEY, { comPct: true, pctResult: pct(margemLiquidaTotal) });
   linha("Dias Estoque Médio", fAvg(COL.J_DIAS), diasEstoqueMedio, FMT_INT);
 
