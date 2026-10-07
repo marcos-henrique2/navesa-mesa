@@ -252,11 +252,18 @@ describe("colunas-estoque (catálogo)", () => {
     assert.equal(new Set(COLUNAS_ESTOQUE.map((c) => c.grupo)).size, GRUPOS_ESTOQUE.length);
   });
 
-  it("confiança baixa só nas 3 colunas de custo Oracle pouco confirmadas", () => {
+  it("confiança baixa só nas 4 colunas de custo Oracle pouco confirmadas", () => {
     // custo_forplan SAIU dessa lista em 05/10/2026: fonte corrigida pra
     // NBS.VEICULOS.CUSTO_FORPLAN_FINAL (coluna direta), confirmada ao
     // centavo contra o relatório nativo PDF em 3 veículos — ver migration 043.
-    const esperadoBaixa: ColunaKey[] = ["custo_holdback", "custo_acessorios", "custo_comissoes"];
+    // custo_revisoes ENTROU em 07/10/2026: auditoria de 628 carros achou 29
+    // casos (4,6%) de divergência vs. PDF nativo (ver custo-estoque-fallback.ts).
+    const esperadoBaixa: ColunaKey[] = [
+      "custo_holdback",
+      "custo_acessorios",
+      "custo_comissoes",
+      "custo_revisoes",
+    ];
     for (const key of esperadoBaixa) {
       assert.equal(getColuna(key)!.confianca, "baixa", `${key} deveria ser confiança baixa`);
     }
@@ -267,8 +274,7 @@ describe("colunas-estoque (catálogo)", () => {
     assert.equal(getColuna("custo_despesas_gerais")!.confianca, "nao_apurado");
   });
 
-  it("custo_revisoes e custo_forplan NÃO têm indicador de confiança", () => {
-    assert.equal(getColuna("custo_revisoes")!.confianca, undefined);
+  it("custo_forplan NÃO tem indicador de confiança", () => {
     assert.equal(getColuna("custo_forplan")!.confianca, undefined);
   });
 
@@ -278,7 +284,7 @@ describe("colunas-estoque (catálogo)", () => {
     assert.deepEqual(comDivergeRelatorio, ["custo_impostos"]);
   });
 
-  it("nenhuma outra coluna tem indicador de confiança além das 7 esperadas", () => {
+  it("nenhuma outra coluna tem indicador de confiança além das 8 esperadas", () => {
     const comConfianca = COLUNAS_ESTOQUE.filter((c) => c.confianca != null).map((c) => c.key).sort();
     assert.deepEqual(
       comConfianca,
@@ -290,6 +296,7 @@ describe("colunas-estoque (catálogo)", () => {
         "custo_detalhado_total",
         "custo_holdback",
         "custo_impostos",
+        "custo_revisoes",
       ].sort(),
     );
   });
@@ -299,14 +306,22 @@ describe("colunas-estoque (catálogo)", () => {
     assert.deepEqual(comParcial, ["custo_detalhado_total"]);
   });
 
-  it("fallbackManual marcado nas 6 categorias sem fonte automática confiável/que diverge do relatório nativo (migration 047 + decisão 06/10/2026 sobre Impostos)", () => {
+  it("fallbackManual marcado nas 7 categorias sem fonte automática confiável/que diverge do relatório nativo (migration 047 + decisões 06-07/10/2026 sobre Impostos/Revisões)", () => {
     const comFallback = COLUNAS_ESTOQUE.filter((c) => c.fallbackManual === true).map((c) => c.key).sort();
     assert.deepEqual(
       comFallback,
-      ["custo_acessorios", "custo_adm", "custo_comissoes", "custo_despesas_gerais", "custo_holdback", "custo_impostos"].sort(),
+      [
+        "custo_acessorios",
+        "custo_adm",
+        "custo_comissoes",
+        "custo_despesas_gerais",
+        "custo_holdback",
+        "custo_impostos",
+        "custo_revisoes",
+      ].sort(),
     );
-    // custo_revisoes, custo_detalhado_total e custo_forplan NÃO têm fallback manual.
-    for (const key of ["custo_revisoes", "custo_detalhado_total", "custo_forplan"] as ColunaKey[]) {
+    // custo_detalhado_total e custo_forplan NÃO têm fallback manual.
+    for (const key of ["custo_detalhado_total", "custo_forplan"] as ColunaKey[]) {
       assert.equal(getColuna(key)!.fallbackManual, undefined, `${key} não deveria ter fallbackManual`);
     }
   });
@@ -330,15 +345,21 @@ describe("colunas-estoque (catálogo)", () => {
       assert.equal(col.getValor({ ...veiculo({ custo_holdback: 0 }), custoEstoqueManual: null }), 0);
     });
 
-    it("custo_impostos: automático=0 + manual existe → usa o manual (decisão 06/10/2026, mesma regra de HoldBack/Acessórios/Comissões)", () => {
+    it("custo_impostos: automático=0 + manual existe → usa o manual", () => {
       const col = getColuna("custo_impostos")!;
       const v = { ...veiculo({ custo_impostos: 0 }), custoEstoqueManual: custoEstoqueDetalhado({ impostos: 850 }) };
       assert.equal(col.getValor(v), 850);
     });
 
-    it("custo_impostos: automático≠0 → usa o automático, ignora o manual (automático é dado real, mesmo divergindo do relatório nativo)", () => {
+    it("custo_impostos: prioridade INVERTIDA (07/10/2026) — manual vence mesmo com automático ≠0 — caso real da placa RBV7G98 (automático=1600, PDF real=2740.80)", () => {
       const col = getColuna("custo_impostos")!;
-      const v = { ...veiculo({ custo_impostos: 499.5 }), custoEstoqueManual: custoEstoqueDetalhado({ impostos: 9999 }) };
+      const v = { ...veiculo({ custo_impostos: 1600 }), custoEstoqueManual: custoEstoqueDetalhado({ impostos: 2740.8 }) };
+      assert.equal(col.getValor(v), 2740.8);
+    });
+
+    it("custo_impostos: sem manual → usa o automático, mesmo ≠0 (automático é dado real, mesmo divergindo do relatório nativo)", () => {
+      const col = getColuna("custo_impostos")!;
+      const v = { ...veiculo({ custo_impostos: 499.5 }), custoEstoqueManual: null };
       assert.equal(col.getValor(v), 499.5);
     });
 
@@ -352,6 +373,24 @@ describe("colunas-estoque (catálogo)", () => {
       const col = getColuna("custo_impostos")!;
       assert.equal(col.confianca, "diverge_relatorio");
       assert.equal(col.fallbackManual, true);
+    });
+
+    it("custo_revisoes: automático≠0 prevalece sobre o manual (regra PADRÃO, não a invertida de Impostos) — caso real da placa RBV7G98 (automático=230, PDF real=0)", () => {
+      const col = getColuna("custo_revisoes")!;
+      const v = { ...veiculo({ custo_revisoes: 230 }), custoEstoqueManual: custoEstoqueDetalhado({ revisoes: 0 }) };
+      assert.equal(col.getValor(v), 230);
+    });
+
+    it("custo_revisoes: automático zerado + manual presente → usa o manual (fallback padrão, igual a HoldBack/Acessórios/Comissões)", () => {
+      const col = getColuna("custo_revisoes")!;
+      const v = { ...veiculo({ custo_revisoes: 0 }), custoEstoqueManual: custoEstoqueDetalhado({ revisoes: 500 }) };
+      assert.equal(col.getValor(v), 500);
+    });
+
+    it("custo_revisoes: sem automático (0) e sem manual → 0 (mesmo padrão de HoldBack/Acessórios/Comissões)", () => {
+      const col = getColuna("custo_revisoes")!;
+      assert.equal(col.getValor(veiculo({ custo_revisoes: 0 })), 0);
+      assert.equal(col.getValor({ ...veiculo({ custo_revisoes: 0 }), custoEstoqueManual: null }), 0);
     });
 
     it("custo_acessorios e custo_comissoes seguem o mesmo fallback", () => {
@@ -389,44 +428,45 @@ describe("colunas-estoque (catálogo)", () => {
       assert.equal(getColuna("custo_adm")!.getValor(veiculo({ custo_adm: null })), null);
     });
 
-    it("custo_detalhado_total usa o MESMO fallback resolvido das 6 colunas (não diverge do que é exibido)", () => {
+    it("custo_detalhado_total usa o MESMO fallback resolvido das 7 colunas (não diverge do que é exibido) — Impostos com prioridade invertida (manual vence mesmo ≠0)", () => {
       const col = getColuna("custo_detalhado_total")!;
       const v = {
         ...veiculo({
-          custo_revisoes: 100,
+          custo_revisoes: 100, // não-zero → NÃO cai pro manual (regra padrão de Revisões)
           custo_forplan: 999, // excluído do total — não deve entrar na soma
           custo_holdback: 0, // zerado → cai pro manual
           custo_acessorios: 0, // zerado → cai pro manual
-          custo_impostos: 500, // não-zero → NÃO cai pro manual
+          custo_impostos: 500, // ≠0, mas Impostos é prioridade invertida → cai pro manual mesmo assim
           custo_comissoes: 600, // não-zero → NÃO cai pro manual
           custo_adm: null, // null → cai pro manual
           custo_despesas_gerais: null, // null → cai pro manual
         }),
-        custoEstoqueManual: custoEstoqueDetalhado({ holdback: 50, acessorios: 40, impostos: 9999, comissoes: 9999, adm: 10, desp_gerais: 5 }),
+        custoEstoqueManual: custoEstoqueDetalhado({ revisoes: 999, holdback: 50, acessorios: 40, impostos: 2740.8, comissoes: 9999, adm: 10, desp_gerais: 5 }),
       };
-      // 100 (revisoes) + 50 (holdback via manual) + 40 (acessorios via manual) + 500 (impostos
-      // automático, NÃO o manual 9999) + 600 (comissoes automático, NÃO o manual 9999) + 10 (adm
-      // via manual) + 5 (desp_gerais via manual) = 1305
-      assert.equal(col.getValor(v), 1305);
+      // 100 (revisoes automático, NÃO o manual 999) + 50 (holdback via manual) + 40 (acessorios
+      // via manual) + 2740.8 (impostos via manual, prioridade invertida — NÃO o automático 500)
+      // + 600 (comissoes automático, NÃO o manual 9999) + 10 (adm via manual) + 5 (desp_gerais
+      // via manual) = 3545.8
+      assert.equal(col.getValor(v), 3545.8);
     });
 
-    it("custo_detalhado_total reflete o fallback de Impostos quando o automático vem 0", () => {
+    it("custo_detalhado_total reflete o fallback de Revisões quando o automático vem 0", () => {
       const col = getColuna("custo_detalhado_total")!;
       const v = {
         ...veiculo({
-          custo_revisoes: 100,
+          custo_revisoes: 0, // zerado → cai pro manual
           custo_forplan: 999, // excluído do total
           custo_holdback: 0,
           custo_acessorios: 0,
-          custo_impostos: 0, // zerado → cai pro manual
+          custo_impostos: 0, // zerado → cai pro manual (igual, independente da prioridade invertida)
           custo_comissoes: 0,
           custo_adm: null,
           custo_despesas_gerais: null,
         }),
-        custoEstoqueManual: custoEstoqueDetalhado({ holdback: 0, acessorios: 0, impostos: 850, comissoes: 0, adm: 0, desp_gerais: 0 }),
+        custoEstoqueManual: custoEstoqueDetalhado({ revisoes: 120, holdback: 0, acessorios: 0, impostos: 850, comissoes: 0, adm: 0, desp_gerais: 0 }),
       };
-      // 100 (revisoes) + 0 + 0 + 850 (impostos via manual) + 0 + 0 + 0 = 950
-      assert.equal(col.getValor(v), 950);
+      // 120 (revisoes via manual) + 0 + 0 + 850 (impostos via manual) + 0 + 0 + 0 = 970
+      assert.equal(col.getValor(v), 970);
     });
   });
 });

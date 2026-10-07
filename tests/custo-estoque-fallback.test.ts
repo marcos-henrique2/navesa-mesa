@@ -7,7 +7,10 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { resolverCustoComFallbackManual } from "@/lib/export/custo-estoque-fallback";
+import {
+  resolverCustoComFallbackManual,
+  resolverCustoImpostosComPrioridadeManual,
+} from "@/lib/export/custo-estoque-fallback";
 
 describe("resolverCustoComFallbackManual", () => {
   it("automático não-zero prevalece, mesmo com manual presente", () => {
@@ -36,5 +39,31 @@ describe("resolverCustoComFallbackManual", () => {
   it("manual zero não é tratado como 'ausente' — ainda é um valor válido de fallback", () => {
     assert.equal(resolverCustoComFallbackManual(0, 0), 0);
     assert.equal(resolverCustoComFallbackManual(null, 0), 0);
+  });
+});
+
+/**
+ * Testes de `resolverCustoImpostosComPrioridadeManual` — variante EXCLUSIVA
+ * de Impostos com prioridade invertida: o manual vence sempre que existir
+ * (não-nulo), independente do automático ser ≠0. Ver comentário da função e
+ * caso real da placa RBV7G98 (automático=1600, PDF real=2740.80).
+ */
+describe("resolverCustoImpostosComPrioridadeManual", () => {
+  it("manual presente e ≠ automático: manual vence, mesmo com automático ≠0 — caso RBV7G98", () => {
+    assert.equal(resolverCustoImpostosComPrioridadeManual(1600, 2740.8), 2740.8);
+  });
+
+  it("manual presente e = 0: ainda vence (0), não cai pro automático", () => {
+    assert.equal(resolverCustoImpostosComPrioridadeManual(1600, 0), 0);
+  });
+
+  it("manual ausente: usa o automático", () => {
+    assert.equal(resolverCustoImpostosComPrioridadeManual(1600, null), 1600);
+    assert.equal(resolverCustoImpostosComPrioridadeManual(1600, undefined), 1600);
+  });
+
+  it("automático e manual ausentes: devolve 0 (categoria sempre-número)", () => {
+    assert.equal(resolverCustoImpostosComPrioridadeManual(null, null), 0);
+    assert.equal(resolverCustoImpostosComPrioridadeManual(undefined, undefined), 0);
   });
 });

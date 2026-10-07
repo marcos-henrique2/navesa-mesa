@@ -26,3 +26,26 @@ export function resolverCustoComFallbackManual(
   if (manual != null) return manual;
   return automatico ?? null;
 }
+
+/**
+ * Variante de `resolverCustoComFallbackManual` com prioridade INVERTIDA —
+ * usada SÓ pra Impostos (ver colunas-estoque.ts). O manual vence sempre que
+ * existir (não-nulo), independente do automático. Motivo: o automático de
+ * Impostos é uma métrica REAL mas DIFERENTE do valor do relatório nativo NBS
+ * (`confianca: "diverge_relatorio"`, migration 046) — mesmo ≠0, pode divergir
+ * do PDF real (confirmado em auditoria de 628 carros, 07/10/2026: 14 casos,
+ * ex. placa RBV7G98, automático=R$1.600 vs PDF real=R$2.740,80). O manual
+ * (upload do PDF) É o valor do relatório nativo, então deve prevalecer
+ * sempre que presente — mesmo quando vier 0 (não cai pro automático nesse
+ * caso: 0 é o valor real do relatório, não "sem dado").
+ *
+ * Impostos é categoria sempre-número (nunca null, mesmo padrão das outras
+ * sempre-número): sem manual e sem automático, devolve 0.
+ */
+export function resolverCustoImpostosComPrioridadeManual(
+  automatico: number | null | undefined,
+  manual: number | null | undefined,
+): number | null {
+  if (manual != null) return manual;
+  return automatico ?? 0;
+}

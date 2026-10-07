@@ -20,7 +20,10 @@ import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import type { CustoEstoqueDetalhado } from "@/lib/parsers/nbs-custos-estoque-pdf";
 import type { ColunaAgregacao, ColunaDef } from "@/lib/export/relatorio/tipos";
 import { calcularCustoReal } from "@/lib/export/custo-real";
-import { resolverCustoComFallbackManual } from "@/lib/export/custo-estoque-fallback";
+import {
+  resolverCustoComFallbackManual,
+  resolverCustoImpostosComPrioridadeManual,
+} from "@/lib/export/custo-estoque-fallback";
 
 /**
  * Veículo enriquecido com o nome da loja já resolvido (como o gerencial usa),
@@ -204,7 +207,13 @@ export const COLUNAS_ESTOQUE: readonly ColunaEstoque[] = [
   },
   { key: "descricao_situacao", label: "Status", formato: "texto", agregacao: "nenhuma", grupo: "localizacao_status", getValor: (v) => v.descricao_situacao },
   { key: "patio", label: "Localização", formato: "texto", agregacao: "nenhuma", grupo: "localizacao_status", getValor: (v) => v.patio.trim() || null },
-  { key: "custo_revisoes", label: "Revisões", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", getValor: (v) => v.custo_revisoes },
+  // custo_revisoes: FALLBACK MANUAL adicionado em 07/10/2026 — auditoria de
+  // 628 carros (PDF nativo × Supabase) achou 29 casos (4,6%) onde o
+  // automático diverge do PDF real (ex. placa RBV7G98: automático=R$230,
+  // PDF real=R$0). Mesmo padrão das outras categorias "baixa" (HoldBack/
+  // Acessórios/Comissões): automático sempre-número prevalece quando ≠0,
+  // cai pro manual (upload do PDF) quando automático vier 0.
+  { key: "custo_revisoes", label: "Revisões", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_revisoes, v.custoEstoqueManual?.revisoes) },
   // custo_forplan: confiança baixa REMOVIDA em 05/10/2026 — fonte corrigida
   // pra NBS.VEICULOS.CUSTO_FORPLAN_FINAL (coluna direta, não CODIGO_CUSTO),
   // confirmada batendo ao centavo contra o relatório nativo PDF em 3
@@ -233,16 +242,21 @@ export const COLUNAS_ESTOQUE: readonly ColunaEstoque[] = [
   // Impostos=R$499,50 no relatório nativo). Era "sem indicador" até aqui por engano
   // (migration 040 validou só magnitude plausível, nunca o valor exato contra o PDF).
   //
-  // FALLBACK MANUAL (06/10/2026): decisão do Marcos — Impostos passa a se
-  // comportar IGUAL a HoldBack/Acessórios/Comissões (mesma regra "automático
-  // sempre-número, 0 = ausente" de resolverCustoComFallbackManual): quando o
-  // automático vier 0, cai pro valor do upload manual (`custoEstoqueManual.
-  // impostos`) se existir. `confianca: "diverge_relatorio"` CONTINUA — ainda
-  // é verdade quando não há fallback ativo (automático≠0, dado real porém
-  // DIFERENTE do relatório nativo); só deixa de ser 100% precisa quando o
-  // manual entra em ação (nesse caso o valor É o do relatório nativo, já que
-  // vem do PDF dele — ver texto ajustado em ConfigurarRelatorioEstoqueModal).
-  { key: "custo_impostos", label: "Impostos", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "diverge_relatorio", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_impostos, v.custoEstoqueManual?.impostos) },
+  // FALLBACK MANUAL (06/10/2026, prioridade INVERTIDA em 07/10/2026): decisão
+  // do Marcos — Impostos NÃO segue a regra padrão (automático vence se ≠0).
+  // Auditoria de 628 carros (PDF nativo × Supabase, 07/10/2026) achou 14
+  // casos (2,2%) onde o automático vem ≠0 mas ainda ERRADO vs. o PDF real
+  // (ex. placa RBV7G98: automático=R$1.600, PDF real=R$2.740,80) — porque o
+  // automático mede outra coisa (soma de CODIGO_CUSTO), não o valor calculado
+  // pelo motor do relatório nativo (ver "diverge_relatorio" acima). Por isso
+  // Impostos usa `resolverCustoImpostosComPrioridadeManual`: o manual (upload
+  // do PDF) vence sempre que existir, mesmo quando o automático também tiver
+  // valor ≠0. `confianca: "diverge_relatorio"` CONTINUA — ainda é verdade
+  // quando não há manual (automático≠0, dado real porém DIFERENTE do
+  // relatório nativo); deixa de ser imprecisa quando o manual entra em ação
+  // (nesse caso o valor É o do relatório nativo, já que vem do PDF dele — ver
+  // texto ajustado em ConfigurarRelatorioEstoqueModal).
+  { key: "custo_impostos", label: "Impostos", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "diverge_relatorio", fallbackManual: true, getValor: (v) => resolverCustoImpostosComPrioridadeManual(v.custo_impostos, v.custoEstoqueManual?.impostos) },
   { key: "custo_comissoes", label: "Comissões", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_comissoes, v.custoEstoqueManual?.comissoes) },
   { key: "custo_adm", label: "ADM", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "nao_apurado", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_adm, v.custoEstoqueManual?.adm) },
   { key: "custo_despesas_gerais", label: "Despesas Gerais", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "nao_apurado", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_despesas_gerais, v.custoEstoqueManual?.desp_gerais) },
@@ -254,17 +268,17 @@ export const COLUNAS_ESTOQUE: readonly ColunaEstoque[] = [
   // ficaria "—" pra quase todo carro, já que essas duas são "não apurado" na
   // maioria).
   //
-  // HoldBack/Acessórios/Impostos/Comissões/ADM/Despesas Gerais entram aqui JÁ
-  // com o fallback manual resolvido (mesma chamada de
-  // resolverCustoComFallbackManual usada nas colunas individuais acima) —
-  // senão o total divergiria da soma do que o Marcos vê nas colunas quando o
-  // fallback entra em ação. Só Revisões não tem fallback (sem
-  // fallbackManual), entra direto.
+  // Revisões/HoldBack/Acessórios/Impostos/Comissões/ADM/Despesas Gerais
+  // entram aqui JÁ com o fallback manual resolvido (mesma chamada usada nas
+  // colunas individuais acima — Impostos usa a variante de prioridade
+  // invertida, as outras a padrão) — senão o total divergiria da soma do que
+  // o Marcos vê nas colunas quando o fallback entra em ação.
   //
-  // NOTA 06/10/2026: Impostos passou a ter fallback manual (ver comentário na
-  // coluna acima) — antes entrava direto (`v.custo_impostos`), agora entra
-  // resolvido como as outras 5, pra não divergir da coluna individual quando
-  // o manual entra em ação.
+  // NOTA 07/10/2026: Revisões passou a ter fallback manual (ver comentário na
+  // coluna acima) — antes entrava direto (`v.custo_revisoes`), agora entra
+  // resolvido como as outras 6, pra não divergir da coluna individual quando
+  // o manual entra em ação. Impostos passou a usar a variante de prioridade
+  // invertida (`resolverCustoImpostosComPrioridadeManual`) pelo mesmo motivo.
   {
     key: "custo_detalhado_total",
     label: "Custos detalhados (total, sem Forplan)",
@@ -273,10 +287,10 @@ export const COLUNAS_ESTOQUE: readonly ColunaEstoque[] = [
     grupo: "custos_detalhados",
     confianca: "parcial",
     getValor: (v) =>
-      v.custo_revisoes +
+      (resolverCustoComFallbackManual(v.custo_revisoes, v.custoEstoqueManual?.revisoes) ?? 0) +
       (resolverCustoComFallbackManual(v.custo_holdback, v.custoEstoqueManual?.holdback) ?? 0) +
       (resolverCustoComFallbackManual(v.custo_acessorios, v.custoEstoqueManual?.acessorios) ?? 0) +
-      (resolverCustoComFallbackManual(v.custo_impostos, v.custoEstoqueManual?.impostos) ?? 0) +
+      (resolverCustoImpostosComPrioridadeManual(v.custo_impostos, v.custoEstoqueManual?.impostos) ?? 0) +
       (resolverCustoComFallbackManual(v.custo_comissoes, v.custoEstoqueManual?.comissoes) ?? 0) +
       (resolverCustoComFallbackManual(v.custo_adm, v.custoEstoqueManual?.adm) ?? 0) +
       (resolverCustoComFallbackManual(v.custo_despesas_gerais, v.custoEstoqueManual?.desp_gerais) ?? 0),
