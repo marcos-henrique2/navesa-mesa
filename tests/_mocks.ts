@@ -153,6 +153,7 @@ export function linhaVendaMatriz(over: Partial<LinhaVendaMatriz> = {}): LinhaVen
     forplan: 2000,
     impostos: 500,
     comissao: 400,
+    adm: 0,
     usadoNaTroca: false,
     financiou: null,
     clienteNome: "CLIENTE TESTE",

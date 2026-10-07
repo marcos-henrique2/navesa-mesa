@@ -146,10 +146,19 @@ export function renderAbaDetalhe(ws: ExcelJS.Worksheet, titulo: string, linhas: 
       };
     }
 
-    // AA — Margem Líquida (FÓRMULA = Q - S - U - W - Y)
+    if (l.adm != null) row.getCell(COL.AI_ADM).value = l.adm;
+    // AJ — % (FÓRMULA = IFERROR(AI/O,""))
+    if (l.adm != null && l.valorVenda != null && l.valorVenda > 0) {
+      row.getCell(COL.AJ_PCT_ADM).value = {
+        formula: `IFERROR(AI${r}/O${r},"")`,
+        result: l.adm / l.valorVenda,
+      };
+    }
+
+    // AA — Margem Líquida (FÓRMULA = Q - S - U - W - Y - AI)
     if (margemLiquida != null) {
       row.getCell(COL.AA_MARGEM_LIQUIDA).value = {
-        formula: `Q${r}-S${r}-U${r}-W${r}-Y${r}`,
+        formula: `Q${r}-S${r}-U${r}-W${r}-Y${r}-AI${r}`,
         result: margemLiquida,
       };
     }
@@ -177,11 +186,11 @@ export function renderAbaDetalhe(ws: ExcelJS.Worksheet, titulo: string, linhas: 
     // pro range inteiro da coluna, depois do loop), não mais seção `[Red]` do numFmt.
     const moneyCols = [
       COL.K_NF_ENTRADA, COL.L_VALORIZA, COL.M_CUSTO_REAL, COL.N_VALOR_FIPE, COL.O_VALOR_VENDA,
-      COL.S_DESPESA_GERAL, COL.U_FPLAN, COL.W_IMPOSTOS, COL.Y_COMISSAO, COL.Q_LUCRO_BRUTO, COL.AA_MARGEM_LIQUIDA,
+      COL.S_DESPESA_GERAL, COL.U_FPLAN, COL.W_IMPOSTOS, COL.Y_COMISSAO, COL.AI_ADM, COL.Q_LUCRO_BRUTO, COL.AA_MARGEM_LIQUIDA,
     ];
     const pctCols = [
       COL.P_PCT_FIPE, COL.T_PCT_DESPESA_GERAL, COL.V_PCT_FPLAN,
-      COL.X_PCT_IMPOSTOS, COL.Z_PCT_COMISSAO, COL.R_PCT_LUCRO_BRUTO, COL.AB_PCT_MARGEM,
+      COL.X_PCT_IMPOSTOS, COL.Z_PCT_COMISSAO, COL.AJ_PCT_ADM, COL.R_PCT_LUCRO_BRUTO, COL.AB_PCT_MARGEM,
     ];
     for (const c of moneyCols) {
       row.getCell(c).numFmt = FMT_MONEY;
@@ -281,6 +290,10 @@ export function renderAbaDetalhe(ws: ExcelJS.Worksheet, titulo: string, linhas: 
       { col: COL.Z_PCT_COMISSAO, label: "%" },
       { col: COL.AA_MARGEM_LIQUIDA, label: "MARGEM LÍQUIDA" },
       { col: COL.AB_PCT_MARGEM, label: "%" },
+      // ADM — adicionado ao FIM (col. AI/AJ), depois de Margem Líquida na ordem física da
+      // planilha, mesmo padrão de AH_CONSIGNADO (ver colunas.ts).
+      { col: COL.AI_ADM, label: "ADM" },
+      { col: COL.AJ_PCT_ADM, label: "%" },
     ];
 
     // Rótulo do bloco, mergeado nas colunas sem dado aqui (B..H) — o original (fora de
@@ -315,6 +328,7 @@ export function renderAbaDetalhe(ws: ExcelJS.Worksheet, titulo: string, linhas: 
     const forplanTotal = somaCampo(linhas, (l) => l.forplan);
     const impostosTotal = somaCampo(linhas, (l) => l.impostos);
     const comissaoTotal = somaCampo(linhas, (l) => l.comissao);
+    const admTotal = somaCampo(linhas, (l) => l.adm);
     const margemTotal = somaCampo(linhas, (l) => calcularDerivadosLinha(l).margemLiquida);
 
     const valorRow = ws.getRow(rValores);
@@ -366,8 +380,10 @@ export function renderAbaDetalhe(ws: ExcelJS.Worksheet, titulo: string, linhas: 
     escreverPctDeSomas(COL.Z_PCT_COMISSAO, COL.Y_COMISSAO, COL.O_VALOR_VENDA, vendaTotal > 0 ? comissaoTotal / vendaTotal : "");
     escreverSoma(COL.AA_MARGEM_LIQUIDA, margemTotal, FMT_MONEY);
     escreverPctDeSomas(COL.AB_PCT_MARGEM, COL.AA_MARGEM_LIQUIDA, COL.O_VALOR_VENDA, vendaTotal > 0 ? margemTotal / vendaTotal : "");
+    escreverSoma(COL.AI_ADM, admTotal, FMT_MONEY);
+    escreverPctDeSomas(COL.AJ_PCT_ADM, COL.AI_ADM, COL.O_VALOR_VENDA, vendaTotal > 0 ? admTotal / vendaTotal : "");
 
-    aplicarBordaBloco(ws, rHeader, rValores, COL.B_SEQ, COL.AB_PCT_MARGEM);
+    aplicarBordaBloco(ws, rHeader, rValores, COL.B_SEQ, COL.AJ_PCT_ADM);
 
     // Vermelho de negativo em Lucro Bruto/Margem Líquida (valor + %) — mesma CF do resto
     // da aba. Offset de prioridade alto pra nunca colidir com as do bloco de dados acima.
