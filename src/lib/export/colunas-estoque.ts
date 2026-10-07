@@ -226,12 +226,18 @@ export const COLUNAS_ESTOQUE: readonly ColunaEstoque[] = [
   // "baixa" até aparecer um veículo com HoldBack real pra validar.
   //
   // FALLBACK MANUAL (06/10/2026): investigação confirmou que HoldBack/
-  // Acessórios/Comissões/ADM/Despesas Gerais não têm fonte automática
-  // confiável via Oracle (ver migration 047) — quando o automático vem SEM
-  // DADO (0 pras 3 primeiras, null pras 2 últimas), usa o registro manual de
+  // Acessórios/Comissões/ADM não têm fonte automática confiável via Oracle
+  // (ver migration 047) — quando o automático vem SEM DADO (0 pras 3
+  // primeiras, null pra ADM), usa o registro manual de
   // `custos_estoque_detalhado` (upload do PDF em /upload) como alternativa.
   // Automático prevalece quando tem valor não-zero (mais fresco — sync a
   // cada 2h — vs. manual, que só atualiza quando alguém sobe o PDF de novo).
+  //
+  // ATUALIZADO 07/10/2026 (migration 048): Despesas Gerais SAIU do grupo
+  // "sem fonte automática" — agora tem fonte real (SUM(VALOR_FINAL) de
+  // NBS.VEICULOS_CUSTOS_ESPECIFICOS cujo CODIGO_CUSTO tem TIPO=9, validado
+  // 99,3%/426 de 429 veículos reais) e usa o MESMO padrão de fallback manual
+  // das demais acima (automático vence quando ≠0, manual cobre o resíduo).
   { key: "custo_holdback", label: "HoldBack", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_holdback, v.custoEstoqueManual?.holdback) },
   { key: "custo_acessorios", label: "Acessórios", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_acessorios, v.custoEstoqueManual?.acessorios) },
   // custo_impostos: confianca "diverge_relatorio" ADICIONADA em 05/10/2026 (migration
@@ -259,14 +265,15 @@ export const COLUNAS_ESTOQUE: readonly ColunaEstoque[] = [
   { key: "custo_impostos", label: "Impostos", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "diverge_relatorio", fallbackManual: true, getValor: (v) => resolverCustoImpostosComPrioridadeManual(v.custo_impostos, v.custoEstoqueManual?.impostos) },
   { key: "custo_comissoes", label: "Comissões", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_comissoes, v.custoEstoqueManual?.comissoes) },
   { key: "custo_adm", label: "ADM", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "nao_apurado", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_adm, v.custoEstoqueManual?.adm) },
-  { key: "custo_despesas_gerais", label: "Despesas Gerais", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "nao_apurado", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_despesas_gerais, v.custoEstoqueManual?.desp_gerais) },
+  { key: "custo_despesas_gerais", label: "Despesas Gerais", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_despesas_gerais, v.custoEstoqueManual?.desp_gerais) },
   // custo_detalhado_total: soma das OUTRAS 7 categorias (exclui Forplan —
   // esclarecido pelo Marcos em 05/10/2026: Forplan é custo FINANCEIRO (floor
   // plan), conceitualmente diferente do "custo que o carro teve"; continua
-  // tendo sua própria coluna, só não entra nesta soma). Trata null de
-  // ADM/Despesas Gerais como 0 (NÃO propagar null — se propagasse, a coluna
-  // ficaria "—" pra quase todo carro, já que essas duas são "não apurado" na
-  // maioria).
+  // tendo sua própria coluna, só não entra nesta soma). Trata null de ADM
+  // como 0 (NÃO propagar null — se propagasse, a coluna ficaria "—" pra
+  // quase todo carro, já que ADM é "não apurado" na maioria). Despesas
+  // Gerais não precisa mais desse tratamento desde 07/10/2026 (migration
+  // 048): virou `number` obrigatório, nunca null.
   //
   // Revisões/HoldBack/Acessórios/Impostos/Comissões/ADM/Despesas Gerais
   // entram aqui JÁ com o fallback manual resolvido (mesma chamada usada nas

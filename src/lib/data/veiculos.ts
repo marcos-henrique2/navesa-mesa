@@ -39,10 +39,11 @@ export function toRow(v: VeiculoParsed, snapshotId: number): Record<string, unkn
     custo_acessorios: v.custo_acessorios,
     custo_forplan: v.custo_forplan,
     custo_comissoes: v.custo_comissoes,
-    // custo_adm/custo_despesas_gerais NÃO entram aqui de propósito — sem
-    // CODIGO_CUSTO mapeado (ver VeiculoParsed em nbs-xlsx.ts e migration
-    // 040). Omitir a chave deixa o Postgres gravar NULL (colunas NULLABLE
-    // SEM DEFAULT) em vez de afirmar falsamente "custo zero conhecido".
+    custo_despesas_gerais: v.custo_despesas_gerais,
+    // custo_adm NÃO entra aqui de propósito — sem CODIGO_CUSTO/TIPO mapeado
+    // (ver VeiculoParsed em nbs-xlsx.ts e migrations 040/048). Omitir a
+    // chave deixa o Postgres gravar NULL (coluna NULLABLE SEM DEFAULT) em
+    // vez de afirmar falsamente "custo zero conhecido".
   };
 }
 
@@ -74,11 +75,15 @@ function fromRow(r: VeiculoRow): VeiculoParsed {
     custo_acessorios: r.custo_acessorios ?? 0,
     custo_forplan: r.custo_forplan ?? 0,
     custo_comissoes: r.custo_comissoes ?? 0,
-    // custo_adm/custo_despesas_gerais: leitura direta, SEM fallback pra 0 —
-    // NULL aqui significa "não apurado" (ver nota em VeiculoParsed), nunca
-    // "zero conhecido" como as outras 7 colunas desta família.
+    // custo_despesas_gerais: ATUALIZADO 07/10/2026 (migration 048) — agora
+    // tem fonte automática real (TIPO=9), mesmo contrato "ausência de
+    // lançamento = 0, fato conhecido, nunca null" das outras 5 colunas desta
+    // família. Registros antigos pré-sync ainda podem estar NULL no banco
+    // até o próximo ciclo de sync rodar — daí o fallback ?? 0 aqui.
+    custo_despesas_gerais: r.custo_despesas_gerais ?? 0,
+    // custo_adm: leitura direta, SEM fallback pra 0 — NULL aqui significa
+    // "não apurado" (ver nota em VeiculoParsed), nunca "zero conhecido".
     custo_adm: r.custo_adm ?? null,
-    custo_despesas_gerais: r.custo_despesas_gerais ?? null,
   };
 }
 

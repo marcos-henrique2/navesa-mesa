@@ -138,13 +138,15 @@ export async function syncVeiculos(conn: Connection): Promise<ResultadoSyncVeicu
   const mapaValoriza = await carregarMapaValoriza(conn);
   const tempoMsMapaValoriza = Date.now() - inicioMapaValoriza;
 
-  // Mapas das 6 categorias de custos detalhados (NBS.VEICULOS_CUSTOS_ESPECIFICOS,
-  // ver custos-estoque-detalhado.ts) — 6 queries SEQUENCIAIS, uma por
-  // categoria (nunca combinar os ~73 códigos num IN() só: testado e cancelado
-  // depois de 15+min; Promise.all também testado e descartado — uma mesma
-  // Connection do node-oracledb serializa execute() internamente, então não
-  // dava paralelismo real, só 13% de "ganho" nada confiável). ~3,2min medido
-  // contra o Oracle real — desprezível dentro da janela de sync (a cada 2h).
+  // Mapas das 5 categorias de custos detalhados (NBS.VEICULOS_CUSTOS_ESPECIFICOS,
+  // ver custos-estoque-detalhado.ts — 4 por lista fixa de CODIGO_CUSTO +
+  // Despesas Gerais por TIPO=9 desde 07/10/2026, migration 048) — 5 queries
+  // SEQUENCIAIS, uma por categoria (nunca combinar num IN() só: testado e
+  // cancelado depois de 15+min; Promise.all também testado e descartado —
+  // uma mesma Connection do node-oracledb serializa execute() internamente,
+  // então não dava paralelismo real, só 13% de "ganho" nada confiável).
+  // ~4min (expectativa) medido contra o Oracle real — desprezível dentro da
+  // janela de sync (a cada 2h).
   const inicioCustosDetalhados = Date.now();
   const mapasCustosDetalhados = await carregarMapasCustosDetalhados(conn);
   const tempoMsCustosDetalhados = Date.now() - inicioCustosDetalhados;

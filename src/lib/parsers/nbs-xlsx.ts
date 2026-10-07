@@ -31,20 +31,26 @@ export type VeiculoParsed = {
    */
   valoriza: number;
   /**
-   * 6 categorias do relatório nativo NBS "Custos de Veículos em Estoque"
-   * (ver scripts/sync-nbs/custos-estoque-detalhado.ts e migration 040).
+   * Categorias do relatório nativo NBS "Custos de Veículos em Estoque" (ver
+   * scripts/sync-nbs/custos-estoque-detalhado.ts e migrations 040/048).
    * Mesmo contrato de `valoriza`: sempre `number`, nunca `null` — ausência de
    * custo lançado naquela categoria é fato conhecido (zero). Só o sync
    * Oracle preenche o valor real; o parser manual de XLSX grava sempre 0.
    *
-   * NOTA: `custo_adm` e `custo_despesas_gerais` (colunas NULLABLE SEM
-   * DEFAULT no banco) NÃO têm CODIGO_CUSTO mapeado (provável rateio calculado
-   * pelo motor do relatório NBS, fora de escopo) — por isso NENHUM sync/parser
-   * escreve valor nelas (`toRow()` em `lib/data/veiculos.ts` omite as duas de
-   * propósito, deixando o Postgres gravar NULL). Os dois campos abaixo são
-   * só de LEITURA (export/exibição): `fromRow()` lê o que já está no banco
-   * (sempre NULL hoje) sem jamais inventar um 0. Nunca tornar esses dois
-   * campos `number` obrigatório — isso apagaria a distinção "não apurado".
+   * NOTA: `custo_adm` (coluna NULLABLE SEM DEFAULT no banco) NÃO tem
+   * CODIGO_CUSTO/TIPO mapeado (provável rateio calculado pelo motor do
+   * relatório NBS, fora de escopo) — por isso NENHUM sync/parser escreve
+   * valor nela (`toRow()` em `lib/data/veiculos.ts` omite de propósito,
+   * deixando o Postgres gravar NULL). O campo abaixo é só de LEITURA
+   * (export/exibição): `fromRow()` lê o que já está no banco (sempre NULL
+   * hoje) sem jamais inventar um 0. Nunca tornar esse campo `number`
+   * obrigatório — isso apagaria a distinção "não apurado".
+   *
+   * `custo_despesas_gerais` DEIXOU de ser "não apurado" em 07/10/2026
+   * (migration 048): agora tem fonte automática real — SUM(VALOR_FINAL) de
+   * NBS.VEICULOS_CUSTOS_ESPECIFICOS cujo CODIGO_CUSTO tem TIPO=9 em
+   * NBS.CUSTOS_ESPECIFICOS (validado 99,3%, 426/429 veículos reais) — por
+   * isso virou `number` obrigatório, mesmo padrão computado das demais.
    */
   custo_impostos: number;
   custo_revisoes: number;
@@ -52,10 +58,9 @@ export type VeiculoParsed = {
   custo_acessorios: number;
   custo_forplan: number;
   custo_comissoes: number;
+  custo_despesas_gerais: number;
   /** Só leitura — ver NOTA acima. Sempre `null` até existir fórmula de cálculo. */
   custo_adm?: number | null;
-  /** Só leitura — ver NOTA acima. Sempre `null` até existir fórmula de cálculo. */
-  custo_despesas_gerais?: number | null;
 };
 
 export type SnapshotMeta = {
@@ -264,6 +269,7 @@ export async function parseNbsXlsx(
       custo_acessorios: 0,
       custo_forplan: 0,
       custo_comissoes: 0,
+      custo_despesas_gerais: 0,
     });
 
     const empresa = parseEmpresaCell(row[COL.empresa_nome]);
