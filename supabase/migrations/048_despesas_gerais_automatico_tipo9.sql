@@ -1,0 +1,57 @@
+-- Navesa Mesa — Migration 048: Despesas Gerais passa a vir AUTOMATICA do Oracle (TIPO=9)
+-- =====================================================================================
+-- CONTEXTO (migration 047, 06/10/2026): custo_despesas_gerais tinha confianca
+-- MEDIA-ALTA via formula de RESIDUO (soma de TODOS os CODIGO_CUSTO do veiculo menos os
+-- ja atribuidos a Impostos/Revisoes/Acessorios/Comissoes/620), mas bateu exato em só
+-- 208/232 (89,7%) — NAO implementado no sync por violar a regra deste projeto de
+-- "qualquer divergencia de R$0,01+ e bug critico" (AGENTS.md), e a query de residuo
+-- (NOT IN de lista grande) tinha risco de performance real (mesma tabela de 55,9
+-- milhoes de linhas sem indice em CODIGO_CUSTO que ja forcou o desenho atual por
+-- categoria na migration 040).
+--
+-- INVESTIGACAO 07/10/2026 (Dara, a pedido do Marcos) — abordagem DIFERENTE da
+-- migration 047: em vez de residuo (exclusao de codigos ja usados), usar a propria
+-- CLASSIFICACAO que o NBS atribui a cada CODIGO_CUSTO. NBS.CUSTOS_ESPECIFICOS tem uma
+-- coluna TIPO (classificacao de negocio do codigo de custo, independente da nossa
+-- segmentacao manual em Impostos/Revisoes/Acessorios/Comissoes). TIPO=9 isola ~473
+-- CODIGO_CUSTO distintos que, somados por veiculo, reproduzem "Despesas Gerais" do
+-- relatorio nativo "Custos de Veiculos em Estoque":
+--
+--   SELECT CHASSI_RESUMIDO, COD_EMPRESA, SUM(VALOR_FINAL) AS TOTAL
+--   FROM NBS.VEICULOS_CUSTOS_ESPECIFICOS
+--   WHERE CODIGO_CUSTO IN (SELECT CODIGO_CUSTO FROM NBS.CUSTOS_ESPECIFICOS WHERE TIPO = 9)
+--   GROUP BY CHASSI_RESUMIDO, COD_EMPRESA
+--
+-- VALIDACAO (07/10/2026): 429 veiculos reais testaveis (2 PDFs do relatorio nativo,
+-- Navesa + GWM, valores de R$500 a R$104 mil) — 426/429 bateram EXATO (99,3%), mesmo
+-- padrao de confianca que HoldBack/Acessorios/Comissoes/Revisoes hoje (fonte mapeada no
+-- Oracle mas sem garantia de 100% dos casos).
+--
+-- ACHADO EM ABERTO (NAO resolvido, nao bloqueia esta migration): dos 3 veiculos que nao
+-- bateram, 2 erraram pelo MESMO valor exato — R$500,00 a mais no automatico vs. o PDF.
+-- Hipotese nao confirmada: um CODIGO_CUSTO especifico classificado como TIPO=9 que nao
+-- deveria entrar na soma de Despesas Gerais (ou um lancamento duplicado/de outra
+-- natureza que o motor do relatorio nativo exclui e a nossa query nao). Nao foi
+-- isolado nesta rodada — documentado aqui pra investigacao futura, se o padrao de
+-- R$500,00 aparecer de novo com volume maior.
+--
+-- DECISAO (Marcos, 07/10/2026): ativar o automatico mesmo sem ser 100% — o fallback
+-- manual (upload do PDF "Custos de Veiculos em Estoque" em /upload, ja usado por
+-- HoldBack/Acessorios/Comissoes/Revisoes/Impostos) cobre os ~0,7% de casos residuais.
+-- custo_despesas_gerais DEIXA de ser "nao apurado" (fonte automatica ZERO antes desta
+-- migration) e passa a ter o MESMO contrato "ausencia de lancamento = fato conhecido,
+-- zero, nunca null" das outras 5 colunas desta familia — ver scripts/sync-nbs/
+-- custos-estoque-detalhado.ts, mapear-veiculo.ts e src/lib/export/colunas-estoque.ts
+-- (confianca rebaixada de "nao_apurado" pra "baixa") pra onde o sync foi atualizado.
+--
+-- Coluna NAO muda de tipo (ja e NUMERIC nullable) — só a SEMANTICA muda: registros
+-- SINCRONIZADOS a partir de agora vem "0 ou valor real, nunca null"; registros antigos
+-- (pre-sync, de antes desta migration) continuam NULL até o proximo ciclo de sync
+-- rodar e sobrescrever. ADM (custo_adm) NAO e afetado por esta migration — continua
+-- sem CODIGO_CUSTO/TIPO mapeado, NULLABLE, "nao apurado" (ver migration 047).
+--
+-- Idempotente (COMMENT ON COLUMN sempre substitui o anterior). Rodar 2x sem erro.
+-- =====================================================================================
+
+COMMENT ON COLUMN public.veiculos.custo_despesas_gerais IS
+  'Categoria "Despesas Gerais" do relatorio nativo NBS "Custos de Veiculos em Estoque". ATUALIZADO 07/10/2026 (migration 048): fonte automatica REAL via CLASSIFICACAO (nao lista fixa de CODIGO_CUSTO como Impostos/Revisoes/Acessorios/Comissoes) — SUM(VALOR_FINAL) de NBS.VEICULOS_CUSTOS_ESPECIFICOS cujo CODIGO_CUSTO tem TIPO=9 em NBS.CUSTOS_ESPECIFICOS (~473 codigos distintos, resolvidos via subquery no Oracle). VALIDADO 07/10/2026 contra 429 veiculos reais (2 PDFs do relatorio nativo, Navesa+GWM, valores de R$500 a R$104 mil): 426/429 bateram EXATO (99,3%). CONFIANCA BAIXA (mesmo padrao de HoldBack/Acessorios/Comissoes/Revisoes) — nao 100%: ACHADO EM ABERTO, nao resolvido, 2 dos 3 veiculos que nao bateram erraram pelo MESMO valor exato (R$500,00 a mais no automatico vs. PDF), possivel CODIGO_CUSTO especifico de TIPO=9 que nao deveria contar, nao isolado. Fallback manual (upload do PDF em /upload) continua ativo pra cobrir os ~0,7% residuais (ver resolverCustoComFallbackManual em src/lib/export/custo-estoque-fallback.ts). NUNCA null a partir de agora em registros sincronizados: ausencia de lancamento TIPO=9 e fato conhecido (zero), mesmo contrato de valoriza/custo_impostos/custo_revisoes/custo_acessorios/custo_comissoes/custo_holdback. Registros gravados ANTES desta migration (pre-sync) podem continuar NULL até o proximo ciclo de sync Oracle rodar e sobrescrever — null nesses casos residuais e "ainda nao resincronizado", nao "nao apurado". Historico completo da investigacao (abordagem por residuo descartada, 89,7% de acerto, migration 047) e desta abordagem por TIPO (99,3% de acerto) em migrations 047 e 048. custo_adm NAO e afetado: continua sem fonte mapeada, NULLABLE, "nao apurado" (ver migration 047).';

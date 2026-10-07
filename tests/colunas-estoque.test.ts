@@ -146,7 +146,7 @@ describe("colunas-estoque (catálogo)", () => {
     assert.equal(col.confianca, undefined, "fipe não tem indicador de confiança");
   });
 
-  it("custo_detalhado_total soma as OUTRAS 7 categorias (exclui Forplan), tratando null de ADM/Despesas Gerais como 0", () => {
+  it("custo_detalhado_total soma as OUTRAS 7 categorias (exclui Forplan), tratando null de ADM como 0", () => {
     const col = getColuna("custo_detalhado_total")!;
     assert.equal(col.label, "Custos detalhados (total, sem Forplan)");
     assert.equal(col.formato, "moeda");
@@ -162,9 +162,9 @@ describe("colunas-estoque (catálogo)", () => {
       custo_impostos: 500,
       custo_comissoes: 600,
       custo_adm: null,
-      custo_despesas_gerais: null,
+      custo_despesas_gerais: 0,
     });
-    // 100+300+400+500+600 + 0 + 0 = 1900 (Forplan NÃO entra; null NÃO propaga pro total).
+    // 100+300+400+500+600 + 0 + 0 = 1900 (Forplan NÃO entra; null de ADM NÃO propaga pro total).
     assert.equal(col.getValor(v), 1900);
 
     const comAdmEDespesas = veiculo({
@@ -208,7 +208,10 @@ describe("colunas-estoque (catálogo)", () => {
     const despesas = getColuna("custo_despesas_gerais");
     assert.ok(despesas);
     assert.equal(despesas!.label, "Despesas Gerais");
-    assert.equal(despesas!.getValor(veiculo({ custo_despesas_gerais: null })), null);
+    // ATUALIZADO 07/10/2026 (migration 048): custo_despesas_gerais deixou de
+    // ser "não apurado" — agora é sempre-número (automático=0 sem manual → 0,
+    // nunca mais null), mesmo padrão de HoldBack/Acessórios/Comissões/Revisões.
+    assert.equal(despesas!.getValor(veiculo({ custo_despesas_gerais: 0 })), 0);
     assert.equal(despesas!.getValor(veiculo({ custo_despesas_gerais: 77 })), 77);
   });
 
@@ -252,26 +255,30 @@ describe("colunas-estoque (catálogo)", () => {
     assert.equal(new Set(COLUNAS_ESTOQUE.map((c) => c.grupo)).size, GRUPOS_ESTOQUE.length);
   });
 
-  it("confiança baixa só nas 4 colunas de custo Oracle pouco confirmadas", () => {
+  it("confiança baixa só nas 5 colunas de custo Oracle pouco confirmadas", () => {
     // custo_forplan SAIU dessa lista em 05/10/2026: fonte corrigida pra
     // NBS.VEICULOS.CUSTO_FORPLAN_FINAL (coluna direta), confirmada ao
     // centavo contra o relatório nativo PDF em 3 veículos — ver migration 043.
     // custo_revisoes ENTROU em 07/10/2026: auditoria de 628 carros achou 29
     // casos (4,6%) de divergência vs. PDF nativo (ver custo-estoque-fallback.ts).
+    // custo_despesas_gerais ENTROU em 07/10/2026 (migration 048): passou a
+    // ter fonte automática real (TIPO=9), validada 99,3% (426/429) — não
+    // 100%, por isso confiança baixa (igual às outras 4), não mais
+    // "não apurado".
     const esperadoBaixa: ColunaKey[] = [
       "custo_holdback",
       "custo_acessorios",
       "custo_comissoes",
       "custo_revisoes",
+      "custo_despesas_gerais",
     ];
     for (const key of esperadoBaixa) {
       assert.equal(getColuna(key)!.confianca, "baixa", `${key} deveria ser confiança baixa`);
     }
   });
 
-  it("confiança 'não apurado' só em custo_adm e custo_despesas_gerais", () => {
+  it("confiança 'não apurado' só em custo_adm", () => {
     assert.equal(getColuna("custo_adm")!.confianca, "nao_apurado");
-    assert.equal(getColuna("custo_despesas_gerais")!.confianca, "nao_apurado");
   });
 
   it("custo_forplan NÃO tem indicador de confiança", () => {
@@ -416,11 +423,22 @@ describe("colunas-estoque (catálogo)", () => {
       assert.equal(col.getValor({ ...veiculo({ custo_adm: null }), custoEstoqueManual: null }), null);
     });
 
-    it("custo_despesas_gerais: mesmo fallback de custo_adm", () => {
+    it("custo_despesas_gerais: automático zerado + manual presente → usa o manual (fallback padrão, igual a HoldBack/Acessórios/Comissões — ATUALIZADO 07/10/2026, migration 048)", () => {
       const col = getColuna("custo_despesas_gerais")!;
-      assert.equal(col.getValor(veiculo({ custo_despesas_gerais: null })), null);
-      const v = { ...veiculo({ custo_despesas_gerais: null }), custoEstoqueManual: custoEstoqueDetalhado({ desp_gerais: 60 }) };
+      const v = { ...veiculo({ custo_despesas_gerais: 0 }), custoEstoqueManual: custoEstoqueDetalhado({ desp_gerais: 60 }) };
       assert.equal(col.getValor(v), 60);
+    });
+
+    it("custo_despesas_gerais: automático não-zero prevalece sobre o manual", () => {
+      const col = getColuna("custo_despesas_gerais")!;
+      const v = { ...veiculo({ custo_despesas_gerais: 500 }), custoEstoqueManual: custoEstoqueDetalhado({ desp_gerais: 60 }) };
+      assert.equal(col.getValor(v), 500);
+    });
+
+    it("custo_despesas_gerais: nem automático nem manual tem valor → 0, não mais null (deixou de ser 'não apurado')", () => {
+      const col = getColuna("custo_despesas_gerais")!;
+      assert.equal(col.getValor(veiculo({ custo_despesas_gerais: 0 })), 0);
+      assert.equal(col.getValor({ ...veiculo({ custo_despesas_gerais: 0 }), custoEstoqueManual: null }), 0);
     });
 
     it("sem custoEstoqueManual (campo ausente): comporta-se como se não houvesse manual", () => {
@@ -439,7 +457,7 @@ describe("colunas-estoque (catálogo)", () => {
           custo_impostos: 500, // ≠0, mas Impostos é prioridade invertida → cai pro manual mesmo assim
           custo_comissoes: 600, // não-zero → NÃO cai pro manual
           custo_adm: null, // null → cai pro manual
-          custo_despesas_gerais: null, // null → cai pro manual
+          custo_despesas_gerais: 0, // zerado → cai pro manual (ATUALIZADO 07/10/2026: não mais null)
         }),
         custoEstoqueManual: custoEstoqueDetalhado({ revisoes: 999, holdback: 50, acessorios: 40, impostos: 2740.8, comissoes: 9999, adm: 10, desp_gerais: 5 }),
       };
@@ -461,7 +479,7 @@ describe("colunas-estoque (catálogo)", () => {
           custo_impostos: 0, // zerado → cai pro manual (igual, independente da prioridade invertida)
           custo_comissoes: 0,
           custo_adm: null,
-          custo_despesas_gerais: null,
+          custo_despesas_gerais: 0, // ATUALIZADO 07/10/2026: não mais null
         }),
         custoEstoqueManual: custoEstoqueDetalhado({ revisoes: 120, holdback: 0, acessorios: 0, impostos: 850, comissoes: 0, adm: 0, desp_gerais: 0 }),
       };

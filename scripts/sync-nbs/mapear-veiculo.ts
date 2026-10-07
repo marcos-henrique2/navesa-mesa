@@ -91,21 +91,25 @@ const CANDIDATOS: Record<keyof VeiculoParsed, string[]> = {
   // valoriza é derivado (busca em mapaValoriza por CHASSI_RESUMIDO+LOJA_ATUAL,
   // ver mapearVeiculo abaixo) — sem coluna própria em NBS.VEICULOS.
   valoriza: [],
-  // custo_impostos/revisoes/acessorios/comissoes são derivados (busca em
-  // mapasCustosDetalhados por CHASSI_RESUMIDO+LOJA_ATUAL, mesmo padrão de
-  // valoriza acima, ver custos-estoque-detalhado.ts) — sem coluna própria em
-  // NBS.VEICULOS. custo_forplan/custo_holdback NÃO entram aqui (têm coluna
-  // própria, ver CANDIDATOS acima) — ver nota 05/10/2026.
+  // custo_impostos/revisoes/acessorios/comissoes/despesas_gerais são
+  // derivados (busca em mapasCustosDetalhados por CHASSI_RESUMIDO+LOJA_ATUAL,
+  // mesmo padrão de valoriza acima, ver custos-estoque-detalhado.ts) — sem
+  // coluna própria em NBS.VEICULOS. custo_forplan/custo_holdback NÃO entram
+  // aqui (têm coluna própria, ver CANDIDATOS acima) — ver nota 05/10/2026.
+  // custo_despesas_gerais entrou nesse padrão em 07/10/2026 (migration 048,
+  // antes era TIPO=9/subquery em vez de lista fixa de CODIGO_CUSTO, mas o
+  // resultado chega aqui do mesmo jeito: um Map pronto em
+  // mapasCustosDetalhados.custo_despesas_gerais).
   custo_impostos: [],
   custo_revisoes: [],
   custo_acessorios: [],
   custo_comissoes: [],
-  // custo_adm/custo_despesas_gerais existem em VeiculoParsed só pra LEITURA
-  // (export/exibição — ver nota em nbs-xlsx.ts). Sem CODIGO_CUSTO mapeado,
-  // este sync nunca escreve valor nelas: ficam de fora de `mapearVeiculo()`
-  // de propósito e o Postgres grava/mantém NULL.
-  custo_adm: [],
   custo_despesas_gerais: [],
+  // custo_adm existe em VeiculoParsed só pra LEITURA (export/exibição — ver
+  // nota em nbs-xlsx.ts). Sem CODIGO_CUSTO/TIPO mapeado, este sync nunca
+  // escreve valor nela: fica de fora de `mapearVeiculo()` de propósito e o
+  // Postgres grava/mantém NULL.
+  custo_adm: [],
 };
 
 /**
@@ -121,6 +125,7 @@ const CAMPOS_COMPUTADOS = new Set([
   "custo_revisoes",
   "custo_acessorios",
   "custo_comissoes",
+  "custo_despesas_gerais",
 ]);
 
 /**
@@ -240,7 +245,7 @@ export type LookupsVeiculo = {
    */
   mapaValoriza?: Map<string, number>;
   /**
-   * chassi_resumido+loja_atual -> soma de VALOR_FINAL por categoria (6
+   * chassi_resumido+loja_atual -> soma de VALOR_FINAL por categoria (5
    * categorias do relatório "Custos de Veículos em Estoque"), construído por
    * carregarMapasCustosDetalhados() (ver custos-estoque-detalhado.ts).
    * Ausente = tratado como Map vazio por categoria (buscarCustoDetalhado
@@ -373,12 +378,12 @@ export function mapearVeiculo(row: Record<string, unknown>, lookups: LookupsVeic
   const lojaAtual = asInt(row["LOJA_ATUAL"]);
   const valoriza = buscarValoriza(lookups.mapaValoriza ?? new Map(), chassiResumido, lojaAtual);
 
-  // custo_impostos/revisoes/acessorios/comissoes = busca no Map de cada
-  // categoria (mesma chave chassi_resumido+loja_atual de valoriza acima, ver
-  // custos-estoque-detalhado.ts). custo_forplan/custo_holdback NÃO usam mais
-  // isso (ver get() acima, coluna direta) — e custo_adm/custo_despesas_gerais
-  // ficam de fora de propósito (sem CODIGO_CUSTO mapeado) — nem são
-  // calculados aqui, nem têm campo em VeiculoParsed.
+  // custo_impostos/revisoes/acessorios/comissoes/despesas_gerais = busca no
+  // Map de cada categoria (mesma chave chassi_resumido+loja_atual de valoriza
+  // acima, ver custos-estoque-detalhado.ts). custo_forplan/custo_holdback NÃO
+  // usam mais isso (ver get() acima, coluna direta) — e custo_adm fica de
+  // fora de propósito (sem CODIGO_CUSTO/TIPO mapeado) — nem é calculado
+  // aqui, nem tem campo obrigatório em VeiculoParsed.
   const buscaCategoria = (categoria: CategoriaCustoDetalhado) =>
     buscarCustoDetalhado(lookups.mapasCustosDetalhados?.[categoria] ?? new Map(), chassiResumido, lojaAtual);
 
@@ -409,6 +414,7 @@ export function mapearVeiculo(row: Record<string, unknown>, lookups: LookupsVeic
     custo_acessorios: buscaCategoria("custo_acessorios"),
     custo_forplan: asNum(get("custo_forplan")) ?? 0,
     custo_comissoes: buscaCategoria("custo_comissoes"),
+    custo_despesas_gerais: buscaCategoria("custo_despesas_gerais"),
   };
 
   return { veiculo, camposSemFonte };

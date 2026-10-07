@@ -12,11 +12,12 @@ import type { Connection } from "oracledb";
  * NBS.VEICULOS_CUSTOS_ESPECIFICOS — confirmado batendo ao centavo contra o
  * relatório nativo PDF "Custos de Veículos em Estoque" de 05/10/2026 em 3
  * veículos (AMAROK chassi 163765/empresa 2, RANGER chassi 175371/empresa 2,
- * RANGER chassi 178346/empresa 2). Esse módulo agora só cobre as 4
- * categorias restantes (Impostos, Revisões, Acessórios, Comissões), que
- * continuam vindo de NBS.VEICULOS_CUSTOS_ESPECIFICOS por CODIGO_CUSTO — ver
- * mapear-veiculo.ts pra onde custo_forplan/custo_holdback são lidos agora
- * (direto de NBS.VEICULOS, mesmo padrão de custo_total).
+ * RANGER chassi 178346/empresa 2). Esse módulo agora cobre as 4 categorias
+ * restantes de lista fixa (Impostos, Revisões, Acessórios, Comissões) + uma
+ * por classificação (Despesas Gerais, ver nota 07/10/2026 abaixo) — todas
+ * vindo de NBS.VEICULOS_CUSTOS_ESPECIFICOS — ver mapear-veiculo.ts pra onde
+ * custo_forplan/custo_holdback são lidos agora (direto de NBS.VEICULOS,
+ * mesmo padrão de custo_total).
  *
  * Mesma fonte e mesma técnica de valoriza.ts (NBS.VEICULOS_CUSTOS_ESPECIFICOS,
  * filtro só por CODIGO_CUSTO, sem JOIN, cruzamento em memória via Map
@@ -24,10 +25,24 @@ import type { Connection } from "oracledb";
  * categoria, códigos candidatos testados e descartados) em
  * supabase/migrations/040_custos_estoque_detalhado_em_veiculos.sql.
  *
- * ADM e Despesas Gerais ficam FORA deste módulo: nenhum CODIGO_CUSTO foi
- * encontrado pra elas (hipótese: rateio calculado pelo motor do relatório
- * NBS, não um lançamento por veículo) — as colunas no banco são NULLABLE SEM
- * DEFAULT (NULL = "não apurado") e não devem ser escritas por código algum.
+ * ATUALIZADO 07/10/2026 (investigação Dara, ver migration 048): Despesas
+ * Gerais passou a vir AUTOMÁTICA daqui também — mas DIFERENTE das 4
+ * categorias de lista fixa: em vez de um `CODIGO_CUSTO IN (lista)`, o filtro
+ * é por CLASSIFICAÇÃO (CODIGO_CUSTO cujo TIPO=9 em NBS.CUSTOS_ESPECIFICOS,
+ * ~473 códigos) — resolvido via subquery SQL direta (não trazemos os
+ * códigos pro JS, deixamos o Oracle resolver, ver sqlSelectPorTipo/
+ * sqlSelectCustosPorCategoria abaixo). Validado 07/10/2026 contra 429 veículos reais (2 PDFs,
+ * Navesa+GWM): 99,3% de acerto exato (426/429). Achado em aberto, NÃO
+ * resolvido: 2 dos 3 que não bateram erraram pelo MESMO valor exato
+ * (R$500,00 a mais no automático) — pode ser um CODIGO_CUSTO específico de
+ * TIPO=9 que não deveria contar, não isolado ainda. Não bloqueia: o
+ * fallback manual (upload do PDF, ver custo-estoque-fallback.ts) cobre os
+ * ~0,7% residuais.
+ *
+ * ADM continua FORA deste módulo: nenhum CODIGO_CUSTO/TIPO foi encontrado
+ * pra ela (hipótese: rateio calculado pelo motor do relatório NBS, não um
+ * lançamento por veículo) — a coluna no banco é NULLABLE SEM DEFAULT (NULL =
+ * "não apurado") e não deve ser escrita por código algum.
  *
  * ⚠️ PERFORMANCE: uma única query com todos os códigos das categorias num
  * IN() gigante contra NBS.VEICULOS_CUSTOS_ESPECIFICOS (55,9 milhões de
@@ -36,8 +51,10 @@ import type { Connection } from "oracledb";
  * medido contra o Oracle real em 02/10/2026: 190.196ms (~3,2min) sequencial
  * pras 6 categorias originais (ver carregarMapasCustosDetalhados abaixo) —
  * mesma decisão de valoriza.ts, replicada aqui por categoria em vez de
- * programa de bônus. Com Forplan/HoldBack removidos daqui, agora são só 4
- * categorias/queries.
+ * programa de bônus. Com Forplan/HoldBack removidos e Despesas Gerais
+ * adicionada, agora são 5 categorias/queries — expectativa ~240s (~4min)
+ * sequencial, ainda sequencial de propósito (mesma decisão de não usar
+ * Promise.all numa mesma Connection, ver carregarMapasCustosDetalhados).
  */
 export const CODIGOS_CUSTO_IMPOSTOS = [
   142, 143, 268, 363, 404, 409, 410, 413, 414, 420, 422, 423, 437, 490, 526, 572, 605, 623, 686, 690,
@@ -66,24 +83,75 @@ export const CODIGOS_CUSTO_ACESSORIOS = [146, 424, 640] as const;
 export const CODIGOS_CUSTO_COMISSOES = [129, 239, 273, 297, 447, 498, 529, 545, 658] as const;
 
 /** Nome da categoria -> campo canônico correspondente em VeiculoParsed. */
-export type CategoriaCustoDetalhado = "custo_impostos" | "custo_revisoes" | "custo_acessorios" | "custo_comissoes";
+export type CategoriaCustoDetalhado =
+  | "custo_impostos"
+  | "custo_revisoes"
+  | "custo_acessorios"
+  | "custo_comissoes"
+  | "custo_despesas_gerais";
 
-/** Códigos de custo por categoria, na mesma ordem em que as queries são montadas/rodadas. */
-export const CODIGOS_POR_CATEGORIA: Record<CategoriaCustoDetalhado, readonly number[]> = {
+/**
+ * Categorias cujo filtro é lista fixa de CODIGO_CUSTO (`WHERE CODIGO_CUSTO IN
+ * (...)`) — as 4 originais. Despesas Gerais NÃO entra aqui: ver
+ * CATEGORIAS_POR_CLASSIFICACAO abaixo.
+ */
+export const CODIGOS_POR_CATEGORIA: Record<
+  Exclude<CategoriaCustoDetalhado, "custo_despesas_gerais">,
+  readonly number[]
+> = {
   custo_impostos: CODIGOS_CUSTO_IMPOSTOS,
   custo_revisoes: CODIGOS_CUSTO_REVISOES,
   custo_acessorios: CODIGOS_CUSTO_ACESSORIOS,
   custo_comissoes: CODIGOS_CUSTO_COMISSOES,
 };
 
-export function sqlSelectCustosPorCategoria(categoria: CategoriaCustoDetalhado): string {
-  const codigos = CODIGOS_POR_CATEGORIA[categoria];
+/**
+ * Categorias cujo filtro é por CLASSIFICAÇÃO (TIPO em NBS.CUSTOS_ESPECIFICOS)
+ * em vez de lista fixa de CODIGO_CUSTO — hoje só Despesas Gerais (TIPO=9, ver
+ * migration 048). O valor de TIPO é resolvido via subquery direta no Oracle
+ * (não trazemos os ~473 códigos pro JS).
+ */
+export const TIPO_POR_CATEGORIA: Record<"custo_despesas_gerais", number> = {
+  custo_despesas_gerais: 9,
+};
+
+/** Todas as categorias, na mesma ordem em que as queries são montadas/rodadas. */
+export const CATEGORIAS: readonly CategoriaCustoDetalhado[] = [
+  "custo_impostos",
+  "custo_revisoes",
+  "custo_acessorios",
+  "custo_comissoes",
+  "custo_despesas_gerais",
+];
+
+function sqlSelectPorListaFixa(codigos: readonly number[]): string {
   return `
   SELECT CHASSI_RESUMIDO, COD_EMPRESA, SUM(VALOR_FINAL) AS TOTAL
   FROM NBS.VEICULOS_CUSTOS_ESPECIFICOS
   WHERE CODIGO_CUSTO IN (${codigos.join(", ")})
   GROUP BY CHASSI_RESUMIDO, COD_EMPRESA
 `;
+}
+
+function sqlSelectPorTipo(tipo: number): string {
+  return `
+  SELECT CHASSI_RESUMIDO, COD_EMPRESA, SUM(VALOR_FINAL) AS TOTAL
+  FROM NBS.VEICULOS_CUSTOS_ESPECIFICOS
+  WHERE CODIGO_CUSTO IN (SELECT CODIGO_CUSTO FROM NBS.CUSTOS_ESPECIFICOS WHERE TIPO = ${tipo})
+  GROUP BY CHASSI_RESUMIDO, COD_EMPRESA
+`;
+}
+
+/**
+ * Dispatcher: monta a query certa pra categoria, lista fixa de CODIGO_CUSTO
+ * ou subquery por TIPO (só Despesas Gerais hoje) — ver comentário de topo do
+ * arquivo.
+ */
+export function sqlSelectCustosPorCategoria(categoria: CategoriaCustoDetalhado): string {
+  if (categoria === "custo_despesas_gerais") {
+    return sqlSelectPorTipo(TIPO_POR_CATEGORIA.custo_despesas_gerais);
+  }
+  return sqlSelectPorListaFixa(CODIGOS_POR_CATEGORIA[categoria]);
 }
 
 export type LinhaCustoDetalhado = {
@@ -139,7 +207,7 @@ function asNum(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** Mapas das 6 categorias, prontos pra uso em mapearVeiculo (um Map por categoria). */
+/** Mapas das 5 categorias, prontos pra uso em mapearVeiculo (um Map por categoria). */
 export type MapasCustosDetalhados = Record<CategoriaCustoDetalhado, Map<string, number>>;
 
 /**
@@ -166,7 +234,7 @@ export async function carregarMapaCustoDetalhado(
 }
 
 /**
- * Roda as 6 queries (uma por categoria) SEQUENCIALMENTE e devolve os 6 Maps
+ * Roda as 5 queries (uma por categoria) SEQUENCIALMENTE e devolve os 5 Maps
  * prontos.
  *
  * ⚠️ Promise.all NÃO foi usado de propósito, apesar de ter sido testado
@@ -181,14 +249,15 @@ export async function carregarMapaCustoDetalhado(
  * paralelo (6 conexões simultâneas abertas contra o Oracle reduziriam mais,
  * mas não valem a complexidade/custo extra pra um ganho que nem os 13%
  * medidos garantem de forma confiável — é comportamento interno não
- * documentado como contrato). ~3,2min sequencial já é desprezível dentro da
- * janela de sync (a cada 2h) — mesma decisão de simplicidade de valoriza.ts.
+ * documentado como contrato). Com Forplan/HoldBack removidos e Despesas
+ * Gerais adicionada (07/10/2026, migration 048), agora são 5 categorias —
+ * expectativa ~240s (~4min) sequencial, ainda desprezível dentro da janela
+ * de sync (a cada 2h) — mesma decisão de simplicidade de valoriza.ts.
  */
 export async function carregarMapasCustosDetalhados(conn: Connection): Promise<MapasCustosDetalhados> {
-  const categorias = Object.keys(CODIGOS_POR_CATEGORIA) as CategoriaCustoDetalhado[];
   const mapas: Partial<MapasCustosDetalhados> = {};
 
-  for (const categoria of categorias) {
+  for (const categoria of CATEGORIAS) {
     mapas[categoria] = await carregarMapaCustoDetalhado(conn, categoria);
   }
 

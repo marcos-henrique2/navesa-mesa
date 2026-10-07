@@ -1,7 +1,8 @@
 /**
- * FALLBACK MANUAL pras 6 categorias de custo de estoque sem fonte automática
- * confiável no Oracle (HoldBack, Acessórios, Comissões, ADM, Despesas
- * Gerais, Impostos — ver colunas-estoque.ts e migrations 046/047_investigacao_*).
+ * FALLBACK MANUAL pras categorias de custo de estoque sem fonte automática
+ * 100% confiável no Oracle (HoldBack, Acessórios, Comissões, Impostos,
+ * Despesas Gerais, ADM — ver colunas-estoque.ts e migrations 046, 047 e
+ * 048_despesas_gerais_automatico_tipo9).
  *
  * Prioridade INVERSA à do Vendas Matriz (`vendas-matriz/coletar-dados.ts`,
  * que prefere o upload manual por ser mais específico por venda): aqui o
@@ -9,10 +10,11 @@
  * e o MANUAL (upload do PDF "Custos de Veículos em Estoque" em /upload,
  * feito sob demanda pelo Marcos — pode estar desatualizado) só entra quando
  * o automático vier "sem dado":
- *   - categorias sempre-número (HoldBack/Acessórios/Comissões/Impostos):
- *     "sem dado" = zero (nunca null — fato conhecido ausente, ver VeiculoParsed).
- *   - categorias "não apurado" (ADM/Despesas Gerais): "sem dado" = null
- *     (nenhum sync/parser escreve valor nelas hoje).
+ *   - categorias sempre-número (HoldBack/Acessórios/Comissões/Impostos e,
+ *     desde 07/10/2026, Despesas Gerais — migration 048): "sem dado" = zero
+ *     (nunca null — fato conhecido ausente, ver VeiculoParsed).
+ *   - categoria "não apurado" (ADM): "sem dado" = null (nenhum sync/parser
+ *     escreve valor nela hoje).
  *
  * Quando NEM automático nem manual têm valor, devolve o próprio automático
  * (já carrega o sentinela certo pra cada categoria: 0 ou null) — não inventa

@@ -104,6 +104,7 @@ export function veiculo(over: Partial<VeiculoParsed> = {}): VeiculoParsed {
     custo_acessorios: 0,
     custo_forplan: 0,
     custo_comissoes: 0,
+    custo_despesas_gerais: 0,
     ...over,
   } as VeiculoParsed;
 }

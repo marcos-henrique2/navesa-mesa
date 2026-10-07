@@ -14,23 +14,32 @@
  *   batendo ao centavo contra o relatório nativo PDF em 3 veículos. Agora
  *   são lidas em mapear-veiculo.ts pelo mesmo mecanismo de custo_total
  *   (candidato de coluna via get()), não por este módulo. Este módulo (e os
- *   testes abaixo) cobre só as 4 categorias que CONTINUAM vindo de
+ *   testes abaixo) cobre as 4 categorias de LISTA FIXA que vêm de
  *   NBS.VEICULOS_CUSTOS_ESPECIFICOS filtrada por CODIGO_CUSTO (Impostos,
  *   Revisões, Acessórios, Comissões), somada por chassi_resumido+loja atual
  *   — mesmo padrão de valoriza.ts, rodando UMA QUERY POR CATEGORIA (em vez
  *   de um IN() gigante com todos os códigos juntos: testado com 73 códigos
  *   numa query só e precisou ser cancelado depois de 15+min contra a tabela,
- *   55,9 milhões de linhas, sem índice em CODIGO_CUSTO). Ver
- *   scripts/sync-nbs/custos-estoque-detalhado.ts e cabeçalhos das migrations
- *   040/043 pra detalhes de confiança por categoria e códigos candidatos
- *   descartados.
+ *   55,9 milhões de linhas, sem índice em CODIGO_CUSTO).
  *
- *   `custo_adm` e `custo_despesas_gerais` são OUTRAS 2 colunas da mesma
- *   migration (NULLABLE SEM DEFAULT) que ficam FORA deste módulo de
- *   propósito: nenhum CODIGO_CUSTO foi encontrado pra elas (hipótese: rateio
- *   calculado pelo motor do relatório NBS). Não devem ser escritas por código
- *   algum nesta rodada — NULL = "não apurado", diferente de "fato conhecido
- *   de custo zero" (0) das outras categorias.
+ *   ATUALIZADO 07/10/2026 (migration 048): Despesas Gerais ENTROU neste
+ *   módulo também, mas com filtro DIFERENTE — em vez de lista fixa de
+ *   CODIGO_CUSTO, é uma subquery por CLASSIFICAÇÃO (CODIGO_CUSTO cujo TIPO=9
+ *   em NBS.CUSTOS_ESPECIFICOS). Validado contra 429 veículos reais (2 PDFs,
+ *   Navesa+GWM): 99,3% de acerto exato (426/429) — ver
+ *   scripts/sync-nbs/custos-estoque-detalhado.ts e migration 048 pro achado
+ *   em aberto (2 dos 3 que não bateram erraram pelo mesmo R$500,00).
+ *
+ *   Ver scripts/sync-nbs/custos-estoque-detalhado.ts e cabeçalhos das
+ *   migrations 040/043/048 pra detalhes de confiança por categoria e
+ *   códigos candidatos descartados.
+ *
+ *   `custo_adm` é a ÚNICA coluna da mesma migration 040 (NULLABLE SEM
+ *   DEFAULT) que fica FORA deste módulo de propósito: nenhum CODIGO_CUSTO
+ *   nem TIPO foi encontrado pra ela (hipótese: rateio calculado pelo motor
+ *   do relatório NBS). Não deve ser escrita por código algum nesta rodada —
+ *   NULL = "não apurado", diferente de "fato conhecido de custo zero" (0)
+ *   das outras categorias (que agora incluem Despesas Gerais).
  */
 
 import { describe, it } from "node:test";
@@ -41,6 +50,7 @@ import {
   CODIGOS_CUSTO_ACESSORIOS,
   CODIGOS_CUSTO_COMISSOES,
   CODIGOS_POR_CATEGORIA,
+  TIPO_POR_CATEGORIA,
   sqlSelectCustosPorCategoria,
   construirMapaCustoDetalhado,
   buscarCustoDetalhado,
@@ -51,11 +61,25 @@ import { mapearVeiculo } from "../scripts/sync-nbs/mapear-veiculo";
 import { toRow } from "../src/lib/data/veiculos";
 import { veiculo } from "./_mocks";
 
-/** As 4 categorias que ainda vêm de NBS.VEICULOS_CUSTOS_ESPECIFICOS por CODIGO_CUSTO. */
-const CATEGORIAS: CategoriaCustoDetalhado[] = ["custo_impostos", "custo_revisoes", "custo_acessorios", "custo_comissoes"];
+/** As 5 categorias cobertas por este módulo (4 de lista fixa + 1 por TIPO). */
+const CATEGORIAS: CategoriaCustoDetalhado[] = [
+  "custo_impostos",
+  "custo_revisoes",
+  "custo_acessorios",
+  "custo_comissoes",
+  "custo_despesas_gerais",
+];
+
+/** Só as 4 categorias cujo filtro é lista fixa de CODIGO_CUSTO (CODIGOS_POR_CATEGORIA). */
+const CATEGORIAS_LISTA_FIXA: CategoriaCustoDetalhado[] = [
+  "custo_impostos",
+  "custo_revisoes",
+  "custo_acessorios",
+  "custo_comissoes",
+];
 
 describe("sqlSelectCustosPorCategoria — uma query por categoria, nunca um IN() combinado", () => {
-  it("monta SELECT ... GROUP BY CHASSI_RESUMIDO, COD_EMPRESA contra NBS.VEICULOS_CUSTOS_ESPECIFICOS", () => {
+  it("monta SELECT ... GROUP BY CHASSI_RESUMIDO, COD_EMPRESA contra NBS.VEICULOS_CUSTOS_ESPECIFICOS (todas as 5 categorias)", () => {
     for (const categoria of CATEGORIAS) {
       const sql = sqlSelectCustosPorCategoria(categoria);
       assert.match(sql, /FROM NBS\.VEICULOS_CUSTOS_ESPECIFICOS/);
@@ -89,8 +113,16 @@ describe("sqlSelectCustosPorCategoria — uma query por categoria, nunca um IN()
     assert.deepEqual([...CODIGOS_CUSTO_ACESSORIOS], [146, 424, 640]);
   });
 
-  it("CODIGOS_POR_CATEGORIA cobre exatamente as 4 categorias implementadas (não ADM/Despesas Gerais, não Forplan/HoldBack)", () => {
-    assert.deepEqual(Object.keys(CODIGOS_POR_CATEGORIA).sort(), [...CATEGORIAS].sort());
+  it("custo_despesas_gerais (migration 048) usa SUBQUERY por TIPO=9 em NBS.CUSTOS_ESPECIFICOS, NÃO uma lista fixa de CODIGO_CUSTO", () => {
+    const sql = sqlSelectCustosPorCategoria("custo_despesas_gerais");
+    assert.match(sql, /WHERE CODIGO_CUSTO IN \(SELECT CODIGO_CUSTO FROM NBS\.CUSTOS_ESPECIFICOS WHERE TIPO = 9\)/);
+    assert.equal(TIPO_POR_CATEGORIA.custo_despesas_gerais, 9);
+    // Não deve ter uma lista de códigos literal (diferente das outras 4) nem entrar em CODIGOS_POR_CATEGORIA.
+    assert.ok(!("custo_despesas_gerais" in CODIGOS_POR_CATEGORIA));
+  });
+
+  it("CODIGOS_POR_CATEGORIA cobre exatamente as 4 categorias de LISTA FIXA (Despesas Gerais usa TIPO, não entra aqui; nem ADM, Forplan/HoldBack)", () => {
+    assert.deepEqual(Object.keys(CODIGOS_POR_CATEGORIA).sort(), [...CATEGORIAS_LISTA_FIXA].sort());
   });
 
   it("CODIGOS_POR_CATEGORIA NÃO tem mais custo_forplan/custo_holdback (migration 043 — colunas diretas)", () => {
@@ -161,8 +193,8 @@ describe("buscarCustoDetalhado — regras gerais (mesmo contrato de buscarValori
   });
 });
 
-describe("mapearVeiculo — 4 categorias via mapasCustosDetalhados (CHASSI_RESUMIDO + LOJA_ATUAL da row)", () => {
-  it("row com CHASSI_RESUMIDO/LOJA_ATUAL presentes nos Maps -> todas as 4 categorias preenchidas", () => {
+describe("mapearVeiculo — 5 categorias via mapasCustosDetalhados (CHASSI_RESUMIDO + LOJA_ATUAL da row)", () => {
+  it("row com CHASSI_RESUMIDO/LOJA_ATUAL presentes nos Maps -> todas as 5 categorias preenchidas", () => {
     const mapasCustosDetalhados = Object.fromEntries(
       CATEGORIAS.map((categoria, i) => [
         categoria,
@@ -176,9 +208,10 @@ describe("mapearVeiculo — 4 categorias via mapasCustosDetalhados (CHASSI_RESUM
     assert.equal(v.custo_revisoes, 200);
     assert.equal(v.custo_acessorios, 300);
     assert.equal(v.custo_comissoes, 400);
+    assert.equal(v.custo_despesas_gerais, 500);
   });
 
-  it("row sem entrada correspondente nos Maps -> todas as 4 categorias 0 (não null)", () => {
+  it("row sem entrada correspondente nos Maps -> todas as 5 categorias 0 (não null)", () => {
     const mapasCustosDetalhados = Object.fromEntries(
       CATEGORIAS.map((categoria) => [
         categoria,
@@ -193,25 +226,20 @@ describe("mapearVeiculo — 4 categorias via mapasCustosDetalhados (CHASSI_RESUM
     }
   });
 
-  it("sem mapasCustosDetalhados nos lookups (não fornecido) -> todas as 4 categorias 0, não lança erro", () => {
+  it("sem mapasCustosDetalhados nos lookups (não fornecido) -> todas as 5 categorias 0, não lança erro", () => {
     const { veiculo: v } = mapearVeiculo({ CHASSI_RESUMIDO: "SCR3B78", LOJA_ATUAL: 2 });
     for (const categoria of CATEGORIAS) assert.equal(v[categoria], 0);
   });
 
-  it("nenhuma das 4 categorias é reportada em camposSemFonte (são campos computados, não colunas diretas)", () => {
+  it("nenhuma das 5 categorias é reportada em camposSemFonte (são campos computados, não colunas diretas)", () => {
     const { camposSemFonte } = mapearVeiculo({});
     for (const categoria of CATEGORIAS) assert.ok(!camposSemFonte.includes(categoria));
   });
 
-  it("mapearVeiculo NUNCA seta custo_adm nem custo_despesas_gerais (nem no retorno, nem em camposSemFonte)", () => {
+  it("mapearVeiculo NUNCA seta custo_adm (nem no retorno, nem em camposSemFonte) — única categoria ainda fora de escopo", () => {
     const { veiculo: v, camposSemFonte } = mapearVeiculo({ CHASSI_RESUMIDO: "SCR3B78", LOJA_ATUAL: 2 });
-    assert.ok(!("custo_adm" in v), "VeiculoParsed não deve ter campo custo_adm — fora de escopo, sem CODIGO_CUSTO mapeado");
-    assert.ok(
-      !("custo_despesas_gerais" in v),
-      "VeiculoParsed não deve ter campo custo_despesas_gerais — fora de escopo, sem CODIGO_CUSTO mapeado",
-    );
+    assert.ok(!("custo_adm" in v), "VeiculoParsed não deve ter campo custo_adm — fora de escopo, sem CODIGO_CUSTO/TIPO mapeado");
     assert.ok(!camposSemFonte.includes("custo_adm"));
-    assert.ok(!camposSemFonte.includes("custo_despesas_gerais"));
   });
 });
 
@@ -232,7 +260,7 @@ describe("mapearVeiculo — custo_forplan/custo_holdback via coluna DIRETA (migr
     assert.equal(v2.custo_holdback, 0);
   });
 
-  it("mapasCustosDetalhados não afeta mais custo_forplan/custo_holdback (só as 4 categorias via CODIGO_CUSTO)", () => {
+  it("mapasCustosDetalhados não afeta mais custo_forplan/custo_holdback (só as 5 categorias via CODIGO_CUSTO/TIPO)", () => {
     const mapasCustosDetalhados = {
       custo_forplan: construirMapaCustoDetalhado([{ chassiResumido: "SCR3B78", codEmpresa: 2, total: 99999 }]),
     } as unknown as Record<CategoriaCustoDetalhado, Map<string, number>>;
@@ -246,8 +274,8 @@ describe("mapearVeiculo — custo_forplan/custo_holdback via coluna DIRETA (migr
   });
 });
 
-describe("toRow (src/lib/data/veiculos.ts) — payload do upsert/insert nunca grava custo_adm/custo_despesas_gerais", () => {
-  it("payload inclui as 6 colunas de custo detalhado com o valor do VeiculoParsed (4 via CODIGO_CUSTO + 2 via coluna direta)", () => {
+describe("toRow (src/lib/data/veiculos.ts) — payload do upsert/insert nunca grava custo_adm", () => {
+  it("payload inclui as 7 colunas de custo detalhado com o valor do VeiculoParsed (4 via CODIGO_CUSTO lista fixa + 1 via TIPO + 2 via coluna direta)", () => {
     const v = veiculo({
       custo_impostos: 541,
       custo_revisoes: 230,
@@ -255,6 +283,7 @@ describe("toRow (src/lib/data/veiculos.ts) — payload do upsert/insert nunca gr
       custo_acessorios: 0,
       custo_forplan: 0,
       custo_comissoes: 0,
+      custo_despesas_gerais: 1988,
     });
     const row = toRow(v, 1);
     assert.equal(row.custo_impostos, 541);
@@ -263,18 +292,11 @@ describe("toRow (src/lib/data/veiculos.ts) — payload do upsert/insert nunca gr
     assert.equal(row.custo_acessorios, 0);
     assert.equal(row.custo_forplan, 0);
     assert.equal(row.custo_comissoes, 0);
+    assert.equal(row.custo_despesas_gerais, 1988);
   });
 
   it("payload NUNCA inclui a chave custo_adm (nem como 0, nem como qualquer valor) — fica NULL no banco", () => {
     const row = toRow(veiculo(), 1);
     assert.ok(!("custo_adm" in row), "toRow não deve incluir custo_adm no payload — coluna NULLABLE SEM DEFAULT");
-  });
-
-  it("payload NUNCA inclui a chave custo_despesas_gerais (nem como 0, nem como qualquer valor) — fica NULL no banco", () => {
-    const row = toRow(veiculo(), 1);
-    assert.ok(
-      !("custo_despesas_gerais" in row),
-      "toRow não deve incluir custo_despesas_gerais no payload — coluna NULLABLE SEM DEFAULT",
-    );
   });
 });
