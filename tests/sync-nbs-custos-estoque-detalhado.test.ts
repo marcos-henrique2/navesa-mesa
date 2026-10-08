@@ -46,7 +46,6 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   CODIGOS_CUSTO_IMPOSTOS,
-  CODIGOS_CUSTO_REVISOES,
   CODIGOS_CUSTO_ACESSORIOS,
   CODIGOS_CUSTO_COMISSOES,
   CODIGOS_POR_CATEGORIA,
@@ -61,7 +60,7 @@ import { mapearVeiculo } from "../scripts/sync-nbs/mapear-veiculo";
 import { toRow } from "../src/lib/data/veiculos";
 import { veiculo } from "./_mocks";
 
-/** As 5 categorias cobertas por este módulo (4 de lista fixa + 1 por TIPO). */
+/** As 5 categorias cobertas por este módulo (3 de lista fixa + 2 por TIPO). */
 const CATEGORIAS: CategoriaCustoDetalhado[] = [
   "custo_impostos",
   "custo_revisoes",
@@ -70,10 +69,9 @@ const CATEGORIAS: CategoriaCustoDetalhado[] = [
   "custo_despesas_gerais",
 ];
 
-/** Só as 4 categorias cujo filtro é lista fixa de CODIGO_CUSTO (CODIGOS_POR_CATEGORIA). */
+/** Só as 3 categorias cujo filtro é lista fixa de CODIGO_CUSTO (CODIGOS_POR_CATEGORIA). */
 const CATEGORIAS_LISTA_FIXA: CategoriaCustoDetalhado[] = [
   "custo_impostos",
-  "custo_revisoes",
   "custo_acessorios",
   "custo_comissoes",
 ];
@@ -103,10 +101,21 @@ describe("sqlSelectCustosPorCategoria — uma query por categoria, nunca um IN()
     assert.ok(!new RegExp(`\\b490\\b`).test(sql));
   });
 
-  it("custo_revisoes filtra os 33 códigos de confiança média da migration 040", () => {
-    assert.equal(CODIGOS_CUSTO_REVISOES.length, 33);
+  it("revisões usam classificação TIPO=7: inclui preparação de entrega e exclui custo de despesas gerais com nome revisão", () => {
     const sql = sqlSelectCustosPorCategoria("custo_revisoes");
-    for (const codigo of CODIGOS_CUSTO_REVISOES) assert.match(sql, new RegExp(`\\b${codigo}\\b`));
+    assert.match(sql, /WHERE CODIGO_CUSTO IN \(SELECT CODIGO_CUSTO FROM NBS\.CUSTOS_ESPECIFICOS WHERE TIPO = 7\)/);
+    assert.equal(TIPO_POR_CATEGORIA.custo_revisoes, 7);
+    assert.ok(!("custo_revisoes" in CODIGOS_POR_CATEGORIA));
+    // Casos reais do PDF 08/10/2026: SGN1B62 tem código546/TIPO7,
+    // Preparacao de entrega Oficina=358,82; RBV7G98 tem código250/TIPO9,
+    // Serviço de Revisão=230,00 em Desp.Gerais, com Revisões=0.
+    const lancamentos = [
+      { chassiResumido: "187547", codEmpresa: 2, codigo: 546, tipo: 7, total: 358.82 },
+      { chassiResumido: "163765", codEmpresa: 2, codigo: 250, tipo: 9, total: 230 },
+    ];
+    const mapa = construirMapaCustoDetalhado(lancamentos.filter(l => l.tipo === TIPO_POR_CATEGORIA.custo_revisoes));
+    assert.equal(buscarCustoDetalhado(mapa, "187547", 2), 358.82);
+    assert.equal(buscarCustoDetalhado(mapa, "163765", 2), 0);
   });
 
   it("custo_acessorios filtra 146, 424 e 640", () => {
@@ -121,7 +130,7 @@ describe("sqlSelectCustosPorCategoria — uma query por categoria, nunca um IN()
     assert.ok(!("custo_despesas_gerais" in CODIGOS_POR_CATEGORIA));
   });
 
-  it("CODIGOS_POR_CATEGORIA cobre exatamente as 4 categorias de LISTA FIXA (Despesas Gerais usa TIPO, não entra aqui; nem ADM, Forplan/HoldBack)", () => {
+  it("CODIGOS_POR_CATEGORIA cobre exatamente as 3 categorias de LISTA FIXA (Revisões e Despesas Gerais usam TIPO)", () => {
     assert.deepEqual(Object.keys(CODIGOS_POR_CATEGORIA).sort(), [...CATEGORIAS_LISTA_FIXA].sort());
   });
 

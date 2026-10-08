@@ -29,7 +29,7 @@ function resultado(cell: ExcelJS.Cell): unknown {
 
 /**
  * Acha a PRIMEIRA linha com este rótulo (coluna C) — aba MARGENS repete "Valor da
- * Venda"/"Qtde Faturados" em 3 blocos empilhados (TOTAL/SOMENTE ESTOQUE/OUTRAS LOJAS);
+ * Venda"/"Qtde Faturados" em 3 blocos lado a lado (TOTAL/SOMENTE ESTOQUE/OUTRAS LOJAS);
  * a 1ª ocorrência é sempre o bloco "VENDIDO TOTAL NAVESA AEROPORTO".
  */
 function acharLinhaPorLabel(ws: ExcelJS.Worksheet, label: string): ExcelJS.Row {
@@ -123,5 +123,37 @@ describe("gerar-workbook — sem consignados: abas de margem e contagem batem", 
     const ws4 = wb.getWorksheet(NOMES.aba4)!;
     const row = acharLinhaPorLabel(ws4, "Qtde Faturados");
     assert.equal(resultado(row.getCell(4)), 2);
+  });
+});
+
+describe("margens horizontais — referências independentes por bloco", () => {
+  it("ticket e percentuais usam a venda do próprio bloco nas três abas", async () => {
+    const wb = await gerarWorkbook([
+      linhaVendaMatriz({ valorVenda: 100000, lojista: false }),
+      linhaVendaMatriz({ valorVenda: 200000, lojista: true }),
+      linhaVendaMatriz({ valorVenda: 300000, lojista: true, lojaOrigemNome: "OUTRA LOJA", lojaOrigemCodEmpresa: 3 }),
+      linhaVendaMatriz({ valorVenda: 400000, lojista: false, lojaOrigemNome: "OUTRA LOJA", lojaOrigemCodEmpresa: 3 }),
+    ]);
+    assert.equal(wb.worksheets.length, 9);
+    const casos: Array<[string, string, string, number, number]> = [
+      [NOMES.aba4, "D", "E", 1000000, 4],
+      [NOMES.aba4, "H", "I", 300000, 2],
+      [NOMES.aba4, "L", "M", 700000, 2],
+      [NOMES.aba5, "D", "E", 300000, 1],
+      [NOMES.aba5, "H", "I", 200000, 1],
+      [NOMES.aba6, "D", "E", 100000, 1],
+      [NOMES.aba6, "H", "I", 400000, 1],
+    ];
+    for (const [nome, valor, percentual, venda, quantidade] of casos) {
+      const ws = wb.getWorksheet(nome)!;
+      assert.equal(resultado(ws.getCell(`${valor}3`)), venda);
+      assert.equal(resultado(ws.getCell(`${valor}4`)), quantidade);
+      assert.equal(ws.getCell(`${valor}5`).formula, `IFERROR(${valor}3/${valor}4,0)`);
+      assert.equal(resultado(ws.getCell(`${valor}5`)), quantidade ? venda / quantidade : 0);
+      assert.equal(ws.getCell(`${percentual}15`).formula, `IFERROR(${valor}15/$${valor}$3,"")`);
+      const margem = Number(resultado(ws.getCell(`${valor}15`)));
+      assert.equal(resultado(ws.getCell(`${percentual}15`)), venda ? margem / venda : "");
+      assert.equal(ws.getCell(`${valor}19`).value, null);
+    }
   });
 });

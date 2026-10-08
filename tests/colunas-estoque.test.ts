@@ -281,17 +281,17 @@ describe("colunas-estoque (catálogo)", () => {
     assert.equal(getColuna("custo_adm")!.confianca, "nao_apurado");
   });
 
-  it("custo_forplan NÃO tem indicador de confiança", () => {
-    assert.equal(getColuna("custo_forplan")!.confianca, undefined);
+  it("custo_forplan indica divergência do cálculo simulado do relatório", () => {
+    assert.equal(getColuna("custo_forplan")!.confianca, "diverge_relatorio");
   });
 
-  it("confiança 'diverge_relatorio' só em custo_impostos (migration 046: soma de CODIGO_CUSTO real, mas diverge do valor calculado do relatório nativo)", () => {
+  it("confiança 'diverge_relatorio' em Forplan e Impostos (migration 046: soma de CODIGO_CUSTO real, mas diverge do valor calculado do relatório nativo)", () => {
     assert.equal(getColuna("custo_impostos")!.confianca, "diverge_relatorio");
     const comDivergeRelatorio = COLUNAS_ESTOQUE.filter((c) => c.confianca === "diverge_relatorio").map((c) => c.key);
-    assert.deepEqual(comDivergeRelatorio, ["custo_impostos"]);
+    assert.deepEqual(comDivergeRelatorio, ["custo_forplan", "custo_impostos"]);
   });
 
-  it("nenhuma outra coluna tem indicador de confiança além das 8 esperadas", () => {
+  it("nenhuma outra coluna tem indicador de confiança além das 9 esperadas", () => {
     const comConfianca = COLUNAS_ESTOQUE.filter((c) => c.confianca != null).map((c) => c.key).sort();
     assert.deepEqual(
       comConfianca,
@@ -301,6 +301,7 @@ describe("colunas-estoque (catálogo)", () => {
         "custo_comissoes",
         "custo_despesas_gerais",
         "custo_detalhado_total",
+        "custo_forplan",
         "custo_holdback",
         "custo_impostos",
         "custo_revisoes",
@@ -313,7 +314,7 @@ describe("colunas-estoque (catálogo)", () => {
     assert.deepEqual(comParcial, ["custo_detalhado_total"]);
   });
 
-  it("fallbackManual marcado nas 7 categorias sem fonte automática confiável/que diverge do relatório nativo (migration 047 + decisões 06-07/10/2026 sobre Impostos/Revisões)", () => {
+  it("fallbackManual marcado nas 8 categorias sem fonte automática confiável/que diverge do relatório nativo (migration 047 + decisões 06-07/10/2026 sobre Impostos/Revisões)", () => {
     const comFallback = COLUNAS_ESTOQUE.filter((c) => c.fallbackManual === true).map((c) => c.key).sort();
     assert.deepEqual(
       comFallback,
@@ -322,13 +323,14 @@ describe("colunas-estoque (catálogo)", () => {
         "custo_adm",
         "custo_comissoes",
         "custo_despesas_gerais",
+        "custo_forplan",
         "custo_holdback",
         "custo_impostos",
         "custo_revisoes",
       ].sort(),
     );
-    // custo_detalhado_total e custo_forplan NÃO têm fallback manual.
-    for (const key of ["custo_detalhado_total", "custo_forplan"] as ColunaKey[]) {
+    // O total sem Forplan não usa uma coluna manual isolada.
+    for (const key of ["custo_detalhado_total"] as ColunaKey[]) {
       assert.equal(getColuna(key)!.fallbackManual, undefined, `${key} não deveria ter fallbackManual`);
     }
   });
@@ -539,5 +541,17 @@ describe("expand/collapse padrão dos grupos (sem busca)", () => {
   it("com defaults vazio, nenhum grupo abre sozinho", () => {
     const abertos = gruposAbertosPorDefault([]);
     assert.equal(abertos.size, 0);
+  });
+});
+
+describe("Forplan do relatório oficial de estoque", () => {
+  it("prioriza o cálculo simulado do PDF mesmo com valor final Oracle não-zero", () => {
+    const v = { ...veiculo({ custo_forplan: 10 }), custoEstoqueManual: custoEstoqueDetalhado({ forplan: 9667.36 }) };
+    assert.equal(getColuna("custo_forplan")!.getValor(v), 9667.36);
+  });
+  it("preserva zero oficial e usa automático somente sem PDF", () => {
+    const v = { ...veiculo({ custo_forplan: 200 }), custoEstoqueManual: custoEstoqueDetalhado({ forplan: 0 }) };
+    assert.equal(getColuna("custo_forplan")!.getValor(v), 0);
+    assert.equal(getColuna("custo_forplan")!.getValor(veiculo({ custo_forplan: 200 })), 200);
   });
 });

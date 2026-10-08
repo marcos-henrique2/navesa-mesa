@@ -13,6 +13,7 @@ import { renderAbaMargens, type CriterioMargens } from "./aba-margens";
 import { COL } from "./colunas";
 import { renderAbaMediaVendedor2025, renderAbaMediaVendedorAtual } from "./aba-media-vendedor";
 import { renderAbaPlayPlan } from "./aba-play-plan";
+import { aplicarApresentacaoWorkbook } from "@/lib/export/vendas-matriz/apresentacao";
 import { coletarVendasMatriz, type ColetarVendasMatrizResult } from "./coletar-dados";
 import { COR_BANNER_N1_BG, COR_PROPRIO_BG, COR_REPASSE_BG } from "./estilo";
 
@@ -205,6 +206,7 @@ export async function gerarVendasMatrizWorkbook(
   const ws9 = workbook.addWorksheet(nomes.aba9);
   renderAbaPlayPlan(ws9);
 
+  aplicarApresentacaoWorkbook(workbook);
   return workbookParaBlob(workbook);
 }
 

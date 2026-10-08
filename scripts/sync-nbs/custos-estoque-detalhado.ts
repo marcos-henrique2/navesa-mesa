@@ -1,6 +1,12 @@
 import type { Connection } from "oracledb";
 
 /**
+ * ATUALIZADO 08/10/2026: Revisões usam classificação CE.TIPO=7.
+ * Comparação readonly de 287 veículos com o PDF NBS confirmou 287/287
+ * ao centavo; a lista fixa anterior acertava somente 268/287.
+ * Despesas Gerais mantém CE.TIPO=9 (também 287/287 nesta amostra).
+ * Os comentários históricos abaixo descrevem investigações anteriores.
+ *
  * Custos de estoque detalhados (relatório nativo NBS "Custos de Veículos em
  * Estoque") — quebra o CUSTO_TOTAL_FINAL agregado em categorias individuais.
  *
@@ -60,6 +66,7 @@ export const CODIGOS_CUSTO_IMPOSTOS = [
   142, 143, 268, 363, 404, 409, 410, 413, 414, 420, 422, 423, 437, 490, 526, 572, 605, 623, 686, 690,
 ] as const;
 
+/** Lista histórica para auditoria; revisões são consultadas por TIPO=7 desde 08/10/2026. */
 export const CODIGOS_CUSTO_REVISOES = [
   154, 250, 269, 280, 300, 301, 302, 303, 547, 558, 559, 560, 561, 562, 563, 564, 565, 566, 567, 568,
   569, 570, 571, 573, 574, 575, 576, 577, 606, 629, 630, 631, 650,
@@ -92,26 +99,29 @@ export type CategoriaCustoDetalhado =
 
 /**
  * Categorias cujo filtro é lista fixa de CODIGO_CUSTO (`WHERE CODIGO_CUSTO IN
- * (...)`) — as 4 originais. Despesas Gerais NÃO entra aqui: ver
+ * (...)`) — Impostos, Acessórios e Comissões. Revisões e Despesas Gerais NÃO entram aqui: ver
  * CATEGORIAS_POR_CLASSIFICACAO abaixo.
  */
 export const CODIGOS_POR_CATEGORIA: Record<
-  Exclude<CategoriaCustoDetalhado, "custo_despesas_gerais">,
+  Exclude<CategoriaCustoDetalhado, "custo_despesas_gerais" | "custo_revisoes">,
   readonly number[]
 > = {
   custo_impostos: CODIGOS_CUSTO_IMPOSTOS,
-  custo_revisoes: CODIGOS_CUSTO_REVISOES,
   custo_acessorios: CODIGOS_CUSTO_ACESSORIOS,
   custo_comissoes: CODIGOS_CUSTO_COMISSOES,
 };
 
 /**
  * Categorias cujo filtro é por CLASSIFICAÇÃO (TIPO em NBS.CUSTOS_ESPECIFICOS)
- * em vez de lista fixa de CODIGO_CUSTO — hoje só Despesas Gerais (TIPO=9, ver
+ * em vez de lista fixa de CODIGO_CUSTO — Revisões (TIPO=7) e Despesas Gerais (TIPO=9, ver
  * migration 048). O valor de TIPO é resolvido via subquery direta no Oracle
  * (não trazemos os ~473 códigos pro JS).
  */
-export const TIPO_POR_CATEGORIA: Record<"custo_despesas_gerais", number> = {
+export const TIPO_POR_CATEGORIA: Record<"custo_despesas_gerais" | "custo_revisoes", number> = {
+  // CE.TIPO, não VCE.TIPO: 287/287 veículos do PDF de 08/10/2026
+  // conferidos ao centavo, incluindo 279 zeros. Código 546 (TIPO=7)
+  // faltava na lista antiga; código 250 (TIPO=9) entrava indevidamente.
+  custo_revisoes: 7,
   custo_despesas_gerais: 9,
 };
 
@@ -148,8 +158,8 @@ function sqlSelectPorTipo(tipo: number): string {
  * arquivo.
  */
 export function sqlSelectCustosPorCategoria(categoria: CategoriaCustoDetalhado): string {
-  if (categoria === "custo_despesas_gerais") {
-    return sqlSelectPorTipo(TIPO_POR_CATEGORIA.custo_despesas_gerais);
+  if (categoria === "custo_despesas_gerais" || categoria === "custo_revisoes") {
+    return sqlSelectPorTipo(TIPO_POR_CATEGORIA[categoria]);
   }
   return sqlSelectPorListaFixa(CODIGOS_POR_CATEGORIA[categoria]);
 }

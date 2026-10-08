@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { executarCustosVendidos, lerOpcoesCustos } from "./executar-custos-vendidos";
 import { abrirConexaoOracle, modoThinAtivo } from "./conexao-oracle";
 import { syncVeiculos } from "./sync-veiculos";
 import { syncVendas } from "./sync-vendas";
@@ -59,6 +60,7 @@ async function gravarSyncLog(fonte: "veiculos" | "vendas", linha: {
 }
 
 async function main() {
+  const opcoesCustos = lerOpcoesCustos(process.argv.slice(2));
   console.log("=== Sync NBS (Oracle) -> Supabase ===\n");
 
   const conn = await abrirConexaoOracle();
@@ -70,6 +72,10 @@ async function main() {
   let chassisEmEstoqueAtual: string[] = [];
 
   try {
+    if (opcoesCustos.somenteCustos) {
+      await executarCustosVendidos(conn, opcoesCustos);
+      return;
+    }
     // ─── VEÍCULOS ─────────────────────────────────────────────────────────
     console.log("--- VEÍCULOS ---");
     const inicioVeiculos = new Date();
@@ -206,6 +212,8 @@ async function main() {
         erro_mensagem: msg,
       });
     }
+
+    await executarCustosVendidos(conn, opcoesCustos);
 
     if (!supabaseDisponivel()) {
       console.log(

@@ -101,12 +101,12 @@ const TEXTO_CONFIANCA_BAIXA =
 const TEXTO_NAO_APURADO =
   "Não apurado: aparece como — no Excel (não é R$ 0,00) — ainda não existe fórmula de cálculo definida pra essa categoria, salvo quando o ícone de upload ao lado indica que veio do PDF subido manualmente.";
 const TEXTO_DIVERGE_RELATORIO =
-  "O valor automático (Oracle) é real (imposto efetivamente lançado na aquisição), mas é uma métrica DIFERENTE da que o relatório nativo NBS mostra na coluna de mesmo nome — aquele valor é calculado internamente pelo NBS e não está disponível pra nós, então o automático pode divergir dele mesmo vindo ≠ 0. Quando você sobe o PDF na tela Upload (ícone de upload ao lado), o valor do upload sempre prevalece sobre o automático — é o valor real do relatório nativo, já que vem do PDF dele.";
+  "O valor gravado no Oracle pode divergir do cálculo simulado que o relatório nativo NBS mostra nesta coluna — aquele valor é calculado internamente pelo NBS e não está disponível pra nós, então o automático pode divergir dele mesmo vindo ≠ 0. Quando você sobe o PDF na tela Upload (ícone de upload ao lado), o valor do upload sempre prevalece sobre o automático — é o valor real do relatório nativo, já que vem do PDF dele.";
 const TEXTO_CUSTO_DETALHADO_PARCIAL =
   "Esta soma inclui categorias com confiança baixa, ainda não apuradas ou que divergem do relatório nativo (Revisões, HoldBack, Acessórios, Comissões, ADM, Despesas Gerais, Impostos) — pode estar subestimada ou não bater com o relatório nativo. Use com cautela.";
 const TEXTO_FALLBACK_MANUAL =
   "Pode vir do upload manual: quando o valor automático (Oracle) vier zerado/não apurado, esta coluna usa o relatório \"Custos de Veículos em Estoque\" (PDF subido na tela Upload) como alternativa. Esse valor só atualiza quando alguém sobe o PDF de novo — pode estar desatualizado.";
-const TEXTO_FALLBACK_MANUAL_IMPOSTOS =
+const TEXTO_MANUAL_PRIORITARIO =
   "Pode vir do upload manual: diferente das outras colunas com este ícone, aqui o valor do upload (PDF subido na tela Upload) prevalece SEMPRE que existir — mesmo quando o automático (Oracle) também tiver valor ≠ 0 — porque o automático mede uma métrica diferente da do relatório nativo (ver ícone de confiança ao lado). Esse valor só atualiza quando alguém sobe o PDF de novo — pode estar desatualizado.";
 
 function todayISOLocal(): string {
@@ -148,13 +148,13 @@ function IconeConfianca({ confianca }: { confianca: ColunaEstoque["confianca"] }
 
 /**
  * Ícone extra (independente de `confianca`) avisando que a coluna pode cair
- * pro upload manual. `chave` seleciona o texto: Impostos tem prioridade
+ * pro upload manual. `chave` seleciona o texto: Impostos e Forplan têm prioridade
  * invertida (manual vence sempre que existir, não só quando automático = 0)
  * — ver `resolverCustoImpostosComPrioridadeManual`.
  */
 function IconeFallbackManual({ ativo, chave }: { ativo?: boolean; chave?: ColunaKey }) {
   if (!ativo) return null;
-  const texto = chave === "custo_impostos" ? TEXTO_FALLBACK_MANUAL_IMPOSTOS : TEXTO_FALLBACK_MANUAL;
+  const texto = (chave === "custo_impostos" || chave === "custo_forplan") ? TEXTO_MANUAL_PRIORITARIO : TEXTO_FALLBACK_MANUAL;
   return (
     <Tooltip content={texto} ariaLabel={texto} side="top">
       <UploadCloud size={13} className="text-blue-600 dark:text-blue-400" aria-hidden="true" />

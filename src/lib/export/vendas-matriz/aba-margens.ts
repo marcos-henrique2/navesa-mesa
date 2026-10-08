@@ -1,6 +1,6 @@
 /**
  * VENDAS USADOS MATRIZ — renderer das abas 4 (MARGENS), 5 (MARGENS VENDAS LOJISTAS) e 6
- * (MARGENS VENDAS CLIENTES). Cada aba desenha uma LISTA de blocos empilhados (um banner
+ * (MARGENS VENDAS CLIENTES). Cada aba desenha uma LISTA de blocos lado a lado (um banner
  * colorido + o mesmo layout de métricas por bloco), não um bloco único.
  *
  * Toda métrica é SUM/AVERAGE/COUNTA (sem filtro) ou SUMIFS/AVERAGEIFS/COUNTIFS (com um ou
@@ -15,20 +15,18 @@
  */
 
 import type ExcelJS from "exceljs";
-import type { LinhaVendaMatriz } from "./tipos";
-import { calcularDerivadosLinha } from "./tipos";
+import type { LinhaVendaMatriz } from "@/lib/export/vendas-matriz/tipos";
+import { calcularDerivadosLinha } from "@/lib/export/vendas-matriz/tipos";
 import {
   COL, DATA_START_ROW, FMT_MONEY, FMT_PERCENT, FMT_INT, colLetter,
   rangeEntreAbas, escaparAspasFormula,
-} from "./colunas";
+} from "@/lib/export/vendas-matriz/colunas";
 import {
   FONT_DADO, FONT_BANNER_N1, FONT_BANNER_N2, ALTURA_BANNER_N1, ALTURA_BANNER_N2, MARCADOR_N2,
   aplicarBordaBloco, comVerticalMiddle, condFormatNegativo,
-} from "./estilo";
+} from "@/lib/export/vendas-matriz/estilo";
 
 const LABEL_COL = COL.C_LOJA_ORIGEM;
-const VALOR_COL = COL.D_DESCRICAO;
-const PCT_COL = COL.E_COR;
 
 /** Um par (coluna, critério) pra SUMIFS/COUNTIFS/AVERAGEIFS contra a aba fonte. */
 export type CriterioMargens = { col: number; criterio: string };
@@ -52,7 +50,7 @@ export type AbaMargensOpts = {
   nomeAbaFonte: string;
   /** Total de linhas de dados na aba fonte — define o range fixo usado por TODOS os blocos. */
   totalLinhasFonte: number;
-  /** Blocos desenhados em sequência, um embaixo do outro. */
+  /** Blocos desenhados lado a lado, separados por uma coluna. */
   blocos: BlocoMargensOpts[];
 };
 
@@ -79,36 +77,37 @@ type CfContador = { proxima: number };
 export function renderAbaMargens(ws: ExcelJS.Worksheet, opts: AbaMargensOpts): void {
   const { nomeAbaFonte, totalLinhasFonte, blocos } = opts;
 
-  ws.getColumn(LABEL_COL).width = 30;
-  ws.getColumn(LABEL_COL).font = FONT_DADO;
-  ws.getColumn(VALOR_COL).width = 16;
-  ws.getColumn(VALOR_COL).font = FONT_DADO;
-  ws.getColumn(PCT_COL).width = 10;
-  ws.getColumn(PCT_COL).font = FONT_DADO;
-
   const cf: CfContador = { proxima: 1 };
-  let r = 1;
-  for (const bloco of blocos) {
-    r = renderBloco(ws, r, nomeAbaFonte, totalLinhasFonte, bloco, cf);
-  }
+  blocos.forEach((bloco, index) => {
+    const labelCol = LABEL_COL + index * 4;
+    [30, 16, 10].forEach((width, offset) => {
+      ws.getColumn(labelCol + offset).width = width;
+      ws.getColumn(labelCol + offset).font = FONT_DADO;
+    });
+    if (index < blocos.length - 1) ws.getColumn(labelCol + 3).width = 3;
+    renderBloco(ws, 1, labelCol, nomeAbaFonte, totalLinhasFonte, bloco, cf);
+  });
 }
 
 function renderBloco(
   ws: ExcelJS.Worksheet,
   rowInicial: number,
+  labelCol: number,
   nomeAbaFonte: string,
   totalLinhasFonte: number,
   bloco: BlocoMargensOpts,
   cf: CfContador,
 ): number {
+  const valorCol = labelCol + 1;
+  const pctCol = labelCol + 2;
   let r = rowInicial;
   const linhaBanner = r;
   const ultimaLinhaFonte = Math.max(DATA_START_ROW, DATA_START_ROW + totalLinhasFonte - 1);
 
-  ws.mergeCells(r, LABEL_COL, r, PCT_COL);
+  ws.mergeCells(r, labelCol, r, pctCol);
   const rowTitulo = ws.getRow(r);
   rowTitulo.height = bloco.nivel === 1 ? ALTURA_BANNER_N1 : ALTURA_BANNER_N2;
-  const titleCell = rowTitulo.getCell(LABEL_COL);
+  const titleCell = rowTitulo.getCell(labelCol);
   titleCell.value = bloco.nivel === 2 ? `${MARCADOR_N2}${bloco.titulo}` : bloco.titulo;
   const fonteBase = bloco.nivel === 1 ? FONT_BANNER_N1 : FONT_BANNER_N2;
   titleCell.font = bloco.corFg ? { ...fonteBase, color: { argb: bloco.corFg } } : fonteBase;
@@ -139,17 +138,17 @@ function renderBloco(
     opts2?: { comPct?: boolean; pctResult?: number | ""; pctFmt?: string },
   ): number => {
     const row = ws.getRow(r);
-    const labelCell = row.getCell(LABEL_COL);
+    const labelCell = row.getCell(labelCol);
     labelCell.value = label;
     comVerticalMiddle(labelCell);
-    const valorCell = row.getCell(VALOR_COL);
+    const valorCell = row.getCell(valorCol);
     valorCell.value = { formula, result };
     valorCell.numFmt = fmt;
     valorCell.alignment = { horizontal: "right", vertical: "middle" };
     if (opts2?.comPct) {
-      const pctCell = row.getCell(PCT_COL);
+      const pctCell = row.getCell(pctCol);
       pctCell.value = {
-        formula: `IFERROR(${valorCell.address}/$D$${rValorVenda},"")`,
+        formula: `IFERROR(${valorCell.address}/$${colLetter(valorCol)}$${rValorVenda},"")`,
         result: opts2.pctResult ?? "",
       };
       pctCell.numFmt = opts2.pctFmt ?? FMT_PERCENT;
@@ -186,11 +185,11 @@ function renderBloco(
   // diferente de linha sem venda registrada).
   {
     const row = ws.getRow(r);
-    const labelCell = row.getCell(LABEL_COL);
+    const labelCell = row.getCell(labelCol);
     labelCell.value = "Ticket Médio";
     comVerticalMiddle(labelCell);
-    const cell = row.getCell(VALOR_COL);
-    cell.value = { formula: `IFERROR(D${rValorVenda}/D${rValorVenda + 1},0)`, result: qtdeFaturados > 0 ? valorVendaTotal / qtdeFaturados : 0 };
+    const cell = row.getCell(valorCol);
+    cell.value = { formula: `IFERROR(${colLetter(valorCol)}${rValorVenda}/${colLetter(valorCol)}${rValorVenda + 1},0)`, result: qtdeFaturados > 0 ? valorVendaTotal / qtdeFaturados : 0 };
     cell.numFmt = FMT_MONEY;
     cell.alignment = { horizontal: "right", vertical: "middle" };
     r++;
@@ -210,15 +209,15 @@ function renderBloco(
 
   // Vermelho de negativo em Lucro Bruto/Margem Líquida (valor + %) — conditional
   // formatting de verdade, não seção `[Red]` do numFmt (ver nota em estilo.ts).
-  const letraValor = colLetter(VALOR_COL);
-  const letraPct = colLetter(PCT_COL);
+  const letraValor = colLetter(valorCol);
+  const letraPct = colLetter(pctCol);
   condFormatNegativo(ws, `${letraValor}${rLucroBruto}`, cf.proxima++);
   condFormatNegativo(ws, `${letraPct}${rLucroBruto}`, cf.proxima++);
   condFormatNegativo(ws, `${letraValor}${rMargemLiquida}`, cf.proxima++);
   condFormatNegativo(ws, `${letraPct}${rMargemLiquida}`, cf.proxima++);
 
   // Borda grossa navy contornando o bloco por fora (banner + linhas de métrica).
-  aplicarBordaBloco(ws, linhaBanner, r - 1, LABEL_COL, PCT_COL);
+  aplicarBordaBloco(ws, linhaBanner, r - 1, labelCol, pctCol);
 
-  return r + 2; // 2 linhas em branco antes do próximo bloco
+  return r;
 }

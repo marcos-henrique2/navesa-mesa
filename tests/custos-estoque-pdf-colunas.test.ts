@@ -110,3 +110,17 @@ describe("extrairDado — mapeamento de ADM/Impostos/Comissões por faixa de X",
     assert.equal(Math.round(somaParcelas * 100) / 100, 2461.1);
   });
 });
+
+describe("lucro bruto pequeno alinhado à direita no PDF oficial", () => {
+  it("preserva R$ 7,11 em x=726,28 e mantém bônus na coluna seguinte", () => {
+    const itens = montarLinhaDeDado().map((item) => item.x === 710
+      ? { ...item, str: "7,11", x: 726.28 }
+      : item.x === 765 ? { ...item, str: "50,00" } : item);
+    const warnings: string[] = [];
+    const dado = extrairDado(agruparLinhas(itens)[0], warnings);
+    assert.ok(dado);
+    assert.equal(dado.lucro_bruto, 7.11);
+    assert.equal(dado.bonus, 50);
+    assert.deepEqual(warnings, []);
+  });
+});

@@ -214,11 +214,10 @@ export const COLUNAS_ESTOQUE: readonly ColunaEstoque[] = [
   // Acessórios/Comissões): automático sempre-número prevalece quando ≠0,
   // cai pro manual (upload do PDF) quando automático vier 0.
   { key: "custo_revisoes", label: "Revisões", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_revisoes, v.custoEstoqueManual?.revisoes) },
-  // custo_forplan: confiança baixa REMOVIDA em 05/10/2026 — fonte corrigida
-  // pra NBS.VEICULOS.CUSTO_FORPLAN_FINAL (coluna direta, não CODIGO_CUSTO),
-  // confirmada batendo ao centavo contra o relatório nativo PDF em 3
-  // veículos. Ver migration 043 e custos-estoque-detalhado.ts.
-  { key: "custo_forplan", label: "Forplan", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", getValor: (v) => v.custo_forplan },
+  // PDF oficial de 08/10/2026: CUSTO_FORPLAN_FINAL diverge em 276/287 carros.
+  // O relatório simula o Forplan vigente; o valor final gravado não o reproduz.
+  // Priorizar o PDF quando disponível, inclusive zero; sem ele, indicar divergência.
+  { key: "custo_forplan", label: "Forplan", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "diverge_relatorio", fallbackManual: true, getValor: (v) => v.custoEstoqueManual?.forplan ?? v.custo_forplan },
   // custo_holdback: fonte corrigida em 05/10/2026 pra NBS.VEICULOS.HOLD_BACK_FINAL
   // (coluna direta, mesmo padrão de custo_forplan) — mas sem exemplo
   // não-zero no PDF de hoje pra confirmar valor (os ~283 veículos testados

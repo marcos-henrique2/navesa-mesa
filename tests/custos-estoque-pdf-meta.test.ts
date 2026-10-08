@@ -135,3 +135,12 @@ describe("extrairMeta — extração de cod_empresa a partir de 'Filial:'", () =
     assert.equal(meta.cod_empresa, 2);
   });
 });
+
+it("Filial Todos mantém abrangência e código não apurado sem inventar loja", () => {
+  const itens = montarItensHeader({ filialLabelY: 700, filialValorY: 700, filialTexto: ["Todos", "Data de Impressão:", "08/10/2026"] });
+  const warnings: string[] = [];
+  const meta = extrairMeta(agruparLinhas(itens), "custos estoque.pdf", warnings);
+  assert.equal(meta.filial, "Todos");
+  assert.equal(meta.cod_empresa, null);
+  assert.deepEqual(warnings, []);
+});

@@ -185,7 +185,7 @@ const FAIXAS: { key: ColKey; xMin: number; xMax: number }[] = [
   { key: "desp_gerais",      xMin: 530, xMax: 580 },
   { key: "custo_total",      xMin: 600, xMax: 630 },
   { key: "tabela",           xMin: 645, xMax: 670 },
-  { key: "lucro_bruto",      xMin: 695, xMax: 725 },
+  { key: "lucro_bruto",      xMin: 695, xMax: 735 },
   { key: "bonus",            xMin: 755, xMax: 775 },
   { key: "ganhos_indiretos", xMin: 780, xMax: 815 },
 ];
@@ -359,7 +359,7 @@ export function extrairMeta(
 
   // "Filial: 02 NAVESA FORD AEROPORTO Data de Impressão: 03/06/2026"
   let filial = "";
-  const mF = textoPagina.match(/Filial:\s*(\d+\s+[^]+?)(?:\s+Data de Impress|$)/i);
+  const mF = textoPagina.match(/Filial:\s*((?:\d+\s+|Todos\b)[^]*?)(?:\s+Data de Impress|$)/i);
   if (mF) filial = mF[1].trim();
 
   let dataImpressao: Date | null = null;
@@ -376,9 +376,9 @@ export function extrairMeta(
   let cod_empresa: number | null = null;
   if (codMatch) {
     cod_empresa = Number.parseInt(codMatch[1], 10);
-  } else if (filial) {
+  } else if (filial && !/^Todos$/i.test(filial)) {
     warnings.push(`cod_empresa não apurado: não consegui extrair o código numérico do texto da filial ("${filial}").`);
-  } else {
+  } else if (!filial) {
     warnings.push(`cod_empresa não apurado: não encontrei "Filial:" no cabeçalho do PDF (Empresa="${empresa || "?"}").`);
   }
 
