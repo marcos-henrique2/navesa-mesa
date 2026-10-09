@@ -1,3 +1,5 @@
+import { normalizarCorNbs } from "@/lib/cores-nbs";
+export { MAPA_COR } from "@/lib/cores-nbs";
 import type { VeiculoParsed } from "../../src/lib/parsers/nbs-xlsx";
 import { parseAnoModelo } from "../../src/lib/parsers/ano-modelo";
 import { buscarValoriza } from "./valoriza";
@@ -41,7 +43,7 @@ const CANDIDATOS: Record<keyof VeiculoParsed, string[]> = {
   // COR_EXTERNA em NBS.VEICULOS é só um código numérico (ex: 888, 151662) —
   // não existe tabela de lookup "nome da cor" acessível no schema Oracle
   // usado por esse sync (confirmado via ALL_TABLES LIKE '%COR%', vazio). O
-  // valor bruto é traduzido pra nome legível via MAPA_COR em mapearVeiculo()
+  // valor bruto é traduzido pra nome legível via normalizarCorNbs em mapearVeiculo()
   // abaixo, mesmo padrão de COD_PATIO/MAPA_PATIO.
   cor_externa: ["COR_EXTERNA"],
   combustivel: ["COD_COMBUSTIVEL", "COMBUSTIVEL"],
@@ -175,62 +177,6 @@ export const MAPA_PATIO: Record<string, string> = {
   "153": "GWM GOIÂNIA",
 };
 
-/**
- * Mapa estático COR_EXTERNA (Oracle) -> nome legível da cor.
- *
- * Origem: NBS.VEICULOS só tem COR_EXTERNA (código numérico); não existe
- * tabela de lookup "nome da cor" acessível no schema Oracle usado por esse
- * sync (usuário `comissao`) — confirmado investigando ALL_TABLES (LIKE
- * '%COR%' devolveu vazio).
- *
- * Esse mapa foi construído cruzando um export manual real do estoque (coluna
- * "Cor Externa", com o nome em texto) com os COR_EXTERNA correspondentes no
- * Oracle pros MESMOS veículos, por placa. Bateu 1.089 de 1.132 veículos
- * (96% de match) — 30 códigos distintos no estoque atual — validado em
- * 30/09/2026.
- *
- * Códigos diferentes que mapeiam pro mesmo nome (ex: 14575/1549197195/
- * 8246719 -> "CINZA") são tons específicos de fabricante que o relatório
- * manual já simplificava pro nome genérico — mesma perda de detalhe da fonte
- * original, não é erro nosso.
- *
- * Se aparecer um COR_EXTERNA que não está aqui (cor nova, por exemplo),
- * mapearVeiculo() cai pro fallback "Cor <código> (não mapeada)" e
- * mapearVeiculos() reporta em `warnings` — adicione a entrada aqui quando
- * isso acontecer.
- */
-export const MAPA_COR: Record<string, string> = {
-  "888": "BRANCO",
-  "151662": "PRETO",
-  "80": "PRATA",
-  "14575": "CINZA",
-  "1549197195": "CINZA",
-  "8246719": "CINZA",
-  "89": "AZUL",
-  "84": "VERMELHO",
-  "66988": "VERDE",
-  "151672": "MARROM",
-  "79": "PRETO C/ TETO PRATA",
-  "85": "CINZA STING GRAY",
-  "94": "DOURADO",
-  "67008": "LARANJA",
-  "81": "BRANCO POLAR",
-  "310": "PRATA",
-  "90": "AMARELO",
-  "21": "BRANCO ÁRTICO",
-  "103": "BRANCA CRISTAL",
-  "1549197207": "PRATA",
-  "87": "BEGE",
-  "88": "PRETA",
-  "8246846": "PRETO",
-  "8246813": "PRATA",
-  "8246731": "AMARELO",
-  "1549493807": "CINZA",
-  "8246635": "PRATA",
-  "8246714": "PRETO",
-  "1549543543": "PRETO",
-  "151663": "PRATA",
-};
 
 export type LookupsVeiculo = {
   /** COD_MODELO (ou equivalente) -> descrição do modelo, via NBS.PRODUTOS_MODELOS (se existir). */
@@ -353,14 +299,14 @@ export function mapearVeiculo(row: Record<string, unknown>, lookups: LookupsVeic
     }
   }
 
-  // cor_externa = nome legível traduzido de COR_EXTERNA via MAPA_COR (ver
-  // comentário acima). Código desconhecido não trava o sync: cai pro
+  // cor_externa = nome legível traduzido de COR_EXTERNA via normalizarCorNbs (mapa compartilhado
+  // em src/lib/cores-nbs.ts). Código desconhecido não trava o sync: cai pro
   // fallback "Cor <código> (não mapeada)" e é reportado em `warnings` de
   // mapearVeiculos(), pra não mostrar código cru silenciosamente pra sempre.
   const codigoCor = asStr(get("cor_externa"));
   let cor_externa: string | null = null;
   if (codigoCor) {
-    const nomeCor = MAPA_COR[codigoCor];
+    const nomeCor = normalizarCorNbs(codigoCor);
     if (nomeCor) {
       cor_externa = nomeCor;
     } else {

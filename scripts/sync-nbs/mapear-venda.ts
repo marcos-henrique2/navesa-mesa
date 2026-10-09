@@ -1,3 +1,4 @@
+import { normalizarCorNbs } from "@/lib/cores-nbs";
 import type { VendaParsed } from "../../src/lib/parsers/nbs-vendas-xlsx";
 import { parseAnoModelo } from "../../src/lib/parsers/ano-modelo";
 import { buscarValoriza } from "./valoriza";
@@ -192,6 +193,10 @@ export function mapearVenda(row: Record<string, unknown>, lookups: LookupsVenda 
   const lojaAtual = asInt(row["LOJA_ATUAL"]);
   const valoriza = buscarValoriza(lookups.mapaValoriza ?? new Map(), chassiResumido, lojaAtual);
 
+  const codigoCor = asStr(get("cor_externa"));
+  const nomeCor = normalizarCorNbs(codigoCor);
+  if (codigoCor && !nomeCor) camposSemFonte.push(`cor_nao_mapeada:${codigoCor}`);
+
   const venda: VendaParsed = {
     chassi: asStr(get("chassi")) ?? "",
     placa: asStr(get("placa")) ?? "",
@@ -199,7 +204,7 @@ export function mapearVenda(row: Record<string, unknown>, lookups: LookupsVenda 
     marca: asStr(get("marca")),
     ano_fabricacao,
     ano_modelo,
-    cor_externa: asStr(get("cor_externa"))?.toUpperCase() ?? null,
+    cor_externa: nomeCor ?? (codigoCor ? `Cor ${codigoCor} (não mapeada)` : null),
     renavam: asStr(get("renavam")),
     km: asInt(get("km")),
 
@@ -254,11 +259,16 @@ export function mapearVendas(
 ): { vendas: VendaParsed[]; warnings: string[] } {
   const vendas: VendaParsed[] = [];
   const camposSemFonteVistos = new Set<string>();
+  const coresNaoMapeadas = new Map<string, number>();
 
   for (const row of rows) {
     const { venda, camposSemFonte } = mapearVenda(row, lookups);
     vendas.push(venda);
-    for (const c of camposSemFonte) camposSemFonteVistos.add(c);
+    for (const c of camposSemFonte) {
+      const codigo = c.match(/^cor_nao_mapeada:(.+)$/)?.[1];
+      if (codigo) coresNaoMapeadas.set(codigo, (coresNaoMapeadas.get(codigo) ?? 0) + 1);
+      else camposSemFonteVistos.add(c);
+    }
   }
 
   const warnings =
@@ -268,6 +278,10 @@ export function mapearVendas(
             `Confira o nome real da coluna e ajuste CANDIDATOS em mapear-venda.ts.`,
         ]
       : [];
+
+  for (const [codigo, qtd] of coresNaoMapeadas) {
+    warnings.push(`Código de cor ${codigo} não mapeado (${qtd} venda(s)) — adicionar em MAPA_COR.`);
+  }
 
   return { vendas, warnings };
 }

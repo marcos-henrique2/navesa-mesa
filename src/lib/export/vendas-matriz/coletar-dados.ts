@@ -13,6 +13,7 @@
  * tem mais horário de verão desde 2019 — o offset de Brasília é fixo).
  */
 
+import { normalizarCorNbs } from "@/lib/cores-nbs";
 import type { VendaParsed } from "@/lib/parsers/nbs-vendas-xlsx";
 import type { CustoDetalhado } from "@/lib/parsers/nbs-custos-xls";
 import { listVendas } from "@/lib/data/vendas";
@@ -77,7 +78,7 @@ export function mapearLinha(
     lojaOrigemCodEmpresa: codEmpresaOrigem,
 
     descricaoVeiculo: v.modelo,
-    cor: v.cor_externa,
+    cor: normalizarCorNbs(v.cor_externa) ?? (v.cor_externa?.trim() ? "Não informada" : null),
     marca: v.marca,
     anoModelo: formatarAnoModelo(v),
 

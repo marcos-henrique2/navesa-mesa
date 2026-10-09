@@ -11,6 +11,9 @@
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import ExcelJS from "exceljs";
+import { renderAbaDetalhe } from "@/lib/export/vendas-matriz/aba-detalhe";
+import { COL, DATA_START_ROW } from "@/lib/export/vendas-matriz/colunas";
 import { mapearLinha } from "@/lib/export/vendas-matriz/coletar-dados";
 import type { CustoDetalhado } from "@/lib/parsers/nbs-custos-xls";
 import { venda, custo } from "./_mocks";
@@ -115,5 +118,37 @@ describe("mapearLinha — coluna W (Impostos): SEM fonte automática (fora de es
   it("sem upload manual: fica null (não existe v.impostos pra fallback)", () => {
     const linha = mapear({ placa: "ABC1D23" }, new Map());
     assert.equal(linha.impostos, null);
+  });
+});
+
+
+describe("mapearLinha — coluna E (Cor)", () => {
+  it("corrige os códigos já persistidos sem precisar sincronizar novamente", () => {
+    for (const [codigo, nome] of [["8246719", "CINZA"], ["14575", "CINZA"], ["1549197195", "CINZA"], ["888", "BRANCO"], ["151662", "PRETO"]]) {
+      assert.equal(mapear({ cor_externa: codigo }, new Map()).cor, nome);
+    }
+  });
+
+  it("preserva texto e ausências e sinaliza código desconhecido sem inventar cor", () => {
+    assert.equal(mapear({ cor_externa: "BRANCO POLAR" }, new Map()).cor, "BRANCO POLAR");
+    assert.equal(mapear({ cor_externa: null }, new Map()).cor, null);
+    assert.equal(mapear({ cor_externa: "  " }, new Map()).cor, null);
+    assert.equal(mapear({ cor_externa: "1549275505" }, new Map()).cor, "Não informada");
+    assert.equal(mapear({ cor_externa: "Cor 1549275505 (não mapeada)" }, new Map()).cor, "Não informada");
+    assert.equal(mapear({ cor_externa: "Cor 888 (não mapeada)" }, new Map()).cor, "BRANCO");
+  });
+
+  it("grava nomes na coluna COR das duas abas de detalhe no XLSX", async () => {
+    const linhas = ["8246719", "888", "151662", "1549275505"].map((cor_externa) => mapear({ cor_externa }, new Map()));
+    const wb = new ExcelJS.Workbook();
+    for (const titulo of ["VENDAS USADOS OUTUBRO MATRIZ", "VENDAS OUTUBRO SÓ ESTOQUE"]) {
+      renderAbaDetalhe(wb.addWorksheet(titulo), titulo, linhas);
+    }
+    const reaberto = new ExcelJS.Workbook();
+    await reaberto.xlsx.load(await wb.xlsx.writeBuffer());
+    for (const ws of reaberto.worksheets) {
+      assert.equal(ws.getCell(2, COL.E_COR).value, "COR");
+      assert.deepEqual(linhas.map((_, index) => ws.getCell(DATA_START_ROW + index, COL.E_COR).value), ["CINZA", "BRANCO", "PRETO", "Não informada"]);
+    }
   });
 });
