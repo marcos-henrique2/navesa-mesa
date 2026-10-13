@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import ExcelJS from "exceljs";
 import { renderAbaDetalhe } from "@/lib/export/vendas-matriz/aba-detalhe";
 import { COL, DATA_START_ROW } from "@/lib/export/vendas-matriz/colunas";
-import { mapearLinha } from "@/lib/export/vendas-matriz/coletar-dados";
+import { mapearLinha, contarComprasPorClienteNoAno } from "@/lib/export/vendas-matriz/coletar-dados";
 import type { CustoDetalhado } from "@/lib/parsers/nbs-custos-xls";
 import { venda, custo } from "./_mocks";
 
@@ -24,13 +24,18 @@ const SEM_LOOKUPS = {
   nomePorCodEmpresa: new Map<number, string>(),
 };
 
-function mapear(v: Parameters<typeof venda>[0], custosPorPlaca: Map<string, CustoDetalhado>) {
+function mapear(
+  v: Parameters<typeof venda>[0],
+  custosPorPlaca: Map<string, CustoDetalhado>,
+  comprasPorCliente: Map<string, number> = new Map(),
+) {
   return mapearLinha(
     venda(v),
     custosPorPlaca,
     SEM_LOOKUPS.fipePorChassi,
     SEM_LOOKUPS.lojaOrigemPorChassi,
     SEM_LOOKUPS.nomePorCodEmpresa,
+    comprasPorCliente,
   );
 }
 
@@ -121,6 +126,123 @@ describe("mapearLinha — coluna W (Impostos): SEM fonte automática (fora de es
   });
 });
 
+
+describe("mapearLinha — coluna AF (Lojista): contagem de compras no ano, não mais PJ/PF", () => {
+  it("cliente_codigo com mais de 2 compras no ano -> lojista: true", () => {
+    const linha = mapear({ cliente_codigo: "11122233344" }, new Map(), new Map([["11122233344", 3]]));
+    assert.equal(linha.lojista, true);
+  });
+
+  it("cliente_codigo com 2 compras no ano -> lojista: false (limite é 'mais de 2')", () => {
+    const linha = mapear({ cliente_codigo: "11122233344" }, new Map(), new Map([["11122233344", 2]]));
+    assert.equal(linha.lojista, false);
+  });
+
+  it("cliente_codigo com 1 compra no ano -> lojista: false", () => {
+    const linha = mapear({ cliente_codigo: "11122233344" }, new Map(), new Map([["11122233344", 1]]));
+    assert.equal(linha.lojista, false);
+  });
+
+  it("cliente_codigo ausente -> lojista: null (mesmo fallback de antes)", () => {
+    const linha = mapear({ cliente_codigo: null }, new Map(), new Map([["11122233344", 10]]));
+    assert.equal(linha.lojista, null);
+  });
+
+  it("cliente_codigo vazio -> lojista: null", () => {
+    const linha = mapear({ cliente_codigo: "" }, new Map(), new Map([["11122233344", 10]]));
+    assert.equal(linha.lojista, null);
+  });
+
+  it("PJ com só 1 compra no ano agora é NÃO lojista (antes, cliente_tipo='PJ' bastava pra ser SIM)", () => {
+    const linha = mapear(
+      { cliente_codigo: "11222333000144", cliente_tipo: "PJ" },
+      new Map(),
+      new Map([["11222333000144", 1]]),
+    );
+    assert.equal(linha.lojista, false);
+  });
+});
+
+describe("contarComprasPorClienteNoAno — agrupa por cliente_codigo normalizado, em todas as lojas, só no ano do relatório", () => {
+  it("cliente com 3+ compras no ano -> todas as linhas desse cliente ficam lojista: true", () => {
+    const vendasCliente = [
+      venda({ cliente_codigo: "123.456.789-00", data_venda: new Date("2026-02-01T12:00:00-03:00"), cod_empresa: 2 }),
+      venda({ cliente_codigo: "12345678900", data_venda: new Date("2026-05-01T12:00:00-03:00"), cod_empresa: 3 }), // outra loja do grupo
+      venda({ cliente_codigo: "12345678900", data_venda: new Date("2026-09-01T12:00:00-03:00"), cod_empresa: 2 }),
+    ];
+    const comprasPorCliente = contarComprasPorClienteNoAno(vendasCliente, 2026);
+    for (const v of vendasCliente) {
+      const linha = mapearLinha(
+        v,
+        new Map(),
+        SEM_LOOKUPS.fipePorChassi,
+        SEM_LOOKUPS.lojaOrigemPorChassi,
+        SEM_LOOKUPS.nomePorCodEmpresa,
+        comprasPorCliente,
+      );
+      assert.equal(linha.lojista, true);
+    }
+  });
+
+  it("cliente com 1-2 compras no ano -> lojista: false pra todas as linhas", () => {
+    const vendasCliente = [
+      venda({ cliente_codigo: "98765432100", data_venda: new Date("2026-03-01T12:00:00-03:00") }),
+      venda({ cliente_codigo: "98765432100", data_venda: new Date("2026-07-01T12:00:00-03:00") }),
+    ];
+    const comprasPorCliente = contarComprasPorClienteNoAno(vendasCliente, 2026);
+    for (const v of vendasCliente) {
+      const linha = mapearLinha(
+        v,
+        new Map(),
+        SEM_LOOKUPS.fipePorChassi,
+        SEM_LOOKUPS.lojaOrigemPorChassi,
+        SEM_LOOKUPS.nomePorCodEmpresa,
+        comprasPorCliente,
+      );
+      assert.equal(linha.lojista, false);
+    }
+  });
+
+  it("cliente_codigo ausente -> lojista: null, e não entra na contagem de ninguém", () => {
+    const vendasSemCodigo = [
+      venda({ cliente_codigo: null, data_venda: new Date("2026-04-01T12:00:00-03:00") }),
+      venda({ cliente_codigo: null, data_venda: new Date("2026-04-15T12:00:00-03:00") }),
+    ];
+    const comprasPorCliente = contarComprasPorClienteNoAno(vendasSemCodigo, 2026);
+    assert.equal(comprasPorCliente.size, 0);
+    const linha = mapearLinha(
+      vendasSemCodigo[0],
+      new Map(),
+      SEM_LOOKUPS.fipePorChassi,
+      SEM_LOOKUPS.lojaOrigemPorChassi,
+      SEM_LOOKUPS.nomePorCodEmpresa,
+      comprasPorCliente,
+    );
+    assert.equal(linha.lojista, null);
+  });
+
+  it("ignora compras de outro ano na contagem", () => {
+    const vendas = [
+      venda({ cliente_codigo: "11122233344", data_venda: new Date("2025-12-01T12:00:00-03:00") }),
+      venda({ cliente_codigo: "11122233344", data_venda: new Date("2026-01-01T12:00:00-03:00") }),
+      venda({ cliente_codigo: "11122233344", data_venda: new Date("2026-02-01T12:00:00-03:00") }),
+    ];
+    const comprasPorCliente = contarComprasPorClienteNoAno(vendas, 2026);
+    assert.equal(comprasPorCliente.get("11122233344"), 2); // só as 2 de 2026
+  });
+
+  it("virada do ano em Brasília: 23h30 de 31/12 conta no ano anterior, 00h30 de 01/01 conta no ano seguinte (imune ao timezone do processo)", () => {
+    const vendaFimDeAno = venda({ cliente_codigo: "11122233344", data_venda: new Date("2025-12-31T23:30:00-03:00") });
+    const vendaInicioDeAno = venda({ cliente_codigo: "11122233344", data_venda: new Date("2026-01-01T00:30:00-03:00") });
+    const vendas = [vendaFimDeAno, vendaInicioDeAno];
+
+    const contagem2025 = contarComprasPorClienteNoAno(vendas, 2025);
+    assert.equal(contagem2025.get("11122233344"), 1); // só a de 23h30 de 31/12 conta em 2025
+
+    const contagem2026 = contarComprasPorClienteNoAno(vendas, 2026);
+    assert.equal(contagem2026.get("11122233344"), 1); // só a de 00h30 de 01/01 conta em 2026
+  });
+});
 
 describe("mapearLinha — coluna E (Cor)", () => {
   it("corrige os códigos já persistidos sem precisar sincronizar novamente", () => {

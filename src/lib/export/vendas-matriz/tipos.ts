@@ -56,7 +56,11 @@ export type LinhaVendaMatriz = {
   /** `null` = não sabemos (nunca tratar como "não financiou"). */
   financiou: boolean | null;
   clienteNome: string;
-  /** `true` = PJ ("SIM"), `false` = PF ("NÃO"), `null` = tipo desconhecido (célula vazia). */
+  /**
+   * `true` = SIM (mais de 2 compras no ano, mesmo CPF/CNPJ, em qualquer loja do grupo),
+   * `false` = NÃO (2 ou menos), `null` = `cliente_codigo` ausente/vazio (célula vazia).
+   * Ver `contarComprasPorClienteNoAno()` em coletar-dados.ts.
+   */
   lojista: boolean | null;
   vendedorNome: string | null;
 

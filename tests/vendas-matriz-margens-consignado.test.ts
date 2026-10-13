@@ -134,7 +134,7 @@ describe("margens horizontais — referências independentes por bloco", () => {
       linhaVendaMatriz({ valorVenda: 300000, lojista: true, lojaOrigemNome: "OUTRA LOJA", lojaOrigemCodEmpresa: 3 }),
       linhaVendaMatriz({ valorVenda: 400000, lojista: false, lojaOrigemNome: "OUTRA LOJA", lojaOrigemCodEmpresa: 3 }),
     ]);
-    assert.equal(wb.worksheets.length, 9);
+    assert.equal(wb.worksheets.length, 8);
     const casos: Array<[string, string, string, number, number]> = [
       [NOMES.aba4, "D", "E", 1000000, 4],
       [NOMES.aba4, "H", "I", 300000, 2],
