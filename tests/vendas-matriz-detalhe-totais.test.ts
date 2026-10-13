@@ -27,6 +27,10 @@ function renderizar(linhas: LinhaVendaMatriz[]): ExcelJS.Worksheet {
 function resultado(ws: ExcelJS.Worksheet, row: number, col: number): unknown {
   const v = ws.getCell(row, col).value;
   if (v && typeof v === "object" && "result" in v) return (v as { result: unknown }).result;
+  // exceljs tem uma peculiaridade: ao ler de volta um valor de fórmula cujo `result`
+  // escrito era falsy (""/0), a chave `result` some do objeto (fica só `{formula}`) —
+  // nesse caso o resultado cacheado era "" (branco) ou 0, não um valor ausente de verdade.
+  if (v && typeof v === "object" && "formula" in v) return "";
   return v;
 }
 
@@ -51,6 +55,79 @@ describe("aba-detalhe — coluna AH (CONSIGNADO)", () => {
   it("header da coluna AH é CONSIGNADO", () => {
     const ws = renderizar([linhaVendaMatriz()]);
     assert.equal(ws.getCell(2, COL.AH_CONSIGNADO).value, "CONSIGNADO");
+  });
+});
+
+describe("aba-detalhe — fórmulas das colunas calculadas SEMPRE presentes (linha individual)", () => {
+  function formula(ws: ExcelJS.Worksheet, row: number, col: number): string {
+    const v = ws.getCell(row, col).value;
+    if (!v || typeof v !== "object" || !("formula" in v)) {
+      throw new Error(`Célula (${row},${col}) não tem fórmula — valor: ${JSON.stringify(v)}`);
+    }
+    return (v as { formula: string }).formula;
+  }
+
+  it("valorFipe null (caso real: FIPE não vem automática pra quase nenhum carro) -> coluna P ainda recebe fórmula, com result \"\"", () => {
+    const ws = renderizar([linhaVendaMatriz({ valorFipe: null })]);
+    const r = DATA_START_ROW;
+    assert.equal(formula(ws, r, COL.P_PCT_FIPE), `IFERROR(O${r}/N${r},"")`);
+    assert.equal(resultado(ws, r, COL.P_PCT_FIPE), "");
+  });
+
+  it("nfEntrada null (sem NF de entrada ainda) -> M, Q, R, AA, AB todas recebem fórmula, com result \"\"", () => {
+    const ws = renderizar([linhaVendaMatriz({ nfEntrada: null })]);
+    const r = DATA_START_ROW;
+    assert.equal(formula(ws, r, COL.M_CUSTO_REAL), `IF(K${r}="","",K${r}-L${r})`);
+    assert.equal(resultado(ws, r, COL.M_CUSTO_REAL), "");
+    assert.equal(formula(ws, r, COL.Q_LUCRO_BRUTO), `IF(OR(M${r}="",O${r}=""),"",O${r}-M${r})`);
+    assert.equal(resultado(ws, r, COL.Q_LUCRO_BRUTO), "");
+    assert.equal(formula(ws, r, COL.R_PCT_LUCRO_BRUTO), `IFERROR(Q${r}/O${r},"")`);
+    assert.equal(resultado(ws, r, COL.R_PCT_LUCRO_BRUTO), "");
+    assert.equal(formula(ws, r, COL.AA_MARGEM_LIQUIDA), `IF(Q${r}="","",Q${r}-S${r}-U${r}-W${r}-Y${r}-AI${r})`);
+    assert.equal(resultado(ws, r, COL.AA_MARGEM_LIQUIDA), "");
+    assert.equal(formula(ws, r, COL.AB_PCT_MARGEM), `IFERROR(AA${r}/O${r},"")`);
+    assert.equal(resultado(ws, r, COL.AB_PCT_MARGEM), "");
+  });
+
+  it("despesaGeral/forplan/impostos/comissao/adm null (custo não apurado) -> T/V/X/Z/AJ recebem fórmula com guard de célula vazia, result \"\"", () => {
+    const ws = renderizar([
+      linhaVendaMatriz({ despesaGeral: null, forplan: null, impostos: null, comissao: null, adm: null }),
+    ]);
+    const r = DATA_START_ROW;
+    assert.equal(formula(ws, r, COL.T_PCT_DESPESA_GERAL), `IF(S${r}="","",IFERROR(S${r}/O${r},""))`);
+    assert.equal(resultado(ws, r, COL.T_PCT_DESPESA_GERAL), "");
+    assert.equal(formula(ws, r, COL.V_PCT_FPLAN), `IF(U${r}="","",IFERROR(U${r}/O${r},""))`);
+    assert.equal(resultado(ws, r, COL.V_PCT_FPLAN), "");
+    assert.equal(formula(ws, r, COL.X_PCT_IMPOSTOS), `IF(W${r}="","",IFERROR(W${r}/O${r},""))`);
+    assert.equal(resultado(ws, r, COL.X_PCT_IMPOSTOS), "");
+    assert.equal(formula(ws, r, COL.Z_PCT_COMISSAO), `IF(Y${r}="","",IFERROR(Y${r}/O${r},""))`);
+    assert.equal(resultado(ws, r, COL.Z_PCT_COMISSAO), "");
+    assert.equal(formula(ws, r, COL.AJ_PCT_ADM), `IF(AI${r}="","",IFERROR(AI${r}/O${r},""))`);
+    assert.equal(resultado(ws, r, COL.AJ_PCT_ADM), "");
+  });
+
+  it("valorVenda null (venda sem valor informado ainda, com custoReal presente) -> Q e AA recebem fórmula, com result \"\" (NUNCA um número negativo tratando a venda vazia como zero — regressão achada em review, 13/10/2026)", () => {
+    const ws = renderizar([
+      linhaVendaMatriz({ nfEntrada: 80000, valoriza: 1000, valorVenda: null }),
+    ]);
+    const r = DATA_START_ROW;
+    assert.equal(formula(ws, r, COL.Q_LUCRO_BRUTO), `IF(OR(M${r}="",O${r}=""),"",O${r}-M${r})`);
+    assert.equal(resultado(ws, r, COL.Q_LUCRO_BRUTO), "");
+    assert.equal(formula(ws, r, COL.AA_MARGEM_LIQUIDA), `IF(Q${r}="","",Q${r}-S${r}-U${r}-W${r}-Y${r}-AI${r})`);
+    assert.equal(resultado(ws, r, COL.AA_MARGEM_LIQUIDA), "");
+  });
+
+  it("linha totalmente preenchida -> fórmulas calculam o result esperado (sanity check de que o guard não quebra o caminho feliz)", () => {
+    const ws = renderizar([
+      linhaVendaMatriz({
+        nfEntrada: 80000, valoriza: 1000, valorFipe: 100000, valorVenda: 95000,
+        despesaGeral: 1000, forplan: 2000, impostos: 500, comissao: 400, adm: 0,
+      }),
+    ]);
+    const r = DATA_START_ROW;
+    assert.equal(resultado(ws, r, COL.M_CUSTO_REAL), 79000); // 80000-1000
+    assert.equal(resultado(ws, r, COL.Q_LUCRO_BRUTO), 16000); // 95000-79000
+    assert.equal(resultado(ws, r, COL.AA_MARGEM_LIQUIDA), 12100); // 16000-1000-2000-500-400-0
   });
 });
 
@@ -143,6 +220,20 @@ describe("aba-detalhe — item 3: bloco de totais/médias do rodapé", () => {
     assert.equal(resultado(ws, rValores, COL.O_VALOR_VENDA), 230000);
     // LUCRO BRUTO: linha1=10000; linha2=20000; linha consignada=55000-(50000-0)=5000; soma=35000
     assert.equal(resultado(ws, rValores, COL.Q_LUCRO_BRUTO), 35000);
+  });
+
+  it("linha com valorVenda null (custoReal presente) não entra na soma de LUCRO BRUTO nem MARGEM LÍQUIDA do rodapé (mesmo comportamento de antes da regressão)", () => {
+    const linhasComVendaNula = [
+      ...linhas,
+      linhaVendaMatriz({ nfEntrada: 60000, valoriza: 0, valorVenda: null, despesaGeral: 0, forplan: 0, impostos: 0, comissao: 0 }),
+    ];
+    const ws = renderizar(linhasComVendaNula);
+    const rValores = linhaHeaderTotais(ws) + 1;
+    // Igual ao teste "LUCRO BRUTO = SOMA..." acima: linha1=10000; linha2=20000; soma=30000
+    // — a linha nova (valorVenda null) NÃO entra, pois calcularDerivadosLinha().lucroBruto
+    // é null pra ela.
+    assert.equal(resultado(ws, rValores, COL.Q_LUCRO_BRUTO), 30000);
+    assert.equal(resultado(ws, rValores, COL.AA_MARGEM_LIQUIDA), 23150);
   });
 
   it("sem linhas de dados -> não quebra, bloco de totais não é renderizado", () => {
