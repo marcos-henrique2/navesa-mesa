@@ -18,6 +18,16 @@ import {
 } from "./estilo";
 import { somaCampo, mediaCampo } from "./aba-margens";
 
+/** Replica, em JS, a fórmula `=IF(raw="","",IFERROR(raw/venda,""))` usada nas colunas
+ * de % de custo (T/V/X/Z/AJ): `raw` vazio ("custo não apurado") NUNCA é tratado como
+ * zero — fica em branco; `venda` vazia/zero/negativa gera erro de divisão, capturado
+ * pelo IFERROR. */
+function pctSobreVenda(raw: number | null, valorVenda: number | null): number | "" {
+  if (raw == null) return "";
+  if (valorVenda == null || valorVenda <= 0) return "";
+  return raw / valorVenda;
+}
+
 /**
  * `titulo` não é mais renderizado na planilha (não existe banner de título, igual
  * ao arquivo original) — mantido no parâmetro só por compatibilidade de assinatura
@@ -57,7 +67,7 @@ export function renderAbaDetalhe(ws: ExcelJS.Worksheet, titulo: string, linhas: 
   let r = DATA_START_ROW;
   for (const [idx, l] of linhas.entries()) {
     const row = ws.getRow(r);
-    const { custoReal, lucroBruto, margemLiquida } = calcularDerivadosLinha(l);
+    const { custoReal } = calcularDerivadosLinha(l);
 
     row.getCell(COL.B_SEQ).value = idx + 1;
     row.getCell(COL.B_SEQ).numFmt = FMT_INT;
@@ -80,96 +90,112 @@ export function renderAbaDetalhe(ws: ExcelJS.Worksheet, titulo: string, linhas: 
     if (l.nfEntrada != null) row.getCell(COL.K_NF_ENTRADA).value = l.nfEntrada;
     if (l.valoriza != null) row.getCell(COL.L_VALORIZA).value = l.valoriza;
 
-    // M — Custo Real (FÓRMULA = K - L). Só escreve quando há NF de entrada (evita
-    // exibir -L como "custo real" — mesma guarda de analise-navesa.ts).
-    if (custoReal != null) {
-      row.getCell(COL.M_CUSTO_REAL).value = { formula: `K${r}-L${r}`, result: custoReal };
-    }
+    // M — Custo Real (FÓRMULA = IF(K="","",K-L)) — guarda nativa do Excel pra célula K
+    // (NF entrada) vazia, evitando exibir -L como "custo real" quando não há entrada de
+    // verdade (mesma guarda de analise-navesa.ts). A fórmula agora é SEMPRE escrita: quando
+    // o Marcos digitar K manualmente na célula, recalcula sozinha.
+    row.getCell(COL.M_CUSTO_REAL).value = {
+      formula: `IF(K${r}="","",K${r}-L${r})`,
+      result: custoReal ?? "",
+    };
 
     if (l.valorFipe != null) row.getCell(COL.N_VALOR_FIPE).value = l.valorFipe;
     if (l.valorVenda != null) row.getCell(COL.O_VALOR_VENDA).value = l.valorVenda;
 
-    // P — %FIPE (FÓRMULA = IFERROR(O/N,""))
-    if (l.valorFipe != null && l.valorVenda != null) {
-      row.getCell(COL.P_PCT_FIPE).value = {
-        formula: `IFERROR(O${r}/N${r},"")`,
-        result: l.valorFipe > 0 ? l.valorVenda / l.valorFipe : "",
-      };
-    }
+    // P — %FIPE (FÓRMULA = IFERROR(O/N,"")) — sempre escrita; o IFERROR já cobre N
+    // (FIPE) vazia/zero.
+    const pctFipeResult = l.valorFipe != null && l.valorFipe > 0 ? (l.valorVenda ?? 0) / l.valorFipe : "";
+    row.getCell(COL.P_PCT_FIPE).value = { formula: `IFERROR(O${r}/N${r},"")`, result: pctFipeResult };
 
-    // Q — Lucro Bruto (FÓRMULA = O - M)
-    if (lucroBruto != null) {
-      row.getCell(COL.Q_LUCRO_BRUTO).value = { formula: `O${r}-M${r}`, result: lucroBruto };
-    }
+    // Q — Lucro Bruto (FÓRMULA = IF(OR(M="",O=""),"",O-M)) — guarda em M (Custo Real) E
+    // em O (Valor Venda): os dois precisam estar presentes antes de calcular um número.
+    // Sem a guarda em O, Excel trata célula vazia como 0 numérico na subtração e gera um
+    // "lucro bruto" negativo FALSO quando a venda ainda não foi informada (regressão
+    // achada pelo Quinn em review, 13/10/2026) — mesma regra de nulidade usada em
+    // calcularDerivadosLinha().lucroBruto.
+    const lucroBrutoResult = custoReal != null && l.valorVenda != null ? l.valorVenda - custoReal : "";
+    row.getCell(COL.Q_LUCRO_BRUTO).value = {
+      formula: `IF(OR(M${r}="",O${r}=""),"",O${r}-M${r})`,
+      result: lucroBrutoResult,
+    };
 
-    // R — % (FÓRMULA = IFERROR(Q/O,""))
-    if (lucroBruto != null && l.valorVenda != null && l.valorVenda > 0) {
-      row.getCell(COL.R_PCT_LUCRO_BRUTO).value = {
-        formula: `IFERROR(Q${r}/O${r},"")`,
-        result: lucroBruto / l.valorVenda,
-      };
-    }
+    // R — % (FÓRMULA = IFERROR(Q/O,"")) — IFERROR cobre tanto Q="" (erro de tipo) quanto
+    // O vazio/zero.
+    const pctLucroBrutoResult =
+      lucroBrutoResult !== "" && l.valorVenda != null && l.valorVenda > 0
+        ? (lucroBrutoResult as number) / l.valorVenda
+        : "";
+    row.getCell(COL.R_PCT_LUCRO_BRUTO).value = {
+      formula: `IFERROR(Q${r}/O${r},"")`,
+      result: pctLucroBrutoResult,
+    };
 
     if (l.despesaGeral != null) row.getCell(COL.S_DESPESA_GERAL).value = l.despesaGeral;
-    // T — % (FÓRMULA = IFERROR(S/O,""))
-    if (l.despesaGeral != null && l.valorVenda != null && l.valorVenda > 0) {
-      row.getCell(COL.T_PCT_DESPESA_GERAL).value = {
-        formula: `IFERROR(S${r}/O${r},"")`,
-        result: l.despesaGeral / l.valorVenda,
-      };
-    }
+    // T — % (FÓRMULA = IF(S="","",IFERROR(S/O,""))) — guarda em S: despesa geral "não
+    // apurada" é sem dado, não zero; sem essa guarda o Excel trataria S vazio como 0 e
+    // mostraria "0%" em vez de ficar em branco.
+    row.getCell(COL.T_PCT_DESPESA_GERAL).value = {
+      formula: `IF(S${r}="","",IFERROR(S${r}/O${r},""))`,
+      result: pctSobreVenda(l.despesaGeral, l.valorVenda),
+    };
 
     if (l.forplan != null) row.getCell(COL.U_FPLAN).value = l.forplan;
-    // V — % (FÓRMULA = IFERROR(U/O,""))
-    if (l.forplan != null && l.valorVenda != null && l.valorVenda > 0) {
-      row.getCell(COL.V_PCT_FPLAN).value = {
-        formula: `IFERROR(U${r}/O${r},"")`,
-        result: l.forplan / l.valorVenda,
-      };
-    }
+    // V — % (mesmo padrão de T, com U/F Plan)
+    row.getCell(COL.V_PCT_FPLAN).value = {
+      formula: `IF(U${r}="","",IFERROR(U${r}/O${r},""))`,
+      result: pctSobreVenda(l.forplan, l.valorVenda),
+    };
 
     if (l.impostos != null) row.getCell(COL.W_IMPOSTOS).value = l.impostos;
-    // X — % (FÓRMULA = IFERROR(W/O,""))
-    if (l.impostos != null && l.valorVenda != null && l.valorVenda > 0) {
-      row.getCell(COL.X_PCT_IMPOSTOS).value = {
-        formula: `IFERROR(W${r}/O${r},"")`,
-        result: l.impostos / l.valorVenda,
-      };
-    }
+    // X — % (mesmo padrão de T, com W/Impostos)
+    row.getCell(COL.X_PCT_IMPOSTOS).value = {
+      formula: `IF(W${r}="","",IFERROR(W${r}/O${r},""))`,
+      result: pctSobreVenda(l.impostos, l.valorVenda),
+    };
 
     if (l.comissao != null) row.getCell(COL.Y_COMISSAO).value = l.comissao;
-    // Z — % (FÓRMULA = IFERROR(Y/O,""))
-    if (l.comissao != null && l.valorVenda != null && l.valorVenda > 0) {
-      row.getCell(COL.Z_PCT_COMISSAO).value = {
-        formula: `IFERROR(Y${r}/O${r},"")`,
-        result: l.comissao / l.valorVenda,
-      };
-    }
+    // Z — % (mesmo padrão de T, com Y/Comissão)
+    row.getCell(COL.Z_PCT_COMISSAO).value = {
+      formula: `IF(Y${r}="","",IFERROR(Y${r}/O${r},""))`,
+      result: pctSobreVenda(l.comissao, l.valorVenda),
+    };
 
     if (l.adm != null) row.getCell(COL.AI_ADM).value = l.adm;
-    // AJ — % (FÓRMULA = IFERROR(AI/O,""))
-    if (l.adm != null && l.valorVenda != null && l.valorVenda > 0) {
-      row.getCell(COL.AJ_PCT_ADM).value = {
-        formula: `IFERROR(AI${r}/O${r},"")`,
-        result: l.adm / l.valorVenda,
-      };
-    }
+    // AJ — % (mesmo padrão de T, com AI/ADM)
+    row.getCell(COL.AJ_PCT_ADM).value = {
+      formula: `IF(AI${r}="","",IFERROR(AI${r}/O${r},""))`,
+      result: pctSobreVenda(l.adm, l.valorVenda),
+    };
 
-    // AA — Margem Líquida (FÓRMULA = Q - S - U - W - Y - AI)
-    if (margemLiquida != null) {
-      row.getCell(COL.AA_MARGEM_LIQUIDA).value = {
-        formula: `Q${r}-S${r}-U${r}-W${r}-Y${r}-AI${r}`,
-        result: margemLiquida,
-      };
-    }
+    // AA — Margem Líquida (FÓRMULA = IF(Q="","",Q-S-U-W-Y-AI)) — guarda em Q cobre
+    // indiretamente M e O: Q já fica "" quando M (custo real) OU O (venda) estiverem
+    // vazios (ver guarda de Q acima), então checar só "Q vazio" aqui é suficiente — não
+    // precisa repetir a guarda de O. Os demais custos (S/U/W/Y/AI) ficam 0 naturalmente
+    // quando vazios (margem é redução cumulativa — "não apurado ainda" = não desconta
+    // esse custo, mesmo `?? 0` já usado em calcularDerivadosLinha).
+    const margemLiquidaResult =
+      lucroBrutoResult !== ""
+        ? (lucroBrutoResult as number) -
+          (l.despesaGeral ?? 0) -
+          (l.forplan ?? 0) -
+          (l.impostos ?? 0) -
+          (l.comissao ?? 0) -
+          (l.adm ?? 0)
+        : "";
+    row.getCell(COL.AA_MARGEM_LIQUIDA).value = {
+      formula: `IF(Q${r}="","",Q${r}-S${r}-U${r}-W${r}-Y${r}-AI${r})`,
+      result: margemLiquidaResult,
+    };
 
-    // AB — %Margem (FÓRMULA = IFERROR(AA/O,""))
-    if (margemLiquida != null && l.valorVenda != null && l.valorVenda > 0) {
-      row.getCell(COL.AB_PCT_MARGEM).value = {
-        formula: `IFERROR(AA${r}/O${r},"")`,
-        result: margemLiquida / l.valorVenda,
-      };
-    }
+    // AB — %Margem (FÓRMULA = IFERROR(AA/O,"")) — sempre escrita, mesmo padrão de P/R.
+    const pctMargemResult =
+      margemLiquidaResult !== "" && l.valorVenda != null && l.valorVenda > 0
+        ? (margemLiquidaResult as number) / l.valorVenda
+        : "";
+    row.getCell(COL.AB_PCT_MARGEM).value = {
+      formula: `IFERROR(AA${r}/O${r},"")`,
+      result: pctMargemResult,
+    };
 
     row.getCell(COL.AC_USADO_TROCA).value = l.usadoNaTroca ? "SIM" : "NÃO";
     row.getCell(COL.AD_FINANCIOU).value = l.financiou === true ? "SIM" : l.financiou === false ? "NÃO" : "";
