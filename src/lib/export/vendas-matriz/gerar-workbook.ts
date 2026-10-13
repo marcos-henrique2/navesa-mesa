@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * VENDAS USADOS MATRIZ — orquestrador final: monta as 9 abas (ExcelJS) e devolve o Blob
+ * VENDAS USADOS MATRIZ — orquestrador final: monta as 8 abas (ExcelJS) e devolve o Blob
  * pronto pra download, seguindo o mesmo padrão de `analise-navesa.ts`.
  */
 
@@ -11,7 +11,7 @@ import { renderAbaDetalhe } from "./aba-detalhe";
 import { renderAbaResumo } from "./aba-resumo";
 import { renderAbaMargens, type CriterioMargens } from "./aba-margens";
 import { COL } from "./colunas";
-import { renderAbaMediaVendedor2025, renderAbaMediaVendedorAtual } from "./aba-media-vendedor";
+import { renderAbaMediaVendedorAtual } from "./aba-media-vendedor";
 import { renderAbaPlayPlan } from "./aba-play-plan";
 import { aplicarApresentacaoWorkbook } from "@/lib/export/vendas-matriz/apresentacao";
 import { coletarVendasMatriz, type ColetarVendasMatrizResult } from "./coletar-dados";
@@ -196,9 +196,6 @@ export async function gerarVendasMatrizWorkbook(
       },
     ],
   });
-
-  const ws7 = workbook.addWorksheet(nomes.aba7);
-  renderAbaMediaVendedor2025(ws7);
 
   const ws8 = workbook.addWorksheet(nomes.aba8);
   renderAbaMediaVendedorAtual(ws8, dados.anoAtual, dados.mesAtualIndex, dados.vendasAnoAtual);

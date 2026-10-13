@@ -59,12 +59,53 @@ function formatarAnoModelo(v: VendaParsed): string {
   return `${aa(v.ano_fabricacao)}/${aa(v.ano_modelo)}`;
 }
 
+/**
+ * Normaliza `cliente_codigo` (CPF/CNPJ bruto do NBS) só pra AGRUPAR compras do mesmo
+ * cliente — mesma lógica de dígitos de `detectTipoCliente` (scripts/sync-nbs/
+ * mapear-venda.ts), mas aqui não decide PF/PJ, só serve de chave do Map.
+ */
+function normalizarClienteCodigo(codigo: string | null): string | null {
+  if (!codigo) return null;
+  const digits = codigo.replace(/\D/g, "");
+  return digits.length > 0 ? digits : null;
+}
+
+/**
+ * Conta quantas compras cada cliente (`cliente_codigo` normalizado) fez dentro do ANO
+ * do relatório, em TODAS as lojas do grupo (sem filtrar por `cod_empresa`) — um lojista
+ * de verdade costuma comprar de mais de uma loja, então o volume certo de negócio pra
+ * identificar ele é o total do grupo, não só a loja do relatório.
+ *
+ * Limites em Brasília (offset `-03:00` explícito, mesmo padrão de `inicioAnoBrasilia`/
+ * `inicioMesBrasilia` acima) — nunca `Date.getFullYear()` cru, que lê o ano no timezone
+ * local do processo e pode cair num ano errado perto da virada.
+ */
+export function contarComprasPorClienteNoAno(vendas: VendaParsed[], ano: number): Map<string, number> {
+  const inicio = inicioAnoBrasilia(ano).getTime();
+  const fim = inicioAnoBrasilia(ano + 1).getTime() - 1;
+
+  const contagem = new Map<string, number>();
+  for (const v of vendas) {
+    if (v.data_venda == null) continue;
+    const t = v.data_venda.getTime();
+    if (t < inicio || t > fim) continue;
+    const cod = normalizarClienteCodigo(v.cliente_codigo);
+    if (cod == null) continue;
+    contagem.set(cod, (contagem.get(cod) ?? 0) + 1);
+  }
+  return contagem;
+}
+
+/** Mais de 2 compras no ano (mesmo CPF/CNPJ, qualquer loja do grupo) = Lojista. */
+const COMPRAS_MIN_LOJISTA = 2;
+
 export function mapearLinha(
   v: VendaParsed,
   custosPorPlaca: Map<string, CustoDetalhado>,
   fipePorChassi: Map<string, { precoFipe: number; confirmado: boolean }>,
   lojaOrigemPorChassi: Map<string, number>,
   nomePorCodEmpresa: Map<number, string>,
+  comprasPorCliente: Map<string, number>,
 ): LinhaVendaMatriz {
   const custo = custosPorPlaca.get(normalizarPlaca(v.placa));
   const fipe = fipePorChassi.get(normalizarIdentificador(v.chassi));
@@ -111,7 +152,11 @@ export function mapearLinha(
     usadoNaTroca: v.placa_troca != null,
     financiou: v.financiado,
     clienteNome: v.cliente_nome,
-    lojista: v.cliente_tipo === "PJ" ? true : v.cliente_tipo === "PF" ? false : null,
+    lojista: (() => {
+      const cod = normalizarClienteCodigo(v.cliente_codigo);
+      if (cod == null) return null;
+      return (comprasPorCliente.get(cod) ?? 0) > COMPRAS_MIN_LOJISTA;
+    })(),
     vendedorNome: v.vendedor_nome,
 
     consignado: v.consignado,
@@ -180,8 +225,13 @@ export async function coletarVendasMatriz(input: ColetarVendasMatrizInput): Prom
   const chassisMes = vendasMes.map((v) => v.chassi).filter((c) => c.length > 0);
   const lojaOrigemPorChassi = await listLojaOrigemPorChassis(chassisMes);
 
+  // Contagem de compras por cliente no ANO DESTE RELATÓRIO (input.ano, não o ano
+  // corrente real) — mesma convenção de "ano" já usada acima pra filtrar o mês do
+  // relatório. Sem filtro de loja: conta as compras do cliente em todo o grupo.
+  const comprasPorCliente = contarComprasPorClienteNoAno(todasVendas, ano);
+
   const linhasMes = vendasMes.map((v) =>
-    mapearLinha(v, custosPorPlaca, fipePorChassi, lojaOrigemPorChassi, nomePorCodEmpresa),
+    mapearLinha(v, custosPorPlaca, fipePorChassi, lojaOrigemPorChassi, nomePorCodEmpresa, comprasPorCliente),
   );
 
   const nomeLojaPropria = nomePorCodEmpresa.get(codEmpresa) ?? `Loja ${codEmpresa}`;
