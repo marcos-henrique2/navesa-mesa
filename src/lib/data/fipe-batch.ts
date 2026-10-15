@@ -1,5 +1,6 @@
 "use client";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BatchFipeError, BatchFipeItem, BatchResult } from "@/lib/fipe/batch";
 import { isFipeConfirmado, FIPE_SCORE_MIN } from "@/lib/fipe/batch";
 import { chunk, getSupabase, selectAll } from "./supabase";
@@ -141,7 +142,17 @@ export async function loadBatchFromSupabase(): Promise<BatchResult | null> {
   };
 }
 
-export async function saveBatchToSupabase(result: BatchResult): Promise<void> {
+/**
+ * Grava o batch no Supabase.
+ *
+ * `sb` é opcional e existe só pra permitir rodar isso fora do browser (script
+ * Node do sync, sem sessão de usuário): quando fornecido, usa esse client em
+ * vez de `getSupabase()` (que depende de sessão de browser). Mesmo padrão de
+ * `gravarVendasNode`/`gravarVeiculosNode` em scripts/sync-nbs/gravar.ts —
+ * aqui injetado em vez de duplicado, porque a lógica de matching em
+ * `runFipeBatch` não pode ter duas cópias para manter sincronizadas.
+ */
+export async function saveBatchToSupabase(result: BatchResult, sb?: SupabaseClient): Promise<void> {
   const itens = Object.values(result.items);
 
   // Invariante de escrita: preço sem tabela de referência não entra no banco.
@@ -165,9 +176,12 @@ export async function saveBatchToSupabase(result: BatchResult): Promise<void> {
 
   // `getSupabase()` só depois da validação: valida a entrada antes de adquirir
   // o recurso. Também é o que torna a invariante testável sem credenciais.
-  const sb = getSupabase();
+  // Com `sb` injetado (caller já tem um client pronto, ex. service-role no
+  // Node), não adquirimos o client de browser — comportamento padrão (sem
+  // `sb`) permanece idêntico ao de antes.
+  const client = sb ?? getSupabase();
   for (const grupo of chunk(rows)) {
-    const { error } = await sb.from("fipe_batch").upsert(grupo, { onConflict: "chassi" });
+    const { error } = await client.from("fipe_batch").upsert(grupo, { onConflict: "chassi" });
     if (error) throw new Error(`saveBatchToSupabase: ${error.message}`);
   }
 }
