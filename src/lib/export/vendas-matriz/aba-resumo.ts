@@ -1,5 +1,16 @@
 /**
- * VENDAS USADOS MATRIZ — aba 3 (RESUMO): 4 blocos empilhados, cada um um pivot manual.
+ * VENDAS USADOS MATRIZ — aba 3 (RESUMO): 4 blocos lado a lado (horizontal), cada um um
+ * pivot manual com seu próprio grupo de colunas e seu próprio eixo vertical (cada bloco
+ * começa na linha 2, independente da altura dos outros).
+ *
+ * Mapa de colunas por bloco (cada bloco tem 1 coluna de "respiro"/gap à direita, exceto o D):
+ * - Bloco A (VENDAS POR PÁTIO):          C/D/E   (3/4/5)
+ * - Gap:                                  F       (6)
+ * - Bloco B (VENDAS POR DIAS DE ESTOQUE): G/H/I   (7/8/9)
+ * - Gap:                                  J       (10)
+ * - Bloco C (VENDAS POR CANAL DE VENDAS): K/L/M   (11/12/13)
+ * - Gap:                                  N       (14)
+ * - Bloco D (VENDAS POR VENDEDOR):        O/P/Q/R/S (15/16/17/18/19) — label/qtde/%/lojista/%lojista
  *
  * As categorias (lojas, faixas de dias, canal de vendas, vendedores) são calculadas em JS
  * a partir das linhas da aba 1, mas cada contagem em si é uma fórmula COUNTIF/COUNTIFS de
@@ -26,11 +37,33 @@ import {
   aplicarBordaBloco, aplicarFundoTotal, aplicarFundoDestaqueAmarelo, comVerticalMiddle,
 } from "./estilo";
 
-const LABEL_COL = COL.C_LOJA_ORIGEM;
-const QT_COL = COL.D_DESCRICAO;
-const PCT_COL = COL.E_COR;
-const LOJISTA_COL = COL.F_MARCA;
-const LOJISTA_PCT_COL = COL.G_PLACA;
+// Bloco A — VENDAS POR PÁTIO (3 colunas: label/qtde/%)
+const A_LABEL = 3; // C
+const A_QT = 4; // D
+const A_PCT = 5; // E
+// Gap: coluna F (6)
+
+// Bloco B — VENDAS POR DIAS DE ESTOQUE (3 colunas: label/qtde/%)
+const B_LABEL = 7; // G
+const B_QT = 8; // H
+const B_PCT = 9; // I
+// Gap: coluna J (10)
+
+// Bloco C — VENDAS POR CANAL DE VENDAS (3 colunas: label/qtde/%)
+const C_LABEL = 11; // K
+const C_QT = 12; // L
+const C_PCT = 13; // M
+// Gap: coluna N (14)
+
+// Bloco D — VENDAS POR VENDEDOR (5 colunas: label/qtde/%/lojista/%lojista) — o mais largo
+const D_LABEL = 15; // O
+const D_QT = 16; // P
+const D_PCT = 17; // Q
+const D_LOJISTA = 18; // R
+const D_LOJISTA_PCT = 19; // S
+
+/** Linha inicial comum a todos os 4 blocos — cada um usa seu próprio eixo vertical a partir daqui. */
+const LINHA_INICIAL = 2;
 
 function fonteHeaderNegrito(cell: ExcelJS.Cell): void {
   cell.font = FONT_HEADER_COLUNA;
@@ -46,18 +79,31 @@ export type AbaResumoOpts = {
 export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): void {
   const { nomeAba1, linhasAba1, nomeMes } = opts;
 
+  const configurarColunaDado = (col: number, width: number): void => {
+    ws.getColumn(col).width = width;
+    ws.getColumn(col).font = FONT_DADO;
+  };
+
   ws.getColumn(COL.B_SEQ).width = 2;
   ws.getColumn(COL.B_SEQ).font = FONT_DADO;
-  ws.getColumn(LABEL_COL).width = 32;
-  ws.getColumn(LABEL_COL).font = FONT_DADO;
-  ws.getColumn(QT_COL).width = 12;
-  ws.getColumn(QT_COL).font = FONT_DADO;
-  ws.getColumn(PCT_COL).width = 10;
-  ws.getColumn(PCT_COL).font = FONT_DADO;
-  ws.getColumn(LOJISTA_COL).width = 12;
-  ws.getColumn(LOJISTA_COL).font = FONT_DADO;
-  ws.getColumn(LOJISTA_PCT_COL).width = 10;
-  ws.getColumn(LOJISTA_PCT_COL).font = FONT_DADO;
+
+  for (const [labelCol, qtCol, pctCol] of [
+    [A_LABEL, A_QT, A_PCT],
+    [B_LABEL, B_QT, B_PCT],
+    [C_LABEL, C_QT, C_PCT],
+    [D_LABEL, D_QT, D_PCT],
+  ]) {
+    configurarColunaDado(labelCol, 32);
+    configurarColunaDado(qtCol, 12);
+    configurarColunaDado(pctCol, 10);
+  }
+  configurarColunaDado(D_LOJISTA, 12);
+  configurarColunaDado(D_LOJISTA_PCT, 10);
+
+  // Colunas de respiro/gap entre blocos.
+  ws.getColumn(6).width = 3;
+  ws.getColumn(10).width = 3;
+  ws.getColumn(14).width = 3;
 
   const ultimaLinhaAba1 = Math.max(DATA_START_ROW, DATA_START_ROW + linhasAba1.length - 1);
   const totalLinhas = linhasAba1.length;
@@ -71,21 +117,23 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
   const rangeConsignado = rangeCol(COL.AH_CONSIGNADO);
   const totalFormula = `COUNTA(${rangePlaca})`;
 
-  let r = 2;
+  /** Cada bloco tem seu próprio contador de linha, independente dos outros 3. */
+  type RowRef = { r: number };
 
-  const escreverBanner = (titulo: string, ultimaColBanner: number): void => {
-    ws.mergeCells(r, LABEL_COL, r, ultimaColBanner);
-    const tituloCell = ws.getCell(r, LABEL_COL);
+  const escreverBanner = (rowRef: RowRef, labelCol: number, ultimaColBanner: number, titulo: string): void => {
+    const linha = rowRef.r;
+    ws.mergeCells(linha, labelCol, linha, ultimaColBanner);
+    const tituloCell = ws.getCell(linha, labelCol);
     tituloCell.value = titulo;
     tituloCell.font = FONT_BANNER_N1;
     tituloCell.alignment = { horizontal: "center", vertical: "middle" };
     tituloCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COR_BANNER_N1_BG } };
-    ws.getRow(r).height = ALTURA_BANNER_N1;
-    r++;
+    ws.getRow(linha).height = ALTURA_BANNER_N1;
+    rowRef.r++;
   };
 
-  const escreverHeader = (colunas: { col: number; label: string }[]): void => {
-    const headerRow = ws.getRow(r);
+  const escreverHeader = (rowRef: RowRef, colunas: { col: number; label: string }[]): void => {
+    const headerRow = ws.getRow(rowRef.r);
     for (const { col, label } of colunas) {
       const cell = headerRow.getCell(col);
       cell.value = label;
@@ -93,27 +141,31 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COR_HEADER_TABELA_BG } };
       cell.alignment = { vertical: "middle" };
     }
-    r++;
+    rowRef.r++;
   };
 
   /** Escreve uma linha "categoria | qtde (fórmula) | % (fórmula)" — usado nos blocos A/B/C. Retorna a linha escrita. */
   const escreverLinhaContagem = (
+    rowRef: RowRef,
+    labelCol: number,
+    qtCol: number,
+    pctCol: number,
     label: string,
     formulaQtde: string,
     countResult: number,
     formulaDenominador: string,
     denominadorResult: number,
   ): number => {
-    const row = ws.getRow(r);
-    const labelCell = row.getCell(LABEL_COL);
+    const row = ws.getRow(rowRef.r);
+    const labelCell = row.getCell(labelCol);
     labelCell.value = label;
     comVerticalMiddle(labelCell);
 
-    const qtdCell = row.getCell(QT_COL);
+    const qtdCell = row.getCell(qtCol);
     qtdCell.value = { formula: formulaQtde, result: countResult };
     comVerticalMiddle(qtdCell);
 
-    const pctCell = row.getCell(PCT_COL);
+    const pctCell = row.getCell(pctCol);
     pctCell.value = {
       formula: `IFERROR(${qtdCell.address}/${formulaDenominador},"")`,
       result: denominadorResult > 0 ? countResult / denominadorResult : "",
@@ -121,43 +173,52 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
     pctCell.numFmt = FMT_PERCENT;
     comVerticalMiddle(pctCell);
 
-    const linhaAtual = r;
-    r++;
+    const linhaAtual = rowRef.r;
+    rowRef.r++;
     return linhaAtual;
   };
 
   /** `semGapDepois` — pula as 2 linhas em branco finais (chamador insere mais linhas antes do gap, ex: Bloco A). */
-  const escreverLinhaTotal = (formulaQtde: string, result: number, opts?: { semGapDepois?: boolean }): number => {
-    const row = ws.getRow(r);
-    const labelCell = row.getCell(LABEL_COL);
+  const escreverLinhaTotal = (
+    rowRef: RowRef,
+    labelCol: number,
+    qtCol: number,
+    pctCol: number,
+    formulaQtde: string,
+    result: number,
+    opts?: { semGapDepois?: boolean },
+  ): number => {
+    const row = ws.getRow(rowRef.r);
+    const labelCell = row.getCell(labelCol);
     labelCell.value = "TOTAL";
     aplicarFundoTotal(labelCell);
     comVerticalMiddle(labelCell);
-    const qtdCell = row.getCell(QT_COL);
+    const qtdCell = row.getCell(qtCol);
     qtdCell.value = { formula: formulaQtde, result };
     aplicarFundoTotal(qtdCell);
     comVerticalMiddle(qtdCell);
-    const pctCell = row.getCell(PCT_COL);
+    const pctCell = row.getCell(pctCol);
     pctCell.value = 1;
     pctCell.numFmt = FMT_PERCENT;
     aplicarFundoTotal(pctCell);
     comVerticalMiddle(pctCell);
-    const linhaAtual = r;
-    r++;
-    if (!opts?.semGapDepois) r += 2; // 2 linhas em branco antes do próximo bloco
+    const linhaAtual = rowRef.r;
+    rowRef.r++;
+    if (!opts?.semGapDepois) rowRef.r += 2; // 2 linhas em branco antes do próximo bloco (vertical, dentro do próprio bloco)
     return linhaAtual;
   };
 
   // ═══════════════════════════════════════════════════════════════════════
   // Bloco A — VENDAS POR PÁTIO (loja de origem) + AUTO AVALIAR à parte
   // ═══════════════════════════════════════════════════════════════════════
-  const linhaIniA = r;
+  const rowRefA: RowRef = { r: LINHA_INICIAL };
+  const linhaIniA = rowRefA.r;
   {
-    escreverBanner(`VENDAS EM ${nomeMes} NAVESA AEROPORTO (POR PÁTIO)`, PCT_COL);
-    escreverHeader([
-      { col: LABEL_COL, label: "Pátio" },
-      { col: QT_COL, label: "Qtde" },
-      { col: PCT_COL, label: "%" },
+    escreverBanner(rowRefA, A_LABEL, A_PCT, `VENDAS EM ${nomeMes} NAVESA AEROPORTO (POR PÁTIO)`);
+    escreverHeader(rowRefA, [
+      { col: A_LABEL, label: "Pátio" },
+      { col: A_QT, label: "Qtde" },
+      { col: A_PCT, label: "%" },
     ]);
 
     const semAutoAvaliar = linhasAba1.filter((l) => !isAutoAvaliar(l));
@@ -167,6 +228,10 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
       const count = semAutoAvaliar.filter((l) => l.lojaOrigemNome === nomeLoja).length;
       const criterio = escaparAspasFormula(nomeLoja);
       escreverLinhaContagem(
+        rowRefA,
+        A_LABEL,
+        A_QT,
+        A_PCT,
         nomeLoja,
         `COUNTIFS(${rangeLoja},"${criterio}",${rangeVendedor},"${CRITERIO_NAO_AUTO_AVALIAR}")`,
         count,
@@ -177,6 +242,10 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
 
     const countAutoAvaliar = linhasAba1.filter(isAutoAvaliar).length;
     escreverLinhaContagem(
+      rowRefA,
+      A_LABEL,
+      A_QT,
+      A_PCT,
       "AUTO AVALIAR",
       `COUNTIF(${rangeVendedor},"${CRITERIO_AUTO_AVALIAR}")`,
       countAutoAvaliar,
@@ -184,42 +253,43 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
       totalLinhas,
     );
 
-    escreverLinhaTotal(totalFormula, totalLinhas, { semGapDepois: true });
+    escreverLinhaTotal(rowRefA, A_LABEL, A_QT, A_PCT, totalFormula, totalLinhas, { semGapDepois: true });
 
     // "TOTAL ... SEM CONSIGNADOS" — item pendente da reestilização (PR #25), destaque
     // amarelo vivo, igual ao relatório original (19.png de referência). Mesmo totalFormula
     // (todas as 103 linhas, incl. Auto Avaliar), só acrescenta o critério consignado="NÃO"
     // na coluna de apoio AH (ver colunas.ts/aba-detalhe.ts). Sem % (igual à imagem — a
     // linha de baixo não tem par "com"/"sem" de percentual, só a contagem).
-    const linhaTotalSemConsignado = r;
+    const linhaTotalSemConsignado = rowRefA.r;
     {
-      const row = ws.getRow(r);
-      const labelCell = row.getCell(LABEL_COL);
+      const row = ws.getRow(rowRefA.r);
+      const labelCell = row.getCell(A_LABEL);
       labelCell.value = "TOTAL CARROS FATURADOS SEM CONSIGNADOS";
       aplicarFundoDestaqueAmarelo(labelCell);
       comVerticalMiddle(labelCell);
       const qtdSemConsignado = linhasAba1.filter((l) => !l.consignado).length;
-      const qtdCell = row.getCell(QT_COL);
+      const qtdCell = row.getCell(A_QT);
       qtdCell.value = { formula: `COUNTIF(${rangeConsignado},"NÃO")`, result: qtdSemConsignado };
       aplicarFundoDestaqueAmarelo(qtdCell);
       comVerticalMiddle(qtdCell);
-      r++;
-      r += 2; // 2 linhas em branco antes do próximo bloco
+      rowRefA.r++;
+      rowRefA.r += 2; // 2 linhas em branco antes do próximo bloco
     }
 
-    aplicarBordaBloco(ws, linhaIniA, linhaTotalSemConsignado, LABEL_COL, PCT_COL);
+    aplicarBordaBloco(ws, linhaIniA, linhaTotalSemConsignado, A_LABEL, A_PCT);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
   // Bloco B — VENDAS POR DIAS DE ESTOQUE (exclui Auto Avaliar; % sobre o universo reduzido)
   // ═══════════════════════════════════════════════════════════════════════
-  const linhaIniB = r;
+  const rowRefB: RowRef = { r: LINHA_INICIAL };
+  const linhaIniB = rowRefB.r;
   {
-    escreverBanner("VENDAS POR DIAS DE ESTOQUE", PCT_COL);
-    escreverHeader([
-      { col: LABEL_COL, label: "Faixa" },
-      { col: QT_COL, label: "Qtde" },
-      { col: PCT_COL, label: "%" },
+    escreverBanner(rowRefB, B_LABEL, B_PCT, "VENDAS POR DIAS DE ESTOQUE");
+    escreverHeader(rowRefB, [
+      { col: B_LABEL, label: "Faixa" },
+      { col: B_QT, label: "Qtde" },
+      { col: B_PCT, label: "%" },
     ]);
 
     // Exclui consignado também (item pendente da reestilização, PR #25) — o nome do bloco
@@ -239,7 +309,7 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
       { label: "61+ dias", min: 61, max: null },
     ];
 
-    let linhaFimB = r;
+    let linhaFimB = rowRefB.r;
     for (const faixa of faixas) {
       const count = semAutoAvaliar.filter(
         (l) => l.diasEstoque! >= faixa.min && (faixa.max === null || l.diasEstoque! <= faixa.max),
@@ -249,6 +319,10 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
           ? `${rangeDias},">=${faixa.min}"`
           : `${rangeDias},">=${faixa.min}",${rangeDias},"<=${faixa.max}"`;
       linhaFimB = escreverLinhaContagem(
+        rowRefB,
+        B_LABEL,
+        B_QT,
+        B_PCT,
         faixa.label,
         `COUNTIFS(${rangeVendedor},"${CRITERIO_NAO_AUTO_AVALIAR}",${rangeConsignado},"NÃO",${criteriosDias})`,
         count,
@@ -256,20 +330,20 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
         totalSemAuto,
       );
     }
-    aplicarBordaBloco(ws, linhaIniB, linhaFimB, LABEL_COL, PCT_COL);
+    aplicarBordaBloco(ws, linhaIniB, linhaFimB, B_LABEL, B_PCT);
   }
-  r += 2;
 
   // ═══════════════════════════════════════════════════════════════════════
   // Bloco C — VENDAS POR CANAL DE VENDAS (CLIENTE FINAL / LOJISTA / NÃO INFORMADO / AUTO AVALIAR)
   // ═══════════════════════════════════════════════════════════════════════
-  const linhaIniC = r;
+  const rowRefC: RowRef = { r: LINHA_INICIAL };
+  const linhaIniC = rowRefC.r;
   {
-    escreverBanner("VENDAS POR CANAL DE VENDAS", PCT_COL);
-    escreverHeader([
-      { col: LABEL_COL, label: "Canal" },
-      { col: QT_COL, label: "Qtde" },
-      { col: PCT_COL, label: "%" },
+    escreverBanner(rowRefC, C_LABEL, C_PCT, "VENDAS POR CANAL DE VENDAS");
+    escreverHeader(rowRefC, [
+      { col: C_LABEL, label: "Canal" },
+      { col: C_QT, label: "Qtde" },
+      { col: C_PCT, label: "%" },
     ]);
 
     const countClienteFinal = linhasAba1.filter((l) => l.lojista === false && !isAutoAvaliar(l)).length;
@@ -284,6 +358,10 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
     // relatório original do Marcos não colore essas duas linhas; só o header navy do
     // bloco e o TOTAL final se destacam, como em todos os outros blocos do RESUMO).
     escreverLinhaContagem(
+      rowRefC,
+      C_LABEL,
+      C_QT,
+      C_PCT,
       "CLIENTE FINAL",
       `COUNTIFS(${rangeLojista},"NÃO",${rangeVendedor},"${CRITERIO_NAO_AUTO_AVALIAR}")`,
       countClienteFinal,
@@ -292,6 +370,10 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
     );
 
     escreverLinhaContagem(
+      rowRefC,
+      C_LABEL,
+      C_QT,
+      C_PCT,
       "LOJISTA",
       `COUNTIFS(${rangeLojista},"SIM",${rangeVendedor},"${CRITERIO_NAO_AUTO_AVALIAR}")`,
       countLojista,
@@ -300,6 +382,10 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
     );
 
     escreverLinhaContagem(
+      rowRefC,
+      C_LABEL,
+      C_QT,
+      C_PCT,
       "NÃO INFORMADO",
       `COUNTIFS(${rangeLojista},"",${rangeVendedor},"${CRITERIO_NAO_AUTO_AVALIAR}")`,
       countNaoInformado,
@@ -307,6 +393,10 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
       totalLinhas,
     );
     escreverLinhaContagem(
+      rowRefC,
+      C_LABEL,
+      C_QT,
+      C_PCT,
       "AUTO AVALIAR",
       `COUNTIF(${rangeVendedor},"${CRITERIO_AUTO_AVALIAR}")`,
       countAutoAvaliar,
@@ -314,43 +404,44 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
       totalLinhas,
     );
 
-    const linhaTotalC = escreverLinhaTotal(totalFormula, totalLinhas);
-    aplicarBordaBloco(ws, linhaIniC, linhaTotalC, LABEL_COL, PCT_COL);
+    const linhaTotalC = escreverLinhaTotal(rowRefC, C_LABEL, C_QT, C_PCT, totalFormula, totalLinhas);
+    aplicarBordaBloco(ws, linhaIniC, linhaTotalC, C_LABEL, C_PCT);
   }
 
   // ═══════════════════════════════════════════════════════════════════════
   // Bloco D — VENDAS POR VENDEDOR (+ coluna Lojista) — MOZAINEL vira "AUTO AVALIAR"
   // ═══════════════════════════════════════════════════════════════════════
-  const linhaIniD = r;
+  const rowRefD: RowRef = { r: LINHA_INICIAL };
+  const linhaIniD = rowRefD.r;
   {
-    escreverBanner("VENDAS POR VENDEDOR", LOJISTA_PCT_COL);
-    escreverHeader([
-      { col: LABEL_COL, label: "Vendedor" },
-      { col: QT_COL, label: "Qtde" },
-      { col: PCT_COL, label: "%" },
-      { col: LOJISTA_COL, label: "Lojista" },
-      { col: LOJISTA_PCT_COL, label: "%" },
+    escreverBanner(rowRefD, D_LABEL, D_LOJISTA_PCT, "VENDAS POR VENDEDOR");
+    escreverHeader(rowRefD, [
+      { col: D_LABEL, label: "Vendedor" },
+      { col: D_QT, label: "Qtde" },
+      { col: D_PCT, label: "%" },
+      { col: D_LOJISTA, label: "Lojista" },
+      { col: D_LOJISTA_PCT, label: "%" },
     ]);
 
     const semAutoAvaliar = linhasAba1.filter((l) => !isAutoAvaliar(l));
     const vendedores = [...new Set(semAutoAvaliar.map((l) => l.vendedorNome ?? "").filter((n) => n.length > 0))].sort();
 
     const escreverLinhaVendedor = (label: string, criterioVendedorFormula: string, qtde: number, lojistaQtde: number): void => {
-      const row = ws.getRow(r);
-      const labelCell = row.getCell(LABEL_COL);
+      const row = ws.getRow(rowRefD.r);
+      const labelCell = row.getCell(D_LABEL);
       labelCell.value = label;
       comVerticalMiddle(labelCell);
 
-      const qtdCell = row.getCell(QT_COL);
+      const qtdCell = row.getCell(D_QT);
       qtdCell.value = { formula: criterioVendedorFormula, result: qtde };
       comVerticalMiddle(qtdCell);
 
-      const pctCell = row.getCell(PCT_COL);
+      const pctCell = row.getCell(D_PCT);
       pctCell.value = { formula: `IFERROR(${qtdCell.address}/${totalFormula},"")`, result: totalLinhas > 0 ? qtde / totalLinhas : "" };
       pctCell.numFmt = FMT_PERCENT;
       comVerticalMiddle(pctCell);
 
-      const lojistaCell = row.getCell(LOJISTA_COL);
+      const lojistaCell = row.getCell(D_LOJISTA);
       const criterioLojistaFormula =
         label === "AUTO AVALIAR"
           ? `COUNTIFS(${rangeVendedor},"${CRITERIO_AUTO_AVALIAR}",${rangeLojista},"SIM")`
@@ -358,12 +449,12 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
       lojistaCell.value = { formula: criterioLojistaFormula, result: lojistaQtde };
       comVerticalMiddle(lojistaCell);
 
-      const lojistaPctCell = row.getCell(LOJISTA_PCT_COL);
+      const lojistaPctCell = row.getCell(D_LOJISTA_PCT);
       lojistaPctCell.value = { formula: `IFERROR(${lojistaCell.address}/${qtdCell.address},"")`, result: qtde > 0 ? lojistaQtde / qtde : "" };
       lojistaPctCell.numFmt = FMT_PERCENT;
       comVerticalMiddle(lojistaPctCell);
 
-      r++;
+      rowRefD.r++;
     };
 
     for (const vendedor of vendedores) {
@@ -386,28 +477,28 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
     {
       const qtdeSemAuto = semAutoAvaliar.length;
       const lojistaSemAuto = semAutoAvaliar.filter((l) => l.lojista === true).length;
-      const row = ws.getRow(r);
-      const labelCell = row.getCell(LABEL_COL);
+      const row = ws.getRow(rowRefD.r);
+      const labelCell = row.getCell(D_LABEL);
       labelCell.value = "TOTAL CARROS FATURADOS";
       aplicarFundoTotal(labelCell);
       comVerticalMiddle(labelCell);
-      const qtdCell = row.getCell(QT_COL);
+      const qtdCell = row.getCell(D_QT);
       qtdCell.value = { formula: `COUNTIF(${rangeVendedor},"${CRITERIO_NAO_AUTO_AVALIAR}")`, result: qtdeSemAuto };
       aplicarFundoTotal(qtdCell);
       comVerticalMiddle(qtdCell);
-      const pctCell = row.getCell(PCT_COL);
+      const pctCell = row.getCell(D_PCT);
       pctCell.value = { formula: `IFERROR(${qtdCell.address}/${totalFormula},"")`, result: totalLinhas > 0 ? qtdeSemAuto / totalLinhas : "" };
       pctCell.numFmt = FMT_PERCENT;
       aplicarFundoTotal(pctCell);
       comVerticalMiddle(pctCell);
-      const lojistaCell = row.getCell(LOJISTA_COL);
+      const lojistaCell = row.getCell(D_LOJISTA);
       lojistaCell.value = {
         formula: `COUNTIFS(${rangeVendedor},"${CRITERIO_NAO_AUTO_AVALIAR}",${rangeLojista},"SIM")`,
         result: lojistaSemAuto,
       };
       aplicarFundoTotal(lojistaCell);
       comVerticalMiddle(lojistaCell);
-      const lojistaPctCell = row.getCell(LOJISTA_PCT_COL);
+      const lojistaPctCell = row.getCell(D_LOJISTA_PCT);
       lojistaPctCell.value = {
         formula: `IFERROR(${lojistaCell.address}/${qtdCell.address},"")`,
         result: qtdeSemAuto > 0 ? lojistaSemAuto / qtdeSemAuto : "",
@@ -415,7 +506,7 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
       lojistaPctCell.numFmt = FMT_PERCENT;
       aplicarFundoTotal(lojistaPctCell);
       comVerticalMiddle(lojistaPctCell);
-      r++;
+      rowRefD.r++;
     }
 
     const linhasAutoAvaliar = linhasAba1.filter(isAutoAvaliar);
@@ -425,32 +516,32 @@ export function renderAbaResumo(ws: ExcelJS.Worksheet, opts: AbaResumoOpts): voi
 
     // TOTAL — Qtde = todas as 82, Lojista = total lojista entre todas, % = lojista/qtde.
     const totalLojista = linhasAba1.filter((l) => l.lojista === true).length;
-    const row = ws.getRow(r);
-    const labelCell = row.getCell(LABEL_COL);
+    const row = ws.getRow(rowRefD.r);
+    const labelCell = row.getCell(D_LABEL);
     labelCell.value = "TOTAL";
     aplicarFundoTotal(labelCell);
     comVerticalMiddle(labelCell);
-    const qtdCell = row.getCell(QT_COL);
+    const qtdCell = row.getCell(D_QT);
     qtdCell.value = { formula: totalFormula, result: totalLinhas };
     aplicarFundoTotal(qtdCell);
     comVerticalMiddle(qtdCell);
-    const pctCell = row.getCell(PCT_COL);
+    const pctCell = row.getCell(D_PCT);
     pctCell.value = 1;
     pctCell.numFmt = FMT_PERCENT;
     aplicarFundoTotal(pctCell);
     comVerticalMiddle(pctCell);
-    const lojistaCell = row.getCell(LOJISTA_COL);
+    const lojistaCell = row.getCell(D_LOJISTA);
     lojistaCell.value = { formula: `COUNTIF(${rangeLojista},"SIM")`, result: totalLojista };
     aplicarFundoTotal(lojistaCell);
     comVerticalMiddle(lojistaCell);
-    const lojistaPctCell = row.getCell(LOJISTA_PCT_COL);
+    const lojistaPctCell = row.getCell(D_LOJISTA_PCT);
     lojistaPctCell.value = { formula: `IFERROR(${lojistaCell.address}/${qtdCell.address},"")`, result: totalLinhas > 0 ? totalLojista / totalLinhas : "" };
     lojistaPctCell.numFmt = FMT_PERCENT;
     aplicarFundoTotal(lojistaPctCell);
     comVerticalMiddle(lojistaPctCell);
-    const linhaTotalD = r;
-    r++;
+    const linhaTotalD = rowRefD.r;
+    rowRefD.r++;
 
-    aplicarBordaBloco(ws, linhaIniD, linhaTotalD, LABEL_COL, LOJISTA_PCT_COL);
+    aplicarBordaBloco(ws, linhaIniD, linhaTotalD, D_LABEL, D_LOJISTA_PCT);
   }
 }
