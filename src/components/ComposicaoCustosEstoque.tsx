@@ -22,18 +22,24 @@ type LineItem = {
  * Fonte: PDF "Custos de Veículos em Estoque" do NBS.
  *
  * Diferente de ComposicaoCustos (que cobre vendas), este componente é
- * single-veículo e mostra: Nota Fábrica, Revisões, Forplan, HoldBack,
- * Acessórios, ADM, Impostos, Comissões, Desp.Gerais, (-)Bônus,
- * (-)Ganhos Indiretos → Custo Total → Tabela (preço de venda) → Lucro Bruto.
+ * single-veículo e mostra: Nota Fábrica (já líquida do Valoriza, exibido
+ * em linha própria), Valoriza, Revisões, Forplan, HoldBack, Acessórios,
+ * ADM, Impostos, Comissões, Desp.Gerais, (-)Bônus, (-)Ganhos Indiretos →
+ * Custo Total → Tabela (preço de venda) → Lucro Bruto.
  */
-export function ComposicaoCustosEstoque({ custo }: { custo: CustoEstoqueDetalhado }) {
+export function ComposicaoCustosEstoque({ custo, valoriza }: { custo: CustoEstoqueDetalhado; valoriza: number }) {
   const [mostrarZerados, setMostrarZerados] = useState(false);
 
   const itens: LineItem[] = [
     {
-      label: "Aquisição (Nota Fábrica)",
-      icon: <ShoppingCart className="h-3.5 w-3.5" />, value: custo.nota_fabrica, color: "bg-blue-500",
-      tooltip: "Valor pago à fábrica pela aquisição do veículo — base do custo (nota fiscal de compra).",
+      label: "Aquisição (Nota Fábrica, líq. Valoriza)",
+      icon: <ShoppingCart className="h-3.5 w-3.5" />, value: custo.nota_fabrica - valoriza, color: "bg-blue-500",
+      tooltip: "Valor pago à fábrica pela aquisição do veículo, já descontado o Valoriza (mostrado na linha abaixo) — mesma base usada no resto do sistema (Custo Real = Entrada − Valoriza).",
+    },
+    {
+      label: "(−) Valoriza",
+      icon: <Gift className="h-3.5 w-3.5" />, value: valoriza, color: "bg-emerald-500", redutor: true,
+      tooltip: "Bônus de fábrica (Ford Valoriza) já descontado do valor de entrada acima — mostrado aqui separado pra você ver quanto é. Vem direto do Oracle (fonte automática), não do PDF manual.",
     },
     {
       label: "Revisões",
