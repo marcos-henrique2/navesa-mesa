@@ -174,7 +174,7 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
       )}
 
       {!custoDetalhado && custoEstoque && (
-        <ComposicaoCustosEstoque custo={custoEstoque} />
+        <ComposicaoCustosEstoque custo={custoEstoque} valoriza={veiculo?.valoriza ?? 0} />
       )}
 
       {classificacao && (
