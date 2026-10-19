@@ -14,6 +14,7 @@
  * mantém uma cópia em memória pra leitura síncrona reativa.
  */
 
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import type { FipeMatch, FipeReferencia } from "./types";
 import { findMarca, findModelos, findAno } from "./matcher";
@@ -249,6 +250,60 @@ export function contarFipeConfirmada(
   return n;
 }
 
+/**
+ * Linha mínima de `fipe_batch` necessária pra decidir se um veículo já tem FIPE
+ * confirmada NESTA referência (e por isso pode ser pulado na rodada). Subconjunto
+ * deliberado — o caller (script de sync) só precisa ler essas 4 colunas.
+ */
+export type FipeBatchStatusRow = {
+  chassi: string;
+  score: number | null;
+  plausibilidade_verificada: boolean | null;
+  fipe_referencia_cod: number | null;
+};
+
+/**
+ * Filtra os veículos que AINDA precisam passar pelo batch FIPE nesta referência.
+ *
+ * Usado pelo script de sync (roda a cada 2h) pra não rebuscar carro que já tem
+ * FIPE confirmada no mês corrente — preço FIPE só muda quando a tabela vira.
+ *
+ * "Confirmado nesta referência" reusa `isFipeConfirmado` (score alto E
+ * plausibilidade verificada) em vez de reimplementar uma versão parcial dela.
+ * A primeira versão deste filtro checava só `plausibilidade_verificada &&
+ * fipe_referencia_cod === ref`, sem olhar `score` — deixava passar um carro com
+ * score baixo (ex. 0.2, match de modelo ruim, só passou do piso de 0.15 de
+ * `findModelos`) cujo PREÇO coincidentemente bateu com o custo do veículo. Esse
+ * carro ficava marcado "já rodou com sucesso" e era pulado em toda rodada
+ * seguinte até a referência virar (até 1 mês), mesmo nunca tendo sido
+ * genuinamente confirmado — exatamente o cenário que este filtro existe pra
+ * evitar.
+ */
+export function filtrarVeiculosPendentesFipe(
+  veiculos: VeiculoParsed[],
+  batchExistente: FipeBatchStatusRow[],
+  refCodigo: number,
+): VeiculoParsed[] {
+  const confirmadosNestaReferencia = new Set(
+    batchExistente
+      .filter((r) => r.fipe_referencia_cod === refCodigo)
+      .filter((r) =>
+        isFipeConfirmado({
+          chassi: r.chassi,
+          precoFipe: 1,
+          match: { marcaCod: "", marcaNome: "", modeloCod: 0, modeloNome: "", anoCod: "", anoNome: "" },
+          score: r.score,
+          plausibilidadeVerificada: r.plausibilidade_verificada === true,
+          // Só a presença importa aqui — a referência em si já foi checada no filtro acima.
+          fipeReferencia: "confirmado",
+          fipeReferenciaCod: r.fipe_referencia_cod,
+        }),
+      )
+      .map((r) => r.chassi),
+  );
+  return veiculos.filter((v) => !confirmadosNestaReferencia.has(v.chassi));
+}
+
 export type BatchResult = {
   timestamp: number;
   items: Record<string, BatchFipeItem>; // chassi → resultado
@@ -350,10 +405,16 @@ function groupKey(v: VeiculoParsed): string {
 
 /**
  * Executa o batch matching. Chama onProgress periodicamente pra UI poder mostrar barra.
+ *
+ * `sb` é opcional: repassado pra `saveBatchToSupabase` na gravação final.
+ * Permite rodar isso fora do browser (script Node do sync, sem sessão de
+ * usuário) injetando um client de service-role. Sem `sb`, comportamento
+ * idêntico ao de antes (client de browser via `getSupabase()`).
  */
 export async function runFipeBatch(
   veiculos: VeiculoParsed[],
   onProgress?: (p: BatchProgress) => void,
+  sb?: SupabaseClient,
 ): Promise<BatchResult> {
   const report = (p: BatchProgress) => onProgress?.(p);
 
@@ -560,7 +621,7 @@ export async function runFipeBatch(
   // existir ainda (migration 021 não aplicada) — o PostgREST devolve PGRST204,
   // nada é gravado, e sem esse sinal a UI anunciava "Pronto: N carros com FIPE".
   try {
-    await saveBatchToSupabase(result);
+    await saveBatchToSupabase(result, sb);
     cached = result;
     loaded = true;
     notify();

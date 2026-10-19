@@ -1,4 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
+import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
+import { getReferenciaAtual, __setFipeCacheStorage, type CacheStorageLike } from "@/lib/fipe/service";
+import { runFipeBatch, filtrarVeiculosPendentesFipe, type FipeBatchStatusRow } from "@/lib/fipe/batch";
+import { selectAll } from "@/lib/data/supabase";
 import { executarCustosVendidos, lerOpcoesCustos } from "./executar-custos-vendidos";
 import { abrirConexaoOracle, modoThinAtivo } from "./conexao-oracle";
 import { syncVeiculos } from "./sync-veiculos";
@@ -27,7 +31,37 @@ function criarClienteSupabaseServiceRole() {
   });
 }
 
-async function gravarSyncLog(fonte: "veiculos" | "vendas", linha: {
+/**
+ * Cache HTTP do FIPE em memória, só pra rodar dentro deste processo Node.
+ *
+ * `src/lib/fipe/service.ts` usa `window.localStorage` como cache; em Node
+ * `typeof window === "undefined"` faz `cacheGet`/`cacheSet` virarem no-op
+ * silencioso. Sem isso, toda chamada do batch bate direto na API gratuita da
+ * FIPE — inclusive `getModelos` repetido pra cada grupo que compartilha marca
+ * na MESMA rodada (risco real de 429 com estoque grande). Só precisa viver
+ * durante a rodada: a referência FIPE não muda no intervalo de 2h entre
+ * execuções do script, e cada execução é um processo novo.
+ */
+class FipeCacheEmMemoria implements CacheStorageLike {
+  private readonly dados = new Map<string, string>();
+  getItem(key: string): string | null {
+    return this.dados.get(key) ?? null;
+  }
+  setItem(key: string, value: string): void {
+    this.dados.set(key, value);
+  }
+  removeItem(key: string): void {
+    this.dados.delete(key);
+  }
+  key(index: number): string | null {
+    return Array.from(this.dados.keys())[index] ?? null;
+  }
+  get length(): number {
+    return this.dados.size;
+  }
+}
+
+async function gravarSyncLog(fonte: "veiculos" | "vendas" | "fipe", linha: {
   iniciado_em: Date;
   finalizado_em: Date;
   status: "sucesso" | "erro";
@@ -70,6 +104,10 @@ async function main() {
   // sync-veiculos.ts — recall 98,7% / precisão 99,9%), preenchido no bloco de
   // VEÍCULOS abaixo e reusado no bloco de VENDAS pra limpar vendas fantasma.
   let chassisEmEstoqueAtual: string[] = [];
+  // Veículos em estoque mapeados (mesmo filtro acima), reusados no bloco FIPE
+  // pra não reconsultar o Supabase — já estão em memória.
+  let veiculosEmEstoqueAtual: VeiculoParsed[] = [];
+  let filtroVeiculosPlausivel = false;
 
   try {
     if (opcoesCustos.somenteCustos) {
@@ -103,6 +141,8 @@ async function main() {
 
       if (resultadoVeiculos.filtroPlausivel) {
         chassisEmEstoqueAtual = resultadoVeiculos.veiculos.map((v) => v.chassi);
+        veiculosEmEstoqueAtual = resultadoVeiculos.veiculos;
+        filtroVeiculosPlausivel = true;
       }
 
       if (supabaseDisponivel() && resultadoVeiculos.filtroPlausivel && resultadoVeiculos.veiculos.length > 0) {
@@ -214,6 +254,75 @@ async function main() {
     }
 
     await executarCustosVendidos(conn, opcoesCustos);
+
+    // ─── FIPE ───────────────────────────────────────────────────────────────
+    console.log("\n--- FIPE ---");
+    const inicioFipe = new Date();
+    let linhasGravadasFipe: number | null = null;
+    if (supabaseDisponivel() && filtroVeiculosPlausivel) {
+      try {
+        const sbEscrita = criarClienteSupabaseServiceRole();
+
+        // Restaura cache HTTP (inexistente por padrão em Node) pelo menos
+        // DENTRO desta rodada — ver `FipeCacheEmMemoria` acima.
+        __setFipeCacheStorage(new FipeCacheEmMemoria());
+
+        // Preço FIPE só muda uma vez por mês — rodar o batch inteiro pra todo
+        // o estoque a cada 2h é desperdício e martela a API gratuita sem
+        // necessidade. Descobre a referência corrente primeiro e pula quem já
+        // está confirmado NELA (já rodou com sucesso este mês); carros nunca
+        // tentados, de mês anterior, que falharam na plausibilidade ou com
+        // score baixo (match de modelo não confiável, mesmo com preço
+        // plausível) entram de novo (o matcher pode ter melhorado ou o custo
+        // pode ter sido corrigido).
+        const ref = await getReferenciaAtual();
+        console.log(`Referência FIPE corrente: ${ref.mes} (cod ${ref.codigo}).`);
+
+        const batchExistente = await selectAll<FipeBatchStatusRow>(sbEscrita, "fipe_batch", { orderBy: "chassi" });
+        const veiculosPendentes = filtrarVeiculosPendentesFipe(veiculosEmEstoqueAtual, batchExistente, ref.codigo);
+        const confirmados = veiculosEmEstoqueAtual.length - veiculosPendentes.length;
+        console.log(
+          `${veiculosEmEstoqueAtual.length} veículo(s) em estoque, ${confirmados} já confirmado(s) ` +
+            `nesta referência, ${veiculosPendentes.length} a processar.`,
+        );
+
+        const resultado = await runFipeBatch(
+          veiculosPendentes,
+          (p) => console.log(`  [FIPE ${p.fase}] ${p.atual}/${p.total} — ${p.mensagem}`),
+          sbEscrita,
+        );
+        linhasGravadasFipe = Object.keys(resultado.items).length;
+        console.log(`FIPE: ${linhasGravadasFipe} carro(s) com match, ${resultado.erros.length} erro(s)/pendência(s).`);
+
+        const fimFipe = new Date();
+        await gravarSyncLog("fipe", {
+          iniciado_em: inicioFipe,
+          finalizado_em: fimFipe,
+          status: resultado.persistenciaErro ? "erro" : "sucesso",
+          linhas_lidas: veiculosPendentes.length,
+          linhas_gravadas: linhasGravadasFipe,
+          erro_mensagem: resultado.persistenciaErro,
+        });
+      } catch (err) {
+        const fimFipe = new Date();
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`ERRO no bloco FIPE: ${msg}`);
+        await gravarSyncLog("fipe", {
+          iniciado_em: inicioFipe,
+          finalizado_em: fimFipe,
+          status: "erro",
+          linhas_lidas: null,
+          linhas_gravadas: linhasGravadasFipe,
+          erro_mensagem: msg,
+        });
+      }
+    } else {
+      console.log(
+        supabaseDisponivel()
+          ? "Filtro de veículos fora da faixa plausível — bloco FIPE pulado (não processa estoque suspeito)."
+          : "(pendência) SUPABASE não configurado — bloco FIPE pulado.",
+      );
+    }
 
     if (!supabaseDisponivel()) {
       console.log(

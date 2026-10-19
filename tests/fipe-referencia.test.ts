@@ -16,6 +16,7 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   getMarcas,
   getModelos,
@@ -30,10 +31,18 @@ import {
   __setFipeCacheStorage,
   type CacheStorageLike,
 } from "@/lib/fipe/service";
-import { isFipeConfirmado, runFipeBatch, type BatchFipeItem, type BatchResult } from "@/lib/fipe/batch";
+import {
+  isFipeConfirmado,
+  runFipeBatch,
+  filtrarVeiculosPendentesFipe,
+  type BatchFipeItem,
+  type BatchResult,
+  type FipeBatchStatusRow,
+} from "@/lib/fipe/batch";
 import { saveBatchToSupabase } from "@/lib/data/fipe-batch";
 import type { FipeValor } from "@/lib/fipe/types";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
+import { veiculo } from "./_mocks";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Harness
@@ -460,6 +469,170 @@ test("item sem referência NÃO conta como FIPE confirmada", () => {
   assert.equal(isFipeConfirmado(itemBase()), true);
   assert.equal(isFipeConfirmado(itemBase({ fipeReferencia: null })), false);
   assert.equal(isFipeConfirmado(itemBase({ fipeReferencia: "" })), false);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 4b) filtrarVeiculosPendentesFipe — finding 1 do review do Quinn
+//
+// Bug real: o filtro do script de sync (`scripts/sync-nbs/index.ts`) checava
+// só `plausibilidade_verificada === true && fipe_referencia_cod === ref`, SEM
+// olhar `score`. Um carro com match de modelo ruim (score baixo, só passou do
+// piso de 0.15 de `findModelos`) cujo PREÇO coincidentemente batia com o custo
+// ficava marcado como "já rodou com sucesso este mês" e era pulado em toda
+// rodada seguinte — podendo ficar preso até a referência virar (até 1 mês),
+// mesmo nunca tendo sido genuinamente confirmado.
+// ═══════════════════════════════════════════════════════════════════════════
+
+test("filtrarVeiculosPendentesFipe: os 4 cenários do finding 1", () => {
+  const REF_ATUAL = 335;
+  const REF_ANTERIOR = 334;
+
+  const nuncaTentado = veiculo({ chassi: "NUNCA-TENTADO" });
+  const confirmadoMesAnterior = veiculo({ chassi: "CONFIRMADO-MES-ANTERIOR" });
+  const falhouPlausibilidade = veiculo({ chassi: "FALHOU-PLAUSIBILIDADE" });
+  const scoreBaixoPlausivel = veiculo({ chassi: "SCORE-BAIXO-PLAUSIVEL" }); // o bug do finding 1
+  const confirmadoDeVerdade = veiculo({ chassi: "CONFIRMADO-DE-VERDADE" });
+
+  const batchExistente: FipeBatchStatusRow[] = [
+    // Confirmado, mas na referência ANTERIOR — a FIPE virou, precisa reprocessar.
+    {
+      chassi: confirmadoMesAnterior.chassi,
+      score: 0.9,
+      plausibilidade_verificada: true,
+      fipe_referencia_cod: REF_ANTERIOR,
+    },
+    // Falhou o guard de plausibilidade nesta referência — nunca chega a
+    // plausibilidade_verificada=true.
+    {
+      chassi: falhouPlausibilidade.chassi,
+      score: 0.9,
+      plausibilidade_verificada: false,
+      fipe_referencia_cod: REF_ATUAL,
+    },
+    // O caso do bug: score baixo (match de modelo não confiável) mas o preço
+    // bateu com o custo por coincidência → plausibilidade_verificada=true.
+    {
+      chassi: scoreBaixoPlausivel.chassi,
+      score: 0.2,
+      plausibilidade_verificada: true,
+      fipe_referencia_cod: REF_ATUAL,
+    },
+    // Controle: de fato confirmado nesta referência — este sim deve ser pulado.
+    {
+      chassi: confirmadoDeVerdade.chassi,
+      score: 0.9,
+      plausibilidade_verificada: true,
+      fipe_referencia_cod: REF_ATUAL,
+    },
+  ];
+
+  const pendentes = filtrarVeiculosPendentesFipe(
+    [nuncaTentado, confirmadoMesAnterior, falhouPlausibilidade, scoreBaixoPlausivel, confirmadoDeVerdade],
+    batchExistente,
+    REF_ATUAL,
+  );
+  const chassisPendentes = pendentes.map((v) => v.chassi);
+
+  assert.ok(chassisPendentes.includes(nuncaTentado.chassi), "nunca tentado precisa processar");
+  assert.ok(
+    chassisPendentes.includes(confirmadoMesAnterior.chassi),
+    "confirmado em referência ANTERIOR precisa reprocessar",
+  );
+  assert.ok(
+    chassisPendentes.includes(falhouPlausibilidade.chassi),
+    "falhou plausibilidade precisa reprocessar",
+  );
+  assert.ok(
+    chassisPendentes.includes(scoreBaixoPlausivel.chassi),
+    "score baixo mesmo com plausibilidade=true precisa reprocessar — sem este travamento o bug do finding 1 volta",
+  );
+  assert.ok(
+    !chassisPendentes.includes(confirmadoDeVerdade.chassi),
+    "confirmado de verdade (score alto + plausibilidade + referência corrente) deve ser pulado",
+  );
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 4c) `sb` opcional em saveBatchToSupabase/runFipeBatch — finding 3 do review
+//
+// Nenhum teste cobria o seam que permite rodar o batch fora do browser (script
+// Node do sync, sem sessão de usuário): injetar um client service-role em vez
+// de depender de `getSupabase()` (que lê `NEXT_PUBLIC_SUPABASE_URL`, ausente no
+// ambiente de teste). Sem cobertura, uma regressão que parasse de encaminhar
+// `sb` só apareceria em produção.
+// ═══════════════════════════════════════════════════════════════════════════
+
+test("saveBatchToSupabase usa o client `sb` injetado, sem precisar de getSupabase()", async () => {
+  const gravados: Record<string, unknown>[] = [];
+  const sbFake = {
+    from: (tabela: string) => {
+      assert.equal(tabela, "fipe_batch");
+      return {
+        upsert: (rows: Record<string, unknown>[], opts: { onConflict: string }) => {
+          assert.equal(opts.onConflict, "chassi");
+          gravados.push(...rows);
+          return Promise.resolve({ error: null });
+        },
+      };
+    },
+  } as unknown as SupabaseClient;
+
+  const batch: BatchResult = {
+    timestamp: Date.now(),
+    items: { A: itemBase({ chassi: "A" }) },
+    erros: [],
+    totalGrupos: 1,
+    totalVeiculos: 1,
+    persistenciaErro: null,
+  };
+
+  // Se isto chamasse getSupabase() por engano, lançaria por falta de
+  // NEXT_PUBLIC_SUPABASE_URL neste ambiente de teste — doesNotReject prova que
+  // o client injetado foi usado.
+  await assert.doesNotReject(() => saveBatchToSupabase(batch, sbFake));
+  assert.equal(gravados.length, 1);
+  assert.equal(gravados[0].chassi, "A");
+});
+
+test("runFipeBatch encaminha `sb` pra persistência — não depende de getSupabase() (sem sessão de browser)", async () => {
+  setup();
+  try {
+    const v = {
+      chassi: "9BFXXXXXXXXXXXXXX",
+      marca: "Ford",
+      modelo: "RANGER LIMITED",
+      ano_modelo: 2024,
+      combustivel: "Diesel",
+      custo_total: 250_000,
+    } as unknown as VeiculoParsed;
+
+    const gravados: Record<string, unknown>[] = [];
+    const sbFake = {
+      from: (tabela: string) => {
+        assert.equal(tabela, "fipe_batch");
+        return {
+          upsert: (rows: Record<string, unknown>[], opts: { onConflict: string }) => {
+            assert.equal(opts.onConflict, "chassi");
+            gravados.push(...rows);
+            return Promise.resolve({ error: null });
+          },
+        };
+      },
+    } as unknown as SupabaseClient;
+
+    const resultado = await runFipeBatch([v], undefined, sbFake);
+
+    assert.equal(
+      resultado.persistenciaErro,
+      null,
+      "se o sb não tivesse sido encaminhado, runFipeBatch teria caído pra getSupabase() e capturado o erro aqui",
+    );
+    assert.ok(resultado.items[v.chassi], "deveria ter criado um item pro chassi");
+    assert.equal(gravados.length, 1, "o client injetado deveria ter recebido o upsert");
+    assert.equal(gravados[0].chassi, v.chassi);
+  } finally {
+    teardown();
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
