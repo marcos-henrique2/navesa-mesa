@@ -8,7 +8,12 @@ import { abrirConexaoOracle, modoThinAtivo } from "./conexao-oracle";
 import { syncVeiculos } from "./sync-veiculos";
 import { syncVendas } from "./sync-vendas";
 import { gravarVeiculosNode, gravarVendasNode, removerVendasFantasma } from "./gravar";
-import { executarMarkupPiloto, gravarMarkupPilotoDebug, markupPilotoAtivado } from "./calcular-markup-estoque";
+import {
+  executarMarkupPiloto,
+  gravarMarkupPilotoDebug,
+  markupPilotoAtivado,
+  construirRegistroDebug,
+} from "./calcular-markup-estoque";
 
 /**
  * Orquestrador da sincronização NBS (Oracle) → Supabase.
@@ -277,13 +282,9 @@ async function main() {
 
         if (supabaseDisponivel() && resultadoMarkup.sucessos.length > 0) {
           const sbEscrita = criarClienteSupabaseServiceRole();
-          const registros = resultadoMarkup.sucessos.map((s) => ({
-            chassi: s.candidato.chassiResumido,
-            cod_empresa: s.candidato.codEmpresa,
-            cod_produto: s.candidato.codProduto,
-            cod_modelo: s.candidato.codModelo,
-            resultado_bruto: s.linhas,
-          }));
+          const registros = resultadoMarkup.sucessos.map((s) =>
+            construirRegistroDebug(s.candidato, s.linhas, s.resultado, s.parametrosFinais),
+          );
           linhasGravadasMarkupPiloto = await gravarMarkupPilotoDebug(sbEscrita, registros);
           console.log(`Gravação real: ${linhasGravadasMarkupPiloto} registro(s) em markup_piloto_debug.`);
         }
