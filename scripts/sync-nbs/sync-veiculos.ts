@@ -52,7 +52,7 @@ export type ResultadoSyncVeiculos = {
  * Qualificada com `v.` porque a query de leitura completa faz JOIN (ver
  * `SQL_SELECT_VEICULOS` abaixo).
  */
-const FILTRO_ESTOQUE = `(v.DATA_VENDA IS NULL OR v.DATA_VENDA = TO_DATE('1899-12-30','YYYY-MM-DD')) AND v.STATUS = 'E' AND v.CONSIGNATO = 'N' AND v.NOVO_USADO = 'U'`;
+export const FILTRO_ESTOQUE = `(v.DATA_VENDA IS NULL OR v.DATA_VENDA = TO_DATE('1899-12-30','YYYY-MM-DD')) AND v.STATUS = 'E' AND v.CONSIGNATO = 'N' AND v.NOVO_USADO = 'U'`;
 
 /**
  * modelo/marca via chave composta (COD_PRODUTO, COD_MODELO) — mesmo JOIN

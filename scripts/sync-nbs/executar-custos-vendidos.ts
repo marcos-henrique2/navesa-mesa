@@ -4,7 +4,7 @@ import type { CustoDetalhado } from "@/lib/parsers/nbs-custos-xls";
 import { syncCustosVendidos, custoVendidoToRow } from "./sync-custos-vendidos";
 
 export function lerOpcoesCustos(args: string[]): { somenteCustos: boolean; dryRun: boolean; dataInicio?: string } {
-  const permitidos = ["--somente-custos", "--dry-run"];
+  const permitidos = ["--somente-custos", "--dry-run", "--markup-piloto"];
   for (const arg of args) {
     if (!permitidos.includes(arg) && !arg.startsWith("--custos-desde=")) throw new Error(`Argumento desconhecido: ${arg}`);
   }
