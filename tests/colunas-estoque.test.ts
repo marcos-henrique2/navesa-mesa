@@ -255,57 +255,37 @@ describe("colunas-estoque (catálogo)", () => {
     assert.equal(new Set(COLUNAS_ESTOQUE.map((c) => c.grupo)).size, GRUPOS_ESTOQUE.length);
   });
 
-  it("confiança baixa só nas 5 colunas de custo Oracle pouco confirmadas", () => {
-    // custo_forplan SAIU dessa lista em 05/10/2026: fonte corrigida pra
-    // NBS.VEICULOS.CUSTO_FORPLAN_FINAL (coluna direta), confirmada ao
-    // centavo contra o relatório nativo PDF em 3 veículos — ver migration 043.
-    // custo_revisoes ENTROU em 07/10/2026: auditoria de 628 carros achou 29
-    // casos (4,6%) de divergência vs. PDF nativo (ver custo-estoque-fallback.ts).
-    // custo_despesas_gerais ENTROU em 07/10/2026 (migration 048): passou a
-    // ter fonte automática real (TIPO=9), validada 99,3% (426/429) — não
-    // 100%, por isso confiança baixa (igual às outras 4), não mais
-    // "não apurado".
-    const esperadoBaixa: ColunaKey[] = [
-      "custo_holdback",
-      "custo_acessorios",
-      "custo_comissoes",
-      "custo_revisoes",
-      "custo_despesas_gerais",
-    ];
+  it("confiança baixa só nas 3 colunas sem exemplo não-zero confirmado (HoldBack/Acessórios/ADM)", () => {
+    // ATUALIZADO 22/10/2026: Revisões/Forplan/Impostos/Comissões/Despesas
+    // Gerais SAÍRAM dessa lista — fonte agora é o cálculo oficial NBS
+    // (PKG_MARKUP_VEIC.CALCULAR_MARKUP_ESTOQUE), validado ao centavo contra o
+    // relatório nativo em produção. ADM ENTROU (era "nao_apurado"): o cálculo
+    // oficial tem fórmula mapeada (COD_CUSTO=8), mas sem exemplo não-zero
+    // ainda — mesma situação de HoldBack/Acessórios.
+    const esperadoBaixa: ColunaKey[] = ["custo_holdback", "custo_acessorios", "custo_adm"];
     for (const key of esperadoBaixa) {
       assert.equal(getColuna(key)!.confianca, "baixa", `${key} deveria ser confiança baixa`);
     }
   });
 
-  it("confiança 'não apurado' só em custo_adm", () => {
-    assert.equal(getColuna("custo_adm")!.confianca, "nao_apurado");
+  it("nenhuma coluna tem confiança 'nao_apurado' (custo_adm foi reclassificado pra 'baixa' em 22/10/2026)", () => {
+    assert.equal(getColuna("custo_adm")!.confianca, "baixa");
+    const comNaoApurado = COLUNAS_ESTOQUE.filter((c) => c.confianca === "nao_apurado");
+    assert.deepEqual(comNaoApurado, []);
   });
 
-  it("custo_forplan indica divergência do cálculo simulado do relatório", () => {
-    assert.equal(getColuna("custo_forplan")!.confianca, "diverge_relatorio");
-  });
-
-  it("confiança 'diverge_relatorio' em Forplan e Impostos (migration 046: soma de CODIGO_CUSTO real, mas diverge do valor calculado do relatório nativo)", () => {
-    assert.equal(getColuna("custo_impostos")!.confianca, "diverge_relatorio");
+  it("custo_forplan e custo_impostos não têm mais indicador de confiança (fonte agora é o cálculo oficial NBS, validado ao centavo)", () => {
+    assert.equal(getColuna("custo_forplan")!.confianca, undefined);
+    assert.equal(getColuna("custo_impostos")!.confianca, undefined);
     const comDivergeRelatorio = COLUNAS_ESTOQUE.filter((c) => c.confianca === "diverge_relatorio").map((c) => c.key);
-    assert.deepEqual(comDivergeRelatorio, ["custo_forplan", "custo_impostos"]);
+    assert.deepEqual(comDivergeRelatorio, []);
   });
 
-  it("nenhuma outra coluna tem indicador de confiança além das 9 esperadas", () => {
+  it("nenhuma outra coluna tem indicador de confiança além das 4 esperadas", () => {
     const comConfianca = COLUNAS_ESTOQUE.filter((c) => c.confianca != null).map((c) => c.key).sort();
     assert.deepEqual(
       comConfianca,
-      [
-        "custo_acessorios",
-        "custo_adm",
-        "custo_comissoes",
-        "custo_despesas_gerais",
-        "custo_detalhado_total",
-        "custo_forplan",
-        "custo_holdback",
-        "custo_impostos",
-        "custo_revisoes",
-      ].sort(),
+      ["custo_acessorios", "custo_adm", "custo_detalhado_total", "custo_holdback"].sort(),
     );
   });
 
@@ -314,21 +294,12 @@ describe("colunas-estoque (catálogo)", () => {
     assert.deepEqual(comParcial, ["custo_detalhado_total"]);
   });
 
-  it("fallbackManual marcado nas 8 categorias sem fonte automática confiável/que diverge do relatório nativo (migration 047 + decisões 06-07/10/2026 sobre Impostos/Revisões)", () => {
+  it("fallbackManual marcado só nas 3 categorias ainda sem exemplo não-zero confirmado (HoldBack/Acessórios/ADM)", () => {
+    // ATUALIZADO 22/10/2026: Revisões/Forplan/Impostos/Comissões/Despesas
+    // Gerais perderam fallbackManual — leem direto o cálculo oficial NBS,
+    // validado ao centavo contra o relatório nativo em produção.
     const comFallback = COLUNAS_ESTOQUE.filter((c) => c.fallbackManual === true).map((c) => c.key).sort();
-    assert.deepEqual(
-      comFallback,
-      [
-        "custo_acessorios",
-        "custo_adm",
-        "custo_comissoes",
-        "custo_despesas_gerais",
-        "custo_forplan",
-        "custo_holdback",
-        "custo_impostos",
-        "custo_revisoes",
-      ].sort(),
-    );
+    assert.deepEqual(comFallback, ["custo_acessorios", "custo_adm", "custo_holdback"].sort());
     // O total sem Forplan não usa uma coluna manual isolada.
     for (const key of ["custo_detalhado_total"] as ColunaKey[]) {
       assert.equal(getColuna(key)!.fallbackManual, undefined, `${key} não deveria ter fallbackManual`);
@@ -354,93 +325,61 @@ describe("colunas-estoque (catálogo)", () => {
       assert.equal(col.getValor({ ...veiculo({ custo_holdback: 0 }), custoEstoqueManual: null }), 0);
     });
 
-    it("custo_impostos: automático=0 + manual existe → usa o manual", () => {
-      const col = getColuna("custo_impostos")!;
-      const v = { ...veiculo({ custo_impostos: 0 }), custoEstoqueManual: custoEstoqueDetalhado({ impostos: 850 }) };
-      assert.equal(col.getValor(v), 850);
-    });
+    // ATUALIZADO 22/10/2026: Impostos/Revisões/Comissões/Despesas Gerais/
+    // Forplan perderam o fallback manual — leem direto o campo automático
+    // (cálculo oficial NBS, validado ao centavo contra o relatório nativo em
+    // produção). Os testes de fallback dessas 5 colunas foram removidos; o
+    // getter agora é testado como leitura direta (ver bloco acima, "as 9
+    // colunas novas existem...") e no describe "Forplan do relatório oficial
+    // de estoque" abaixo (também desatualizado — ver nota lá).
 
-    it("custo_impostos: prioridade INVERTIDA (07/10/2026) — manual vence mesmo com automático ≠0 — caso real da placa RBV7G98 (automático=1600, PDF real=2740.80)", () => {
+    it("custo_impostos: lê direto o campo automático, ignorando custoEstoqueManual", () => {
       const col = getColuna("custo_impostos")!;
-      const v = { ...veiculo({ custo_impostos: 1600 }), custoEstoqueManual: custoEstoqueDetalhado({ impostos: 2740.8 }) };
-      assert.equal(col.getValor(v), 2740.8);
-    });
-
-    it("custo_impostos: sem manual → usa o automático, mesmo ≠0 (automático é dado real, mesmo divergindo do relatório nativo)", () => {
-      const col = getColuna("custo_impostos")!;
-      const v = { ...veiculo({ custo_impostos: 499.5 }), custoEstoqueManual: null };
+      const v = { ...veiculo({ custo_impostos: 499.5 }), custoEstoqueManual: custoEstoqueDetalhado({ impostos: 2740.8 }) };
       assert.equal(col.getValor(v), 499.5);
     });
 
-    it("custo_impostos: sem automático (0) e sem manual → 0 (mesmo padrão de HoldBack/Acessórios/Comissões)", () => {
+    it("custo_impostos não tem mais indicador de confiança nem fallbackManual", () => {
       const col = getColuna("custo_impostos")!;
-      assert.equal(col.getValor(veiculo({ custo_impostos: 0 })), 0);
-      assert.equal(col.getValor({ ...veiculo({ custo_impostos: 0 }), custoEstoqueManual: null }), 0);
+      assert.equal(col.confianca, undefined);
+      assert.equal(col.fallbackManual, undefined);
     });
 
-    it("custo_impostos continua com confianca 'diverge_relatorio' mesmo tendo fallbackManual agora", () => {
-      const col = getColuna("custo_impostos")!;
-      assert.equal(col.confianca, "diverge_relatorio");
-      assert.equal(col.fallbackManual, true);
-    });
-
-    it("custo_revisoes: automático≠0 prevalece sobre o manual (regra PADRÃO, não a invertida de Impostos) — caso real da placa RBV7G98 (automático=230, PDF real=0)", () => {
-      const col = getColuna("custo_revisoes")!;
-      const v = { ...veiculo({ custo_revisoes: 230 }), custoEstoqueManual: custoEstoqueDetalhado({ revisoes: 0 }) };
-      assert.equal(col.getValor(v), 230);
-    });
-
-    it("custo_revisoes: automático zerado + manual presente → usa o manual (fallback padrão, igual a HoldBack/Acessórios/Comissões)", () => {
-      const col = getColuna("custo_revisoes")!;
-      const v = { ...veiculo({ custo_revisoes: 0 }), custoEstoqueManual: custoEstoqueDetalhado({ revisoes: 500 }) };
-      assert.equal(col.getValor(v), 500);
-    });
-
-    it("custo_revisoes: sem automático (0) e sem manual → 0 (mesmo padrão de HoldBack/Acessórios/Comissões)", () => {
-      const col = getColuna("custo_revisoes")!;
-      assert.equal(col.getValor(veiculo({ custo_revisoes: 0 })), 0);
-      assert.equal(col.getValor({ ...veiculo({ custo_revisoes: 0 }), custoEstoqueManual: null }), 0);
-    });
-
-    it("custo_acessorios e custo_comissoes seguem o mesmo fallback", () => {
-      const acessorios = getColuna("custo_acessorios")!;
+    it("custo_revisoes e custo_comissoes: lêem direto o campo automático, ignorando custoEstoqueManual", () => {
+      const revisoes = getColuna("custo_revisoes")!;
       const comissoes = getColuna("custo_comissoes")!;
       const v = {
-        ...veiculo({ custo_acessorios: 0, custo_comissoes: 0 }),
-        custoEstoqueManual: custoEstoqueDetalhado({ acessorios: 120, comissoes: 340 }),
+        ...veiculo({ custo_revisoes: 230, custo_comissoes: 0 }),
+        custoEstoqueManual: custoEstoqueDetalhado({ revisoes: 0, comissoes: 340 }),
       };
-      assert.equal(acessorios.getValor(v), 120);
-      assert.equal(comissoes.getValor(v), 340);
+      assert.equal(revisoes.getValor(v), 230);
+      assert.equal(comissoes.getValor(v), 0);
     });
 
-    it("custo_adm: automático null + manual presente usa o manual", () => {
+    it("custo_acessorios: automático zerado + manual presente → usa o manual (continua com fallback)", () => {
+      const col = getColuna("custo_acessorios")!;
+      const v = { ...veiculo({ custo_acessorios: 0 }), custoEstoqueManual: custoEstoqueDetalhado({ acessorios: 120 }) };
+      assert.equal(col.getValor(v), 120);
+    });
+
+    it("custo_adm: reclassificado pra confiança 'baixa' (22/10/2026), mas mantém o mesmo fallback manual de antes", () => {
       const col = getColuna("custo_adm")!;
+      assert.equal(col.confianca, "baixa");
+      assert.equal(col.fallbackManual, true);
       const v = { ...veiculo({ custo_adm: null }), custoEstoqueManual: custoEstoqueDetalhado({ adm: 75 }) };
       assert.equal(col.getValor(v), 75);
     });
 
-    it("custo_adm: nem automático nem manual tem valor → null (padrão 'não apurado', não vira 0)", () => {
+    it("custo_adm: nem automático nem manual tem valor → null (continua sem virar 0)", () => {
       const col = getColuna("custo_adm")!;
       assert.equal(col.getValor(veiculo({ custo_adm: null })), null);
       assert.equal(col.getValor({ ...veiculo({ custo_adm: null }), custoEstoqueManual: null }), null);
     });
 
-    it("custo_despesas_gerais: automático zerado + manual presente → usa o manual (fallback padrão, igual a HoldBack/Acessórios/Comissões — ATUALIZADO 07/10/2026, migration 048)", () => {
+    it("custo_despesas_gerais: lê direto o campo automático, ignorando custoEstoqueManual", () => {
       const col = getColuna("custo_despesas_gerais")!;
       const v = { ...veiculo({ custo_despesas_gerais: 0 }), custoEstoqueManual: custoEstoqueDetalhado({ desp_gerais: 60 }) };
-      assert.equal(col.getValor(v), 60);
-    });
-
-    it("custo_despesas_gerais: automático não-zero prevalece sobre o manual", () => {
-      const col = getColuna("custo_despesas_gerais")!;
-      const v = { ...veiculo({ custo_despesas_gerais: 500 }), custoEstoqueManual: custoEstoqueDetalhado({ desp_gerais: 60 }) };
-      assert.equal(col.getValor(v), 500);
-    });
-
-    it("custo_despesas_gerais: nem automático nem manual tem valor → 0, não mais null (deixou de ser 'não apurado')", () => {
-      const col = getColuna("custo_despesas_gerais")!;
-      assert.equal(col.getValor(veiculo({ custo_despesas_gerais: 0 })), 0);
-      assert.equal(col.getValor({ ...veiculo({ custo_despesas_gerais: 0 }), custoEstoqueManual: null }), 0);
+      assert.equal(col.getValor(v), 0);
     });
 
     it("sem custoEstoqueManual (campo ausente): comporta-se como se não houvesse manual", () => {
@@ -448,45 +387,40 @@ describe("colunas-estoque (catálogo)", () => {
       assert.equal(getColuna("custo_adm")!.getValor(veiculo({ custo_adm: null })), null);
     });
 
-    it("custo_detalhado_total usa o MESMO fallback resolvido das 7 colunas (não diverge do que é exibido) — Impostos com prioridade invertida (manual vence mesmo ≠0)", () => {
+    it("custo_detalhado_total: Revisões/Impostos/Comissões/Despesas Gerais leem direto; HoldBack/Acessórios/ADM continuam com fallback manual", () => {
       const col = getColuna("custo_detalhado_total")!;
       const v = {
         ...veiculo({
-          custo_revisoes: 100, // não-zero → NÃO cai pro manual (regra padrão de Revisões)
+          custo_revisoes: 100, // direto, ignora manual
           custo_forplan: 999, // excluído do total — não deve entrar na soma
           custo_holdback: 0, // zerado → cai pro manual
           custo_acessorios: 0, // zerado → cai pro manual
-          custo_impostos: 500, // ≠0, mas Impostos é prioridade invertida → cai pro manual mesmo assim
-          custo_comissoes: 600, // não-zero → NÃO cai pro manual
+          custo_impostos: 500, // direto, ignora manual
+          custo_comissoes: 600, // direto, ignora manual
           custo_adm: null, // null → cai pro manual
-          custo_despesas_gerais: 0, // zerado → cai pro manual (ATUALIZADO 07/10/2026: não mais null)
+          custo_despesas_gerais: 25, // direto, ignora manual
         }),
         custoEstoqueManual: custoEstoqueDetalhado({ revisoes: 999, holdback: 50, acessorios: 40, impostos: 2740.8, comissoes: 9999, adm: 10, desp_gerais: 5 }),
       };
-      // 100 (revisoes automático, NÃO o manual 999) + 50 (holdback via manual) + 40 (acessorios
-      // via manual) + 2740.8 (impostos via manual, prioridade invertida — NÃO o automático 500)
-      // + 600 (comissoes automático, NÃO o manual 9999) + 10 (adm via manual) + 5 (desp_gerais
-      // via manual) = 3545.8
-      assert.equal(col.getValor(v), 3545.8);
+      // 100 (revisoes direto) + 50 (holdback via manual) + 40 (acessorios via
+      // manual) + 500 (impostos direto) + 600 (comissoes direto) + 10 (adm
+      // via manual) + 25 (despesas_gerais direto) = 1325
+      assert.equal(col.getValor(v), 1325);
     });
 
-    it("custo_detalhado_total reflete o fallback de Revisões quando o automático vem 0", () => {
+    it("custo_detalhado_total: zera HoldBack/Acessórios/ADM quando nem automático nem manual têm valor", () => {
       const col = getColuna("custo_detalhado_total")!;
-      const v = {
-        ...veiculo({
-          custo_revisoes: 0, // zerado → cai pro manual
-          custo_forplan: 999, // excluído do total
-          custo_holdback: 0,
-          custo_acessorios: 0,
-          custo_impostos: 0, // zerado → cai pro manual (igual, independente da prioridade invertida)
-          custo_comissoes: 0,
-          custo_adm: null,
-          custo_despesas_gerais: 0, // ATUALIZADO 07/10/2026: não mais null
-        }),
-        custoEstoqueManual: custoEstoqueDetalhado({ revisoes: 120, holdback: 0, acessorios: 0, impostos: 850, comissoes: 0, adm: 0, desp_gerais: 0 }),
-      };
-      // 120 (revisoes via manual) + 0 + 0 + 850 (impostos via manual) + 0 + 0 + 0 = 970
-      assert.equal(col.getValor(v), 970);
+      const v = veiculo({
+        custo_revisoes: 0,
+        custo_forplan: 999, // excluído do total
+        custo_holdback: 0,
+        custo_acessorios: 0,
+        custo_impostos: 0,
+        custo_comissoes: 0,
+        custo_adm: null,
+        custo_despesas_gerais: 0,
+      });
+      assert.equal(col.getValor(v), 0);
     });
   });
 });
@@ -545,13 +479,17 @@ describe("expand/collapse padrão dos grupos (sem busca)", () => {
 });
 
 describe("Forplan do relatório oficial de estoque", () => {
-  it("prioriza o cálculo simulado do PDF mesmo com valor final Oracle não-zero", () => {
+  // ATUALIZADO 22/10/2026: Forplan deixou de priorizar o PDF manual — fonte
+  // agora é o cálculo oficial NBS (PKG_MARKUP_VEIC.CALCULAR_MARKUP_ESTOQUE),
+  // validado ao centavo contra o relatório nativo em produção. Lê direto o
+  // campo automático, ignorando custoEstoqueManual.
+  it("lê direto o campo automático, ignorando custoEstoqueManual", () => {
     const v = { ...veiculo({ custo_forplan: 10 }), custoEstoqueManual: custoEstoqueDetalhado({ forplan: 9667.36 }) };
-    assert.equal(getColuna("custo_forplan")!.getValor(v), 9667.36);
+    assert.equal(getColuna("custo_forplan")!.getValor(v), 10);
   });
-  it("preserva zero oficial e usa automático somente sem PDF", () => {
-    const v = { ...veiculo({ custo_forplan: 200 }), custoEstoqueManual: custoEstoqueDetalhado({ forplan: 0 }) };
-    assert.equal(getColuna("custo_forplan")!.getValor(v), 0);
-    assert.equal(getColuna("custo_forplan")!.getValor(veiculo({ custo_forplan: 200 })), 200);
+  it("não tem mais indicador de confiança nem fallbackManual", () => {
+    const col = getColuna("custo_forplan")!;
+    assert.equal(col.confianca, undefined);
+    assert.equal(col.fallbackManual, undefined);
   });
 });

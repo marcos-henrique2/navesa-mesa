@@ -100,14 +100,17 @@ const TEXTO_CONFIANCA_BAIXA =
   "Confiança baixa: na amostra testada esse valor veio zerado na maioria dos carros. O código de custo existe no Oracle mas ainda não foi confirmado — salvo quando o ícone de upload ao lado indica que veio do PDF subido manualmente. Use com cautela.";
 const TEXTO_NAO_APURADO =
   "Não apurado: aparece como — no Excel (não é R$ 0,00) — ainda não existe fórmula de cálculo definida pra essa categoria, salvo quando o ícone de upload ao lado indica que veio do PDF subido manualmente.";
+// ATUALIZADO 22/10/2026: nenhuma coluna do catálogo usa mais `confianca:
+// "diverge_relatorio"` (Forplan e Impostos passaram a ler direto do cálculo
+// oficial NBS — ver colunas-estoque.ts). Mantido (não removido) porque o tipo
+// `confianca` ainda permite esse valor e o branch em `IconeConfianca` seria
+// reativado se alguma coluna futura precisar dele.
 const TEXTO_DIVERGE_RELATORIO =
   "O valor gravado no Oracle pode divergir do cálculo simulado que o relatório nativo NBS mostra nesta coluna — aquele valor é calculado internamente pelo NBS e não está disponível pra nós, então o automático pode divergir dele mesmo vindo ≠ 0. Quando você sobe o PDF na tela Upload (ícone de upload ao lado), o valor do upload sempre prevalece sobre o automático — é o valor real do relatório nativo, já que vem do PDF dele.";
 const TEXTO_CUSTO_DETALHADO_PARCIAL =
   "Esta soma inclui categorias com confiança baixa, ainda não apuradas ou que divergem do relatório nativo (Revisões, HoldBack, Acessórios, Comissões, ADM, Despesas Gerais, Impostos) — pode estar subestimada ou não bater com o relatório nativo. Use com cautela.";
 const TEXTO_FALLBACK_MANUAL =
   "Pode vir do upload manual: quando o valor automático (Oracle) vier zerado/não apurado, esta coluna usa o relatório \"Custos de Veículos em Estoque\" (PDF subido na tela Upload) como alternativa. Esse valor só atualiza quando alguém sobe o PDF de novo — pode estar desatualizado.";
-const TEXTO_MANUAL_PRIORITARIO =
-  "Pode vir do upload manual: diferente das outras colunas com este ícone, aqui o valor do upload (PDF subido na tela Upload) prevalece SEMPRE que existir — mesmo quando o automático (Oracle) também tiver valor ≠ 0 — porque o automático mede uma métrica diferente da do relatório nativo (ver ícone de confiança ao lado). Esse valor só atualiza quando alguém sobe o PDF de novo — pode estar desatualizado.";
 
 function todayISOLocal(): string {
   const d = new Date();
@@ -148,15 +151,18 @@ function IconeConfianca({ confianca }: { confianca: ColunaEstoque["confianca"] }
 
 /**
  * Ícone extra (independente de `confianca`) avisando que a coluna pode cair
- * pro upload manual. `chave` seleciona o texto: Impostos e Forplan têm prioridade
- * invertida (manual vence sempre que existir, não só quando automático = 0)
- * — ver `resolverCustoImpostosComPrioridadeManual`.
+ * pro upload manual.
+ *
+ * ATUALIZADO 22/10/2026: Impostos e Forplan perderam `fallbackManual` (fonte
+ * agora é o cálculo oficial NBS, sem fallback — ver colunas-estoque.ts), que
+ * era o único caso com texto/prioridade diferente (`resolverCustoImpostosComPrioridadeManual`).
+ * Hoje só HoldBack/Acessórios/ADM usam este ícone, todos com a mesma regra
+ * padrão — por isso não há mais variação de texto por `chave`.
  */
-function IconeFallbackManual({ ativo, chave }: { ativo?: boolean; chave?: ColunaKey }) {
+function IconeFallbackManual({ ativo }: { ativo?: boolean }) {
   if (!ativo) return null;
-  const texto = (chave === "custo_impostos" || chave === "custo_forplan") ? TEXTO_MANUAL_PRIORITARIO : TEXTO_FALLBACK_MANUAL;
   return (
-    <Tooltip content={texto} ariaLabel={texto} side="top">
+    <Tooltip content={TEXTO_FALLBACK_MANUAL} ariaLabel={TEXTO_FALLBACK_MANUAL} side="top">
       <UploadCloud size={13} className="text-blue-600 dark:text-blue-400" aria-hidden="true" />
     </Tooltip>
   );
@@ -511,9 +517,9 @@ export function ConfigurarRelatorioEstoqueModal({
                     <div id={painelId} className="pb-2 pl-2">
                       {grupo === "custos_detalhados" && (
                         <p className="mb-1 px-2 text-xs text-[var(--text-muted)]">
-                          Hoje só uma pequena parte do estoque tem custo detalhado fechado no
-                          Oracle — a maioria dos carros vai aparecer com R$ 0,00 ou em branco
-                          nessas colunas.
+                          A maior parte dessas colunas agora vem do cálculo oficial da NBS,
+                          cobrindo todo o estoque. HoldBack, Acessórios e ADM ainda não têm
+                          confirmação de valor não-zero — use com mais cautela nesses três.
                         </p>
                       )}
                       <div className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
@@ -530,7 +536,7 @@ export function ConfigurarRelatorioEstoqueModal({
                             />
                             <span>{c.label}</span>
                             <IconeConfianca confianca={c.confianca} />
-                            <IconeFallbackManual ativo={c.fallbackManual} chave={c.key} />
+                            <IconeFallbackManual ativo={c.fallbackManual} />
                           </label>
                         ))}
                       </div>
