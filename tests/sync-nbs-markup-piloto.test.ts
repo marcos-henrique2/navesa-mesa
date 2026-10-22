@@ -221,7 +221,7 @@ describe("markup piloto — query de candidatos (placa alvo)", () => {
   it("sem placaAlvo, mantém a query padrão sem filtro extra (comportamento de hoje)", () => {
     const sql = montarQueryCandidatosPiloto();
     assert.ok(!sql.includes(":placaAlvo"), "não deve referenciar bind de placa sem placaAlvo");
-    assert.ok(sql.includes("NVL(v.PLACA, v.PLACA_USADO) AS PLACA"), "deve trazer a placa resolvida pro result set");
+    assert.ok(sql.includes("v.PLACA_USADO AS PLACA"), "deve trazer a placa (PLACA_USADO é a única coluna que existe em NBS.VEICULOS)");
     assert.ok(sql.includes("ORDER BY v.CHASSI_RESUMIDO"));
   });
 
@@ -229,7 +229,7 @@ describe("markup piloto — query de candidatos (placa alvo)", () => {
     const sql = montarQueryCandidatosPiloto("NVO-0860");
     assert.ok(sql.includes(":placaAlvo"), "deve usar bind nomeado, nunca concatenar o valor");
     assert.ok(!sql.includes("NVO-0860"), "o valor da placa não pode ir concatenado na string SQL");
-    assert.ok(sql.includes("REPLACE(NVL(v.PLACA, v.PLACA_USADO), '-', '')"));
+    assert.ok(sql.includes("REPLACE(v.PLACA_USADO, '-', '')"));
     assert.ok(sql.includes("REPLACE(:placaAlvo, '-', '')"));
     assert.ok(sql.includes("UPPER("));
   });
