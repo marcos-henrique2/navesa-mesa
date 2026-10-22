@@ -10,7 +10,6 @@ import {
   extrairParametrosFinais,
   serializarLinhasMarkup,
   construirRegistroDebug,
-  markupPilotoAtivado,
   gravarMarkupPilotoDebug,
   montarQueryCandidatosPiloto,
   executarMarkupPiloto,
@@ -236,15 +235,6 @@ describe("markup piloto — serialização do resultado bruto", () => {
   it("aceita resultado e parâmetros finais nulos (chamada que falhou antes de capturar outBinds)", () => {
     const registro = construirRegistroDebug(candidato(), [], null, null);
     assert.deepEqual(registro.resultado_bruto, { linhas: [], resultado: null, parametros_finais: null });
-  });
-});
-
-describe("markup piloto — flag de ativação", () => {
-  it("só ativa com a flag explícita --markup-piloto", () => {
-    assert.equal(markupPilotoAtivado([]), false);
-    assert.equal(markupPilotoAtivado(["--somente-custos"]), false);
-    assert.equal(markupPilotoAtivado(["--markup-piloto"]), true);
-    assert.equal(markupPilotoAtivado(["--somente-custos", "--markup-piloto"]), true);
   });
 });
 

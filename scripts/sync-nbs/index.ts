@@ -12,7 +12,6 @@ import { gravarVeiculosNode, gravarVendasNode, removerVendasFantasma } from "./g
 import {
   processarMarkupOficialEstoque,
   gravarMarkupPilotoDebug,
-  markupPilotoAtivado,
   construirRegistroDebug,
 } from "./calcular-markup-estoque";
 
@@ -102,20 +101,25 @@ async function gravarSyncLog(fonte: "veiculos" | "vendas" | "fipe" | "markup_pil
 
 /**
  * Bloco MARKUP OFICIAL extraído pra função própria — reusado tanto no fluxo
- * completo (atrás da flag --markup-piloto) quanto no modo isolado
- * (--somente-markup-piloto), que pula VEÍCULOS/VENDAS/CUSTOS/FIPE pra não
- * precisar esperar o sync inteiro só pra testar esta parte. Ver
- * docs/sync-custos-markup-acesso.md, mapear-markup-oficial.ts e
- * calcular-markup-estoque.ts.
+ * completo (agora rodando por padrão, sem precisar de flag — ver nota de
+ * 22/10/2026 abaixo) quanto no modo isolado (--somente-markup-piloto), que
+ * pula VEÍCULOS/VENDAS/CUSTOS/FIPE pra não precisar esperar o sync inteiro só
+ * pra testar esta parte. Ver docs/sync-custos-markup-acesso.md,
+ * mapear-markup-oficial.ts e calcular-markup-estoque.ts.
  *
- * ESCALADO em 22/10/2026 (piloto validado em 4 carros, batendo ao centavo):
- * sem `--markup-piloto-limite=N`, processa TODO o estoque do filtro (não só
- * 1 carro) e GRAVA de verdade as 8 categorias oficiais + custo_total no
+ * VALIDADO E LIGADO POR PADRÃO em 22/10/2026 (piloto rodou pro estoque
+ * INTEIRO em produção — 1097/1097 veículos, zero falhas Oracle, zero
+ * divergências de reconciliação, 1097/1097 gravados): este bloco agora roda
+ * em TODA execução de `npm run sync-nbs`, inclusive o ciclo automático de 2h
+ * do servidor, sem precisar de nenhuma flag manual. Processa TODO o estoque
+ * do filtro e GRAVA de verdade as 8 categorias oficiais + custo_total no
  * snapshot desta rodada (`snapshotId`), quando a reconciliação confirmar o
- * valor (ver processarMarkupOficialEstoque). Continua atrás da flag
- * `--markup-piloto` — decisão deliberada (risco financeiro alto, ~1089
- * veículos): NÃO foi ligado por padrão no ciclo automático de 2h só porque
- * esta rodada escalou; Marcos decide quando ativar em produção.
+ * valor (ver processarMarkupOficialEstoque). `--markup-piloto-limite=N`
+ * continua disponível pra cortar a rodada manualmente (útil pra um rollout
+ * gradual futuro de alguma mudança neste bloco) e `--markup-piloto-placa=XXX`
+ * pra mirar 1 carro (debug/investigação pontual). Em emergência, dá pra
+ * desligar SÓ este bloco (mantendo o resto do sync normal) com
+ * `--sem-markup-oficial` — ver lerOpcoesCustos.
  *
  * `snapshotId` null (bloco VEÍCULOS falhou ou filtro não plausível nesta
  * rodada, ou modo `--somente-markup-piloto` que nunca roda VEÍCULOS) faz a
@@ -374,12 +378,17 @@ async function main() {
 
     await executarCustosVendidos(conn, opcoesCustos);
 
-    // ─── MARKUP PILOTO (opcional, flag --markup-piloto) ──────────────────────
-    // SEM a flag, este bloco não roda — o ciclo automático de 2h continua
-    // exatamente igual a hoje. Ver scripts/sync-nbs/calcular-markup-estoque.ts
-    // e docs/sync-custos-markup-acesso.md pro contexto completo (piloto de
-    // 1 carro, chamada real a NBS.PKG_MARKUP_VEIC.CALCULAR_MARKUP_ESTOQUE).
-    if (markupPilotoAtivado(process.argv.slice(2))) {
+    // ─── MARKUP OFICIAL (padrão, rodando sempre) ─────────────────────────────
+    // Roda em TODA rodada, inclusive o ciclo automático de 2h do servidor —
+    // sem flag nenhuma (ver nota de 22/10/2026 em executarBlocoMarkupPiloto).
+    // --sem-markup-oficial é o escape hatch de emergência: desliga só este
+    // bloco, sem afetar VEÍCULOS/VENDAS/CUSTOS/FIPE. Ver
+    // scripts/sync-nbs/calcular-markup-estoque.ts e
+    // docs/sync-custos-markup-acesso.md pro contexto completo (chamada real a
+    // NBS.PKG_MARKUP_VEIC.CALCULAR_MARKUP_ESTOQUE).
+    if (opcoesCustos.semMarkupOficial) {
+      console.log("\n--- MARKUP OFICIAL: PULADO (--sem-markup-oficial) ---");
+    } else {
       await executarBlocoMarkupPiloto(conn, opcoesCustos.placaAlvo, snapshotIdAtual, opcoesCustos.markupPilotoLimite);
     }
 

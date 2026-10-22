@@ -6,19 +6,20 @@ import type { CustoDetalhado } from "@/lib/parsers/nbs-custos-xls";
 
 test("dry-run não permite passar pelos blocos gravadores de estoque/vendas", () => {
   assert.throws(() => lerOpcoesCustos(["--dry-run"]), /somente-custos/);
-  assert.deepEqual(lerOpcoesCustos(["--somente-custos", "--dry-run", "--custos-desde=2026-01-01"]), { somenteCustos: true, somenteMarkupPiloto: false, dryRun: true, dataInicio: "2026-01-01", placaAlvo: undefined, markupPilotoLimite: undefined });
+  assert.deepEqual(lerOpcoesCustos(["--somente-custos", "--dry-run", "--custos-desde=2026-01-01"]), { somenteCustos: true, somenteMarkupPiloto: false, semMarkupOficial: false, dryRun: true, dataInicio: "2026-01-01", placaAlvo: undefined, markupPilotoLimite: undefined });
 });
 test("CLI rejeita datas inexistentes, opções desconhecidas e início duplicado", () => {
   for (const args of [["--custos-desde=2026-02-30"], ["--custos-desde="], ["--escrever"], ["--custos-desde=2026-01-01", "--custos-desde=2026-02-01"]]) assert.throws(() => lerOpcoesCustos(args));
 });
 test("--somente-markup-piloto roda isolado, sem passar pelos blocos de veículos/vendas/custos/FIPE", () => {
-  assert.deepEqual(lerOpcoesCustos(["--somente-markup-piloto"]), { somenteCustos: false, somenteMarkupPiloto: true, dryRun: false, dataInicio: undefined, placaAlvo: undefined, markupPilotoLimite: undefined });
+  assert.deepEqual(lerOpcoesCustos(["--somente-markup-piloto"]), { somenteCustos: false, somenteMarkupPiloto: true, semMarkupOficial: false, dryRun: false, dataInicio: undefined, placaAlvo: undefined, markupPilotoLimite: undefined });
   assert.throws(() => lerOpcoesCustos(["--somente-custos", "--somente-markup-piloto"]), /OU/);
 });
 test("--markup-piloto-placa=NVO0860 é lida e repassada junto com --somente-markup-piloto", () => {
   assert.deepEqual(lerOpcoesCustos(["--somente-markup-piloto", "--markup-piloto-placa=NVO0860"]), {
     somenteCustos: false,
     somenteMarkupPiloto: true,
+    semMarkupOficial: false,
     dryRun: false,
     dataInicio: undefined,
     placaAlvo: "NVO0860",
@@ -33,6 +34,7 @@ test("--markup-piloto-limite=N é lido, validado e repassado", () => {
   assert.deepEqual(lerOpcoesCustos(["--somente-markup-piloto", "--markup-piloto-limite=10"]), {
     somenteCustos: false,
     somenteMarkupPiloto: true,
+    semMarkupOficial: false,
     dryRun: false,
     dataInicio: undefined,
     placaAlvo: undefined,
@@ -43,6 +45,13 @@ test("--markup-piloto-limite=N é lido, validado e repassado", () => {
   assert.throws(() => lerOpcoesCustos(["--markup-piloto-limite=abc"]), /inteiro positivo/);
   assert.throws(() => lerOpcoesCustos(["--markup-piloto-limite=1.5"]), /inteiro positivo/);
   assert.throws(() => lerOpcoesCustos(["--markup-piloto-limite=10", "--markup-piloto-limite=20"]), /apenas uma vez/);
+});
+test("--markup-piloto segue aceita como no-op (compatibilidade) — não muda nenhum campo retornado", () => {
+  assert.deepEqual(lerOpcoesCustos(["--markup-piloto"]), { somenteCustos: false, somenteMarkupPiloto: false, semMarkupOficial: false, dryRun: false, dataInicio: undefined, placaAlvo: undefined, markupPilotoLimite: undefined });
+});
+test("--sem-markup-oficial é lida (escape hatch de emergência) e rejeita combinação com --somente-markup-piloto", () => {
+  assert.deepEqual(lerOpcoesCustos(["--sem-markup-oficial"]), { somenteCustos: false, somenteMarkupPiloto: false, semMarkupOficial: true, dryRun: false, dataInicio: undefined, placaAlvo: undefined, markupPilotoLimite: undefined });
+  assert.throws(() => lerOpcoesCustos(["--somente-markup-piloto", "--sem-markup-oficial"]), /não faz sentido/);
 });
 const custo = (valor: number): CustoDetalhado => ({placa:"ABC1D23",modelo:"TESTE",data_fatura:new Date("2026-01-01T00:00:00Z"),data_venda:new Date("2026-01-02T00:00:00Z"),dias_patio:1,nota_fabrica_taxa_icms:valor,despesas_oficina:0,frete_icms_frete:0,forplan:0,impostos:0,comissoes:0,ganhos_indiretos:0,adm:0,despesas_gerais:0,custo_total:valor,valor_vendido:valor*1.1,margem_real:valor*0.1,margem_pct:10});
 test("nenhum lote é enviado quando existe custo zerado ou placa inválida", async () => {
