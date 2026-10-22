@@ -20,10 +20,7 @@ import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import type { CustoEstoqueDetalhado } from "@/lib/parsers/nbs-custos-estoque-pdf";
 import type { ColunaAgregacao, ColunaDef } from "@/lib/export/relatorio/tipos";
 import { calcularCustoReal } from "@/lib/export/custo-real";
-import {
-  resolverCustoComFallbackManual,
-  resolverCustoImpostosComPrioridadeManual,
-} from "@/lib/export/custo-estoque-fallback";
+import { resolverCustoComFallbackManual } from "@/lib/export/custo-estoque-fallback";
 
 /**
  * Veículo enriquecido com o nome da loja já resolvido (como o gerencial usa),
@@ -133,9 +130,9 @@ export type ColunaEstoque = {
    *  - "nao_apurado": a coluna pode vir em BRANCO (não R$ 0,00) — ainda não
    *    existe fórmula de cálculo definida pra essa categoria.
    *  - "parcial": é uma SOMA de categorias com confiança desigual (ex.:
-   *    `custo_detalhado_total` mistura categorias confirmadas com "baixa" e
-   *    "nao_apurado") — o total pode estar subestimado mesmo sem nenhuma
-   *    categoria individual estar "errada".
+   *    `custo_detalhado_total` mistura categorias confirmadas com "baixa" —
+   *    HoldBack/Acessórios/ADM) — o total pode estar subestimado mesmo sem
+   *    nenhuma categoria individual estar "errada".
    *  - "diverge_relatorio": a coluna TEM fonte real e confirmada no Oracle
    *    (não vem zerada), mas o valor que ela soma é um custo DIFERENTE do que
    *    o relatório nativo NBS "Custos de Veículos em Estoque" mostra na
@@ -144,7 +141,10 @@ export type ColunaEstoque = {
    *    tabelas que o sync Oracle consegue ler), não soma de lançamentos.
    *    Diferente de "baixa" (onde a fonte pode estar certa mas só não foi
    *    confirmada por falta de exemplo não-zero): aqui já sabemos que a fonte
-   *    mapeada mede outra coisa.
+   *    mapeada mede outra coisa. ATUALIZADO 22/10/2026: nenhuma coluna do
+   *    catálogo usa mais este valor — Forplan e Impostos passaram a ler
+   *    direto do cálculo oficial NBS (ver notas nas colunas abaixo). Mantido
+   *    no tipo por ser histórico/pode voltar a ser necessário.
    */
   confianca?: "baixa" | "nao_apurado" | "parcial" | "diverge_relatorio";
   /**
@@ -213,11 +213,20 @@ export const COLUNAS_ESTOQUE: readonly ColunaEstoque[] = [
   // PDF real=R$0). Mesmo padrão das outras categorias "baixa" (HoldBack/
   // Acessórios/Comissões): automático sempre-número prevalece quando ≠0,
   // cai pro manual (upload do PDF) quando automático vier 0.
-  { key: "custo_revisoes", label: "Revisões", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_revisoes, v.custoEstoqueManual?.revisoes) },
+  // ATUALIZADO 22/10/2026: fonte agora é o cálculo oficial NBS
+  // (PKG_MARKUP_VEIC.CALCULAR_MARKUP_ESTOQUE, ver docs/sync-custos-markup-acesso.md),
+  // validado ao centavo contra o relatório nativo em produção — confiança/
+  // fallback manual removidos.
+  { key: "custo_revisoes", label: "Revisões", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", getValor: (v) => v.custo_revisoes },
   // PDF oficial de 08/10/2026: CUSTO_FORPLAN_FINAL diverge em 276/287 carros.
   // O relatório simula o Forplan vigente; o valor final gravado não o reproduz.
   // Priorizar o PDF quando disponível, inclusive zero; sem ele, indicar divergência.
-  { key: "custo_forplan", label: "Forplan", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "diverge_relatorio", fallbackManual: true, getValor: (v) => v.custoEstoqueManual?.forplan ?? v.custo_forplan },
+  //
+  // ATUALIZADO 22/10/2026: fonte agora é o cálculo oficial NBS
+  // (PKG_MARKUP_VEIC.CALCULAR_MARKUP_ESTOQUE, ver docs/sync-custos-markup-acesso.md),
+  // validado ao centavo contra o relatório nativo em produção — confiança/
+  // fallback manual removidos.
+  { key: "custo_forplan", label: "Forplan", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", getValor: (v) => v.custo_forplan },
   // custo_holdback: fonte corrigida em 05/10/2026 pra NBS.VEICULOS.HOLD_BACK_FINAL
   // (coluna direta, mesmo padrão de custo_forplan) — mas sem exemplo
   // não-zero no PDF de hoje pra confirmar valor (os ~283 veículos testados
@@ -261,10 +270,28 @@ export const COLUNAS_ESTOQUE: readonly ColunaEstoque[] = [
   // relatório nativo); deixa de ser imprecisa quando o manual entra em ação
   // (nesse caso o valor É o do relatório nativo, já que vem do PDF dele — ver
   // texto ajustado em ConfigurarRelatorioEstoqueModal).
-  { key: "custo_impostos", label: "Impostos", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "diverge_relatorio", fallbackManual: true, getValor: (v) => resolverCustoImpostosComPrioridadeManual(v.custo_impostos, v.custoEstoqueManual?.impostos) },
-  { key: "custo_comissoes", label: "Comissões", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_comissoes, v.custoEstoqueManual?.comissoes) },
-  { key: "custo_adm", label: "ADM", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "nao_apurado", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_adm, v.custoEstoqueManual?.adm) },
-  { key: "custo_despesas_gerais", label: "Despesas Gerais", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_despesas_gerais, v.custoEstoqueManual?.desp_gerais) },
+  // ATUALIZADO 22/10/2026: fonte agora é o cálculo oficial NBS
+  // (PKG_MARKUP_VEIC.CALCULAR_MARKUP_ESTOQUE, ver docs/sync-custos-markup-acesso.md),
+  // validado ao centavo contra o relatório nativo em produção — confiança/
+  // fallback manual removidos.
+  { key: "custo_impostos", label: "Impostos", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", getValor: (v) => v.custo_impostos },
+  // ATUALIZADO 22/10/2026: fonte agora é o cálculo oficial NBS
+  // (PKG_MARKUP_VEIC.CALCULAR_MARKUP_ESTOQUE, ver docs/sync-custos-markup-acesso.md),
+  // validado ao centavo contra o relatório nativo em produção — confiança/
+  // fallback manual removidos.
+  { key: "custo_comissoes", label: "Comissões", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", getValor: (v) => v.custo_comissoes },
+  // RECLASSIFICADO 22/10/2026: era "nao_apurado" ("nenhuma fórmula definida"),
+  // mas o cálculo oficial NBS TEM fórmula mapeada pra ADM (COD_CUSTO=8,
+  // "Despesas ADM") — só que, igual HoldBack/Acessórios, nunca vimos exemplo
+  // não-zero pra confirmar o valor na prática. Passa pra "baixa" (mesma
+  // categoria de HoldBack/Acessórios: fonte mapeada, sem confirmação de valor
+  // não-zero). fallbackManual continua.
+  { key: "custo_adm", label: "ADM", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", confianca: "baixa", fallbackManual: true, getValor: (v) => resolverCustoComFallbackManual(v.custo_adm, v.custoEstoqueManual?.adm) },
+  // ATUALIZADO 22/10/2026: fonte agora é o cálculo oficial NBS
+  // (PKG_MARKUP_VEIC.CALCULAR_MARKUP_ESTOQUE, ver docs/sync-custos-markup-acesso.md),
+  // validado ao centavo contra o relatório nativo em produção — confiança/
+  // fallback manual removidos.
+  { key: "custo_despesas_gerais", label: "Despesas Gerais", formato: "moeda", agregacao: "soma", grupo: "custos_detalhados", getValor: (v) => v.custo_despesas_gerais },
   // custo_detalhado_total: soma das OUTRAS 7 categorias (exclui Forplan —
   // esclarecido pelo Marcos em 05/10/2026: Forplan é custo FINANCEIRO (floor
   // plan), conceitualmente diferente do "custo que o carro teve"; continua
@@ -285,6 +312,13 @@ export const COLUNAS_ESTOQUE: readonly ColunaEstoque[] = [
   // resolvido como as outras 6, pra não divergir da coluna individual quando
   // o manual entra em ação. Impostos passou a usar a variante de prioridade
   // invertida (`resolverCustoImpostosComPrioridadeManual`) pelo mesmo motivo.
+  //
+  // ATUALIZADO 22/10/2026: Revisões/Impostos/Comissões/Despesas Gerais agora
+  // leem direto (`v.custo_X`, sem fallback manual — ver colunas individuais
+  // acima). HoldBack/Acessórios/ADM continuam sem confirmação de valor
+  // não-zero no cálculo oficial, então continuam usando
+  // `resolverCustoComFallbackManual`. Confiança continua "parcial": mistura
+  // categorias agora confirmadas com 3 que ainda não têm exemplo não-zero.
   {
     key: "custo_detalhado_total",
     label: "Custos detalhados (total, sem Forplan)",
@@ -293,13 +327,13 @@ export const COLUNAS_ESTOQUE: readonly ColunaEstoque[] = [
     grupo: "custos_detalhados",
     confianca: "parcial",
     getValor: (v) =>
-      (resolverCustoComFallbackManual(v.custo_revisoes, v.custoEstoqueManual?.revisoes) ?? 0) +
+      (v.custo_revisoes ?? 0) +
       (resolverCustoComFallbackManual(v.custo_holdback, v.custoEstoqueManual?.holdback) ?? 0) +
       (resolverCustoComFallbackManual(v.custo_acessorios, v.custoEstoqueManual?.acessorios) ?? 0) +
-      (resolverCustoImpostosComPrioridadeManual(v.custo_impostos, v.custoEstoqueManual?.impostos) ?? 0) +
-      (resolverCustoComFallbackManual(v.custo_comissoes, v.custoEstoqueManual?.comissoes) ?? 0) +
+      (v.custo_impostos ?? 0) +
+      (v.custo_comissoes ?? 0) +
       (resolverCustoComFallbackManual(v.custo_adm, v.custoEstoqueManual?.adm) ?? 0) +
-      (resolverCustoComFallbackManual(v.custo_despesas_gerais, v.custoEstoqueManual?.desp_gerais) ?? 0),
+      (v.custo_despesas_gerais ?? 0),
   },
 ];
 
