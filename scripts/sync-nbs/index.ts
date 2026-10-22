@@ -10,7 +10,7 @@ import { syncVeiculos } from "./sync-veiculos";
 import { syncVendas } from "./sync-vendas";
 import { gravarVeiculosNode, gravarVendasNode, removerVendasFantasma } from "./gravar";
 import {
-  executarMarkupPiloto,
+  processarMarkupOficialEstoque,
   gravarMarkupPilotoDebug,
   markupPilotoAtivado,
   construirRegistroDebug,
@@ -101,49 +101,92 @@ async function gravarSyncLog(fonte: "veiculos" | "vendas" | "fipe" | "markup_pil
 }
 
 /**
- * Bloco MARKUP PILOTO extraído pra função própria — reusado tanto no fluxo
+ * Bloco MARKUP OFICIAL extraído pra função própria — reusado tanto no fluxo
  * completo (atrás da flag --markup-piloto) quanto no modo isolado
  * (--somente-markup-piloto), que pula VEÍCULOS/VENDAS/CUSTOS/FIPE pra não
  * precisar esperar o sync inteiro só pra testar esta parte. Ver
- * docs/sync-custos-markup-acesso.md e calcular-markup-estoque.ts.
+ * docs/sync-custos-markup-acesso.md, mapear-markup-oficial.ts e
+ * calcular-markup-estoque.ts.
+ *
+ * ESCALADO em 22/10/2026 (piloto validado em 4 carros, batendo ao centavo):
+ * sem `--markup-piloto-limite=N`, processa TODO o estoque do filtro (não só
+ * 1 carro) e GRAVA de verdade as 8 categorias oficiais + custo_total no
+ * snapshot desta rodada (`snapshotId`), quando a reconciliação confirmar o
+ * valor (ver processarMarkupOficialEstoque). Continua atrás da flag
+ * `--markup-piloto` — decisão deliberada (risco financeiro alto, ~1089
+ * veículos): NÃO foi ligado por padrão no ciclo automático de 2h só porque
+ * esta rodada escalou; Marcos decide quando ativar em produção.
+ *
+ * `snapshotId` null (bloco VEÍCULOS falhou ou filtro não plausível nesta
+ * rodada, ou modo `--somente-markup-piloto` que nunca roda VEÍCULOS) faz a
+ * gravação real ser pulada inteiramente — processarMarkupOficialEstoque só
+ * lê/diagnostica (ver aviso que ele mesmo gera nesse caso).
+ *
+ * Gravação em `markup_piloto_debug` (jsonb bruto, só inspeção manual) agora
+ * só acontece no modo `placaAlvo` (debug de 1 carro específico) — decisão
+ * de 22/10/2026: gravar 1 linha de debug por veículo em TODA rodada de
+ * ~1089 carros faria a tabela crescer sem limite (ela nunca é podada); o
+ * resumo em `sync_log` + as próprias colunas gravadas em `veiculos` já são o
+ * rastro de auditoria da rodada em escala.
  */
-async function executarBlocoMarkupPiloto(conn: Connection, placaAlvo?: string): Promise<void> {
-  console.log("\n--- MARKUP PILOTO (NBS.PKG_MARKUP_VEIC.CALCULAR_MARKUP_ESTOQUE) ---");
-  if (placaAlvo) console.log(`Mirando placa específica: ${placaAlvo} (ignora LIMITE_CARROS_PILOTO).`);
+async function executarBlocoMarkupPiloto(
+  conn: Connection,
+  placaAlvo?: string,
+  snapshotId?: number | null,
+  limite?: number,
+): Promise<void> {
+  console.log("\n--- MARKUP OFICIAL (NBS.PKG_MARKUP_VEIC.CALCULAR_MARKUP_ESTOQUE) ---");
+  if (placaAlvo) console.log(`Mirando placa específica: ${placaAlvo} (ignora limite).`);
+  else console.log(limite != null ? `Limite manual: ${limite} veículo(s) (rollout gradual).` : "Processando TODO o estoque do filtro (sem limite).");
+  if (!placaAlvo && snapshotId == null) {
+    console.warn(
+      "  (aviso) snapshot de veículos desta rodada indisponível (bloco VEÍCULOS falhou/filtro não plausível, " +
+        "ou modo --somente-markup-piloto) — gravação real será pulada, só leitura/diagnóstico.",
+    );
+  }
   const inicioMarkupPiloto = new Date();
   let linhasGravadasMarkupPiloto: number | null = null;
   try {
-    const resultadoMarkup = await executarMarkupPiloto(conn, placaAlvo);
-    console.log(
-      `Candidatos avaliados: ${resultadoMarkup.candidatosAvaliados}; ` +
-        `sucesso: ${resultadoMarkup.sucessos.length}; falha: ${resultadoMarkup.falhas.length}.`,
-    );
-    for (const falha of resultadoMarkup.falhas) {
-      console.warn(`  (aviso) chassi ${falha.candidato.chassiResumido}: ${falha.erro}`);
-    }
+    const sbEscrita = supabaseDisponivel() ? criarClienteSupabaseServiceRole() : null;
+    const resumo = await processarMarkupOficialEstoque(conn, sbEscrita, snapshotId ?? null, { placaAlvo, limite });
 
-    if (supabaseDisponivel() && resultadoMarkup.sucessos.length > 0) {
-      const sbEscrita = criarClienteSupabaseServiceRole();
-      const registros = resultadoMarkup.sucessos.map((s) =>
+    console.log(
+      JSON.stringify({
+        candidatos: resumo.candidatosAvaliados,
+        sucesso_oracle: resumo.sucessosOracle,
+        falha_oracle: resumo.falhasOracle,
+        divergentes: resumo.divergentes,
+        gravados: resumo.gravados,
+        sem_chassi: resumo.semChassiParaGravar,
+        sem_correspondencia_no_snapshot: resumo.semCorrespondenciaNoSnapshot,
+        falha_gravacao: resumo.falhasGravacao.length,
+      }),
+    );
+    for (const aviso of resumo.avisos) console.warn(`  ${aviso}`);
+
+    // Debug bruto (jsonb) só no modo 1-carro — ver nota no topo da função.
+    if (sbEscrita && placaAlvo && resumo.sucessos.length > 0) {
+      const registros = resumo.sucessos.map((s) =>
         construirRegistroDebug(s.candidato, s.linhas, s.resultado, s.parametrosFinais),
       );
-      linhasGravadasMarkupPiloto = await gravarMarkupPilotoDebug(sbEscrita, registros);
-      console.log(`Gravação real: ${linhasGravadasMarkupPiloto} registro(s) em markup_piloto_debug.`);
+      await gravarMarkupPilotoDebug(sbEscrita, registros);
+      console.log(`Debug bruto: ${registros.length} registro(s) em markup_piloto_debug.`);
     }
 
+    linhasGravadasMarkupPiloto = resumo.gravados;
     const fimMarkupPiloto = new Date();
     await gravarSyncLog("markup_piloto", {
       iniciado_em: inicioMarkupPiloto,
       finalizado_em: fimMarkupPiloto,
-      status: resultadoMarkup.falhas.length > 0 && resultadoMarkup.sucessos.length === 0 ? "erro" : "sucesso",
-      linhas_lidas: resultadoMarkup.candidatosAvaliados,
+      status: resumo.falhasOracle > 0 && resumo.sucessosOracle === 0 ? "erro" : "sucesso",
+      linhas_lidas: resumo.candidatosAvaliados,
       linhas_gravadas: linhasGravadasMarkupPiloto,
-      erro_mensagem: resultadoMarkup.falhas.map((f) => `${f.candidato.chassiResumido}: ${f.erro}`).join("; ") || null,
+      erro_mensagem: resumo.avisos.length > 0 ? resumo.avisos.slice(0, 20).join("; ") : null,
     });
   } catch (err) {
     const fimMarkupPiloto = new Date();
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`ERRO no bloco MARKUP PILOTO: ${msg}`);
+    console.error(`ERRO no bloco MARKUP OFICIAL: ${msg}`);
     await gravarSyncLog("markup_piloto", {
       iniciado_em: inicioMarkupPiloto,
       finalizado_em: fimMarkupPiloto,
@@ -170,6 +213,11 @@ async function main() {
   // pra não reconsultar o Supabase — já estão em memória.
   let veiculosEmEstoqueAtual: VeiculoParsed[] = [];
   let filtroVeiculosPlausivel = false;
+  // snapshot_id criado pelo bloco VEÍCULOS desta rodada — o bloco MARKUP
+  // OFICIAL grava em cima dele (ver executarBlocoMarkupPiloto). null quando
+  // a gravação de veículos não rodou (SUPABASE indisponível, filtro não
+  // plausível, ou o bloco falhou) — nesse caso o markup fica só leitura.
+  let snapshotIdAtual: number | null = null;
 
   try {
     if (opcoesCustos.somenteCustos) {
@@ -177,7 +225,11 @@ async function main() {
       return;
     }
     if (opcoesCustos.somenteMarkupPiloto) {
-      await executarBlocoMarkupPiloto(conn, opcoesCustos.placaAlvo);
+      // --somente-markup-piloto nunca roda o bloco VEÍCULOS -> não há
+      // snapshot desta rodada pra gravar em cima; passa null de propósito
+      // (ver aviso em executarBlocoMarkupPiloto) — modo fica só leitura/
+      // diagnóstico, igual já era antes de escalar.
+      await executarBlocoMarkupPiloto(conn, opcoesCustos.placaAlvo, null, opcoesCustos.markupPilotoLimite);
       return;
     }
     // ─── VEÍCULOS ─────────────────────────────────────────────────────────
@@ -221,6 +273,7 @@ async function main() {
           total_lojas: totalLojas,
         });
         linhasGravadasVeiculos = gravacao.inseridos;
+        snapshotIdAtual = gravacao.snapshotId;
         console.log(`\nGravação real: snapshot ${gravacao.snapshotId} criado, ${gravacao.inseridos} veículo(s) inserido(s).`);
       }
 
@@ -327,7 +380,7 @@ async function main() {
     // e docs/sync-custos-markup-acesso.md pro contexto completo (piloto de
     // 1 carro, chamada real a NBS.PKG_MARKUP_VEIC.CALCULAR_MARKUP_ESTOQUE).
     if (markupPilotoAtivado(process.argv.slice(2))) {
-      await executarBlocoMarkupPiloto(conn, opcoesCustos.placaAlvo);
+      await executarBlocoMarkupPiloto(conn, opcoesCustos.placaAlvo, snapshotIdAtual, opcoesCustos.markupPilotoLimite);
     }
 
     // ─── FIPE ───────────────────────────────────────────────────────────────
