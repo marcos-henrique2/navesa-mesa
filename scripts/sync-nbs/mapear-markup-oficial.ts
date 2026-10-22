@@ -43,9 +43,20 @@
  *
  *   custo_total_oficial = COD_CUSTO=105 ("Custo Atual") — reconcilia EXATAMENTE
  *   com Nota Fiscal(5) + Forplan(10) + Revisões(7) + Despesas Gerais(9) +
- *   Impostos(12) + Comissões(2+3+4) − Ganhos Indiretos(11) nos 4 carros
- *   testados (resíduo zero). Nota Fiscal(5) NÃO é uma das 8 colunas do
- *   relatório de custos de estoque — fica de fora do mapeamento abaixo.
+ *   Impostos(12) + Comissões(2+3+4) + Despesas ADM(8) + Acessórios(1+102)
+ *   − Ganhos Indiretos(11). Nota Fiscal(5) NÃO é uma das 8 colunas do
+ *   relatório de custos de estoque — fica de fora do mapeamento abaixo, mas
+ *   ENTRA na soma de reconciliação (ver notaFiscal/somaCategorias abaixo).
+ *
+ *   BUG CORRIGIDO EM 22/10/2026: a soma de reconciliação não incluía a Nota
+ *   Fiscal (COD_CUSTO=5) — rodada piloto de produção (100/100 carros) gerou
+ *   100/100 divergências, cada uma igual EXATAMENTE ao valor da Nota Fiscal
+ *   daquele carro (ex.: chassi 112263, diferença=-R$56.000,00 = Nota Fiscal
+ *   exata). A trava de segurança funcionou (zero gravações erradas), mas
+ *   bloqueou 100% dos carros. Corrigido somando COD_CUSTO=5 na reconciliação
+ *   (sem criar uma 9ª coluna gravada — ver `notaFiscal` no retorno e
+ *   `payloadMarkupOficial` em calcular-markup-estoque.ts, que já grava
+ *   custo_total = custoTotalOficial diretamente, não a soma das 8 categorias).
  *
  *   Sempre vistos em 0, sem mapeamento conhecido — NÃO entram no somatório,
  *   mas logam aviso separado se algum dia vierem com valor ≠ 0 (ver
@@ -102,6 +113,8 @@ const COD_CUSTO_POR_CATEGORIA: Record<CategoriaMarkupOficial, readonly number[]>
 const CATEGORIAS_SEM_CONFIANCA: ReadonlySet<CategoriaMarkupOficial> = new Set(["custo_adm", "custo_acessorios"]);
 
 const COD_CUSTO_GANHOS_INDIRETOS = 11;
+/** Nota Fiscal — NÃO é uma das 8 colunas gravadas, mas ENTRA na soma de reconciliação contra COD_CUSTO=105 (ver cabeçalho do arquivo). */
+const COD_CUSTO_NOTA_FISCAL = 5;
 const COD_CUSTO_TOTAL_OFICIAL = 105;
 /** NUNCA somar em custo_impostos — mesmo valor duplicado de COD_CUSTO=12 (ver tabela de confiança). */
 const COD_CUSTO_IMPOSTOS_USADOS_DUPLICADO = 15;
@@ -164,9 +177,11 @@ export type ResultadoMapeamentoMarkup = {
   categorias: Record<CategoriaMarkupOficial, number>;
   /** COD_CUSTO=11, em reais — abatido da soma na reconciliação (não é uma das 8 colunas). */
   ganhosIndiretos: number;
+  /** COD_CUSTO=5 ("Nota Fiscal"), em reais — SOMADO na reconciliação (não é uma das 8 colunas gravadas; já rastreado separadamente via valor_aquisicao). */
+  notaFiscal: number;
   /** COD_CUSTO=105 ("Custo Atual") em reais, ou null se a linha não veio (procedure incompleta). */
   custoTotalOficial: number | null;
-  /** Soma das 8 categorias − ganhosIndiretos, em reais. */
+  /** Soma das 8 categorias + notaFiscal − ganhosIndiretos, em reais. */
   somaCategorias: number;
   /** somaCategorias − custoTotalOficial, em centavos (inteiro) — 0 quando custoTotalOficial é null (nada a comparar). */
   diferencaCentavos: number;
@@ -211,6 +226,13 @@ export function mapearMarkupOficial(linhas: readonly Record<string, unknown>[]):
   const ganhosIndiretosCentavos = somarPorCodigos(linhas, [COD_CUSTO_GANHOS_INDIRETOS]).somaCentavos;
   somaCategoriasCentavos -= ganhosIndiretosCentavos;
 
+  // Nota Fiscal (COD_CUSTO=5) NÃO é uma das 8 colunas gravadas (ver
+  // payloadMarkupOficial em calcular-markup-estoque.ts), mas ENTRA na soma
+  // de reconciliação contra custo_total_oficial — bug corrigido em
+  // 22/10/2026 (ver histórico no cabeçalho do arquivo).
+  const notaFiscalCentavos = somarPorCodigos(linhas, [COD_CUSTO_NOTA_FISCAL]).somaCentavos;
+  somaCategoriasCentavos += notaFiscalCentavos;
+
   // 15 ("Impostos Usados") é o MESMO valor duplicado de 12 — nunca somar.
   // Checagem defensiva (não entra em categorias.custo_impostos, ver
   // COD_CUSTO_POR_CATEGORIA acima) — sem aviso: comportamento esperado e
@@ -250,6 +272,7 @@ export function mapearMarkupOficial(linhas: readonly Record<string, unknown>[]):
   return {
     categorias,
     ganhosIndiretos: ganhosIndiretosCentavos / 100,
+    notaFiscal: notaFiscalCentavos / 100,
     custoTotalOficial,
     somaCategorias: somaCategoriasCentavos / 100,
     diferencaCentavos,
