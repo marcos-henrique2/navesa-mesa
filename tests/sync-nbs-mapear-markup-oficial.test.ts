@@ -114,3 +114,51 @@ describe("mapearMarkupOficial — reconciliação", () => {
     for (const v of Object.values(r.categorias)) assert.equal(v, 0);
   });
 });
+
+describe("mapearMarkupOficial — Nota Fiscal (COD_CUSTO=5) na reconciliação (bug de produção 22/10/2026)", () => {
+  /**
+   * Caso real do piloto em produção: chassi_resumido 112263. Antes da
+   * correção, a soma de reconciliação NÃO incluía COD_CUSTO=5 (Nota Fiscal),
+   * gerando divergência de exatamente -R$56.000,00 (o valor da nota fiscal)
+   * em 100/100 carros processados — bloqueando 100% das gravações.
+   */
+  function linhasCaso112263(): Record<string, unknown>[] {
+    return [
+      { ORDEM: 1, COD_CUSTO: 5, DESCRICAO: "Nota Fiscal", VALOR: 56000.0 },
+      { ORDEM: 2, COD_CUSTO: 10, DESCRICAO: "Floor Plan", VALOR: 158115.68 },
+      { ORDEM: 3, COD_CUSTO: 9, DESCRICAO: "Despesas Gerais", VALOR: 72.0 },
+      { ORDEM: 4, COD_CUSTO: 12, DESCRICAO: "Impostos", VALOR: 711.4 },
+      // 56000.00 + 158115.68 + 72.00 + 711.40 = 214899.08 — bate exato com COD_CUSTO=105
+      { ORDEM: 5, COD_CUSTO: 105, DESCRICAO: "Custo Atual", VALOR: 214899.08 },
+    ];
+  }
+
+  it("inclui a Nota Fiscal na soma de reconciliação e bate exato com custo_total_oficial", () => {
+    const r = mapearMarkupOficial(linhasCaso112263());
+    assert.equal(r.notaFiscal, 56000.0);
+    assert.equal(r.custoTotalOficial, 214899.08);
+    assert.equal(r.somaCategorias, 214899.08, "soma das 8 categorias + Nota Fiscal − Ganhos Indiretos");
+    assert.equal(r.divergente, false);
+    assert.equal(r.motivoDivergencia, null);
+  });
+
+  it("Nota Fiscal NÃO vira uma das 8 categorias gravadas — fica só no campo notaFiscal", () => {
+    const r = mapearMarkupOficial(linhasCaso112263());
+    assert.ok(
+      !Object.prototype.hasOwnProperty.call(r.categorias, "nota_fiscal"),
+      "notaFiscal é campo separado de categorias — não é uma coluna gravada",
+    );
+    assert.equal(r.categorias.custo_forplan, 158115.68);
+    assert.equal(r.categorias.custo_despesas_gerais, 72.0);
+    assert.equal(r.categorias.custo_impostos, 711.4);
+  });
+
+  it("reproduz o bug original: sem a correção, omitir COD_CUSTO=5 da soma geraria diferença de exatamente -R$56.000,00", () => {
+    const linhasSemNotaFiscal = linhasCaso112263().filter((l) => (l as Record<string, unknown>).COD_CUSTO !== 5);
+    const r = mapearMarkupOficial(linhasSemNotaFiscal);
+    // notaFiscal ausente -> soma 0 -> diverge do oficial pelo valor exato da nota fiscal que faltou
+    assert.equal(r.notaFiscal, 0);
+    assert.equal(r.divergente, true);
+    assert.equal(r.diferencaCentavos, -5600000, "diferença = -R$56.000,00, exatamente o valor da nota fiscal ausente");
+  });
+});
