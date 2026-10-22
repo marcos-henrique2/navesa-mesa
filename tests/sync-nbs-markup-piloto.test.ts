@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import oracledb from "oracledb";
+import type { Connection } from "oracledb";
 import {
   LIMITE_CARROS_PILOTO,
   mapearCandidatosPiloto,
@@ -11,6 +12,8 @@ import {
   construirRegistroDebug,
   markupPilotoAtivado,
   gravarMarkupPilotoDebug,
+  montarQueryCandidatosPiloto,
+  executarMarkupPiloto,
   type VeiculoCandidatoPiloto,
   type ParametrosFinaisPiloto,
 } from "../scripts/sync-nbs/calcular-markup-estoque";
@@ -211,6 +214,88 @@ describe("markup piloto — flag de ativação", () => {
     assert.equal(markupPilotoAtivado(["--somente-custos"]), false);
     assert.equal(markupPilotoAtivado(["--markup-piloto"]), true);
     assert.equal(markupPilotoAtivado(["--somente-custos", "--markup-piloto"]), true);
+  });
+});
+
+describe("markup piloto — query de candidatos (placa alvo)", () => {
+  it("sem placaAlvo, mantém a query padrão sem filtro extra (comportamento de hoje)", () => {
+    const sql = montarQueryCandidatosPiloto();
+    assert.ok(!sql.includes(":placaAlvo"), "não deve referenciar bind de placa sem placaAlvo");
+    assert.ok(sql.includes("NVL(v.PLACA, v.PLACA_USADO) AS PLACA"), "deve trazer a placa resolvida pro result set");
+    assert.ok(sql.includes("ORDER BY v.CHASSI_RESUMIDO"));
+  });
+
+  it("com placaAlvo, acrescenta filtro normalizado (sem hífen, case-insensitive) via bind nomeado", () => {
+    const sql = montarQueryCandidatosPiloto("NVO-0860");
+    assert.ok(sql.includes(":placaAlvo"), "deve usar bind nomeado, nunca concatenar o valor");
+    assert.ok(!sql.includes("NVO-0860"), "o valor da placa não pode ir concatenado na string SQL");
+    assert.ok(sql.includes("REPLACE(NVL(v.PLACA, v.PLACA_USADO), '-', '')"));
+    assert.ok(sql.includes("REPLACE(:placaAlvo, '-', '')"));
+    assert.ok(sql.includes("UPPER("));
+  });
+
+  it("placa vazia é tratada como ausência de filtro (sem placaAlvo)", () => {
+    const sql = montarQueryCandidatosPiloto("");
+    assert.ok(!sql.includes(":placaAlvo"));
+  });
+});
+
+describe("markup piloto — executarMarkupPiloto com placaAlvo", () => {
+  function conexaoFalsa(rowsCandidatos: Record<string, unknown>[]) {
+    const chamadas: { sql: string; binds: unknown }[] = [];
+    const conn = {
+      async execute(sql: string, binds?: unknown) {
+        chamadas.push({ sql, binds });
+        if (chamadas.length === 1) return { rows: rowsCandidatos };
+        if (binds && typeof binds === "object" && "resultado" in (binds as Record<string, unknown>)) {
+          return { outBinds: { resultado: "OK" } };
+        }
+        return { rows: [{ ORDEM: 1 }] };
+      },
+      async rollback() {},
+    } as unknown as Connection;
+    return { conn, chamadas };
+  }
+
+  const duasLinhas = [
+    { COD_EMPRESA: 2, COD_PRODUTO: 10, COD_MODELO: 300, CHASSI_RESUMIDO: "A1", PRECO_TABELA: 1000 },
+    { COD_EMPRESA: 2, COD_PRODUTO: 10, COD_MODELO: 301, CHASSI_RESUMIDO: "A2", PRECO_TABELA: 2000 },
+  ];
+
+  it("sem placaAlvo, aplica LIMITE_CARROS_PILOTO como hoje", async () => {
+    const { conn, chamadas } = conexaoFalsa(duasLinhas);
+    const resultado = await executarMarkupPiloto(conn);
+    assert.equal(resultado.candidatosAvaliados, LIMITE_CARROS_PILOTO);
+    assert.deepEqual(chamadas[0].binds, {});
+    assert.ok(!chamadas[0].sql.includes(":placaAlvo"));
+  });
+
+  const umaLinha = [duasLinhas[0]];
+
+  it("com placaAlvo, ignora LIMITE_CARROS_PILOTO e passa a placa como bind (nunca concatenada)", async () => {
+    const { conn, chamadas } = conexaoFalsa(umaLinha);
+    const resultado = await executarMarkupPiloto(conn, "NVO-0860");
+    assert.equal(resultado.candidatosAvaliados, 1);
+    assert.deepEqual(chamadas[0].binds, { placaAlvo: "NVO-0860" });
+    assert.ok(chamadas[0].sql.includes(":placaAlvo"));
+    assert.ok(!chamadas[0].sql.includes("NVO-0860"));
+  });
+
+  it("0 candidatos (placa não encontrada no estoque atual) é reportado sem erro fatal", async () => {
+    const { conn } = conexaoFalsa([]);
+    const resultado = await executarMarkupPiloto(conn, "ZZZ0000");
+    assert.deepEqual(resultado, { candidatosAvaliados: 0, sucessos: [], falhas: [] });
+  });
+
+  it("com placaAlvo, mais de um candidato retornado aborta por segurança — sem chamar a function nem uma vez", async () => {
+    const { conn, chamadas } = conexaoFalsa(duasLinhas);
+    await assert.rejects(
+      () => executarMarkupPiloto(conn, "NVO-0860"),
+      /Placa NVO-0860 retornou 2 candidatos em estoque \(esperado 0 ou 1\)/,
+    );
+    // só a 1ª chamada (SELECT dos candidatos) deve ter ocorrido — nenhuma chamada
+    // à function NBS.PKG_MARKUP_VEIC.CALCULAR_MARKUP_ESTOQUE (processarVeiculoPiloto).
+    assert.equal(chamadas.length, 1, "não deve processar nenhum veículo quando há mais de 1 candidato pra placaAlvo");
   });
 });
 

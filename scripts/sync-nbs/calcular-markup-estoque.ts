@@ -88,13 +88,30 @@ export type RegistroMarkupPilotoDebug = {
  * Mesmo filtro "em estoque hoje" validado em sync-veiculos.ts — não duplicar
  * a lógica aqui. PRECO_TABELA entra porque a function precisa do preço de
  * venda atual do veículo nos parâmetros in/out (ver bindsChamadaProcedure).
+ * PLACA (NVL(v.PLACA, v.PLACA_USADO) — mesma resolução de mapear-veiculo.ts)
+ * entra pra permitir mirar o piloto num carro específico (ver
+ * montarQueryCandidatosPiloto).
+ *
+ * Função pura — testável sem Oracle. Com placaAlvo, acrescenta o filtro de
+ * placa normalizado (sem hífen, case-insensitive) via bind nomeado
+ * `:placaAlvo` — nunca concatenado. Sem placaAlvo, mantém o comportamento
+ * de hoje (todos os candidatos do filtro de estoque, sem filtro extra).
  */
-export const SQL_SELECT_CANDIDATOS_PILOTO = `
-  SELECT v.COD_EMPRESA, v.COD_PRODUTO, v.COD_MODELO, v.CHASSI_RESUMIDO, v.PRECO_TABELA
+export function montarQueryCandidatosPiloto(placaAlvo?: string): string {
+  const temPlacaAlvo = typeof placaAlvo === "string" && placaAlvo.length > 0;
+  const filtroPlaca = temPlacaAlvo
+    ? ` AND UPPER(REPLACE(NVL(v.PLACA, v.PLACA_USADO), '-', '')) = UPPER(REPLACE(:placaAlvo, '-', ''))`
+    : "";
+  return `
+  SELECT v.COD_EMPRESA, v.COD_PRODUTO, v.COD_MODELO, v.CHASSI_RESUMIDO, v.PRECO_TABELA, NVL(v.PLACA, v.PLACA_USADO) AS PLACA
   FROM NBS.VEICULOS v
-  WHERE ${FILTRO_ESTOQUE}
+  WHERE ${FILTRO_ESTOQUE}${filtroPlaca}
   ORDER BY v.CHASSI_RESUMIDO
 `;
+}
+
+/** Query padrão (sem placa alvo) — mantida pra compatibilidade de quem já importava a constante. */
+export const SQL_SELECT_CANDIDATOS_PILOTO = montarQueryCandidatosPiloto();
 
 /**
  * Assinatura real lida em ALL_SOURCE (owner='NBS', name='PKG_MARKUP_VEIC') em
@@ -314,14 +331,29 @@ async function processarVeiculoPiloto(
 
 /**
  * Orquestra o piloto completo: busca candidatos (mesmo filtro "em estoque
- * hoje" de sync-veiculos.ts), corta em LIMITE_CARROS_PILOTO, e processa cada
- * um sequencialmente (mesma Connection — sem Promise.all, ver justificativa
- * de concorrência em custos-estoque-detalhado.ts).
+ * hoje" de sync-veiculos.ts). Sem placaAlvo, corta em LIMITE_CARROS_PILOTO
+ * (comportamento de hoje). Com placaAlvo, filtra na própria query (via bind)
+ * e IGNORA o limite — ainda assim processa só esse 1 carro específico, não
+ * aumenta o blast radius, só muda QUAL carro é processado. Processa cada
+ * candidato sequencialmente (mesma Connection — sem Promise.all, ver
+ * justificativa de concorrência em custos-estoque-detalhado.ts).
  */
-export async function executarMarkupPiloto(conn: Connection): Promise<ResultadoMarkupPiloto> {
-  const resultCandidatos = await conn.execute(SQL_SELECT_CANDIDATOS_PILOTO);
+export async function executarMarkupPiloto(conn: Connection, placaAlvo?: string): Promise<ResultadoMarkupPiloto> {
+  const temPlacaAlvo = typeof placaAlvo === "string" && placaAlvo.length > 0;
+  const sql = montarQueryCandidatosPiloto(placaAlvo);
+  const binds: BindParameters = temPlacaAlvo ? { placaAlvo } : {};
+  const resultCandidatos = await conn.execute(sql, binds);
   const rows = (resultCandidatos.rows ?? []) as Record<string, unknown>[];
-  const candidatos = limitarCandidatosPiloto(mapearCandidatosPiloto(rows), LIMITE_CARROS_PILOTO);
+  const candidatosMapeados = mapearCandidatosPiloto(rows);
+  if (temPlacaAlvo && candidatosMapeados.length > 1) {
+    throw new Error(
+      `Placa ${placaAlvo} retornou ${candidatosMapeados.length} candidatos em estoque (esperado 0 ou 1) — ` +
+        `abortando por segurança, garantia de "1 carro por rodada" não pode ser violada.`,
+    );
+  }
+  const candidatos = temPlacaAlvo
+    ? candidatosMapeados
+    : limitarCandidatosPiloto(candidatosMapeados, LIMITE_CARROS_PILOTO);
 
   const sucessos: ResultadoVeiculoPiloto[] = [];
   const falhas: ResultadoVeiculoPiloto[] = [];

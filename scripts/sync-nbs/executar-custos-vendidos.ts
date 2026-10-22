@@ -5,10 +5,15 @@ import { syncCustosVendidos, custoVendidoToRow } from "./sync-custos-vendidos";
 
 export function lerOpcoesCustos(
   args: string[],
-): { somenteCustos: boolean; somenteMarkupPiloto: boolean; dryRun: boolean; dataInicio?: string } {
+): { somenteCustos: boolean; somenteMarkupPiloto: boolean; dryRun: boolean; dataInicio?: string; placaAlvo?: string } {
   const permitidos = ["--somente-custos", "--dry-run", "--markup-piloto", "--somente-markup-piloto"];
   for (const arg of args) {
-    if (!permitidos.includes(arg) && !arg.startsWith("--custos-desde=")) throw new Error(`Argumento desconhecido: ${arg}`);
+    if (
+      !permitidos.includes(arg) &&
+      !arg.startsWith("--custos-desde=") &&
+      !arg.startsWith("--markup-piloto-placa=")
+    )
+      throw new Error(`Argumento desconhecido: ${arg}`);
   }
   const datas = args.filter((arg) => arg.startsWith("--custos-desde="));
   if (datas.length > 1) throw new Error("Informe --custos-desde apenas uma vez.");
@@ -16,12 +21,16 @@ export function lerOpcoesCustos(
   if (dataInicio !== undefined && (!/^\d{4}-\d{2}-\d{2}$/.test(dataInicio) || !Number.isFinite(Date.parse(dataInicio)) || new Date(dataInicio).toISOString().slice(0, 10) !== dataInicio)) {
     throw new Error("--custos-desde exige uma data válida no formato YYYY-MM-DD.");
   }
+  const placas = args.filter((arg) => arg.startsWith("--markup-piloto-placa="));
+  if (placas.length > 1) throw new Error("Informe --markup-piloto-placa apenas uma vez.");
+  const placaAlvo = placas[0]?.slice("--markup-piloto-placa=".length);
+  if (placaAlvo !== undefined && placaAlvo.length === 0) throw new Error("--markup-piloto-placa exige um valor não vazio.");
   const somenteCustos = args.includes("--somente-custos");
   const somenteMarkupPiloto = args.includes("--somente-markup-piloto");
   const dryRun = args.includes("--dry-run");
   if (somenteCustos && somenteMarkupPiloto) throw new Error("Use --somente-custos OU --somente-markup-piloto, não os dois.");
   if (dryRun && !somenteCustos) throw new Error("Use --dry-run com --somente-custos para garantir uma execução apenas de leitura.");
-  return { somenteCustos, somenteMarkupPiloto, dryRun, dataInicio };
+  return { somenteCustos, somenteMarkupPiloto, dryRun, dataInicio, placaAlvo };
 }
 
 export async function gravarCustosVendidosNode(sb: SupabaseClient, custos: CustoDetalhado[]): Promise<number> {

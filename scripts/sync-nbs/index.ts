@@ -107,12 +107,13 @@ async function gravarSyncLog(fonte: "veiculos" | "vendas" | "fipe" | "markup_pil
  * precisar esperar o sync inteiro só pra testar esta parte. Ver
  * docs/sync-custos-markup-acesso.md e calcular-markup-estoque.ts.
  */
-async function executarBlocoMarkupPiloto(conn: Connection): Promise<void> {
+async function executarBlocoMarkupPiloto(conn: Connection, placaAlvo?: string): Promise<void> {
   console.log("\n--- MARKUP PILOTO (NBS.PKG_MARKUP_VEIC.CALCULAR_MARKUP_ESTOQUE) ---");
+  if (placaAlvo) console.log(`Mirando placa específica: ${placaAlvo} (ignora LIMITE_CARROS_PILOTO).`);
   const inicioMarkupPiloto = new Date();
   let linhasGravadasMarkupPiloto: number | null = null;
   try {
-    const resultadoMarkup = await executarMarkupPiloto(conn);
+    const resultadoMarkup = await executarMarkupPiloto(conn, placaAlvo);
     console.log(
       `Candidatos avaliados: ${resultadoMarkup.candidatosAvaliados}; ` +
         `sucesso: ${resultadoMarkup.sucessos.length}; falha: ${resultadoMarkup.falhas.length}.`,
@@ -176,7 +177,7 @@ async function main() {
       return;
     }
     if (opcoesCustos.somenteMarkupPiloto) {
-      await executarBlocoMarkupPiloto(conn);
+      await executarBlocoMarkupPiloto(conn, opcoesCustos.placaAlvo);
       return;
     }
     // ─── VEÍCULOS ─────────────────────────────────────────────────────────
@@ -326,7 +327,7 @@ async function main() {
     // e docs/sync-custos-markup-acesso.md pro contexto completo (piloto de
     // 1 carro, chamada real a NBS.PKG_MARKUP_VEIC.CALCULAR_MARKUP_ESTOQUE).
     if (markupPilotoAtivado(process.argv.slice(2))) {
-      await executarBlocoMarkupPiloto(conn);
+      await executarBlocoMarkupPiloto(conn, opcoesCustos.placaAlvo);
     }
 
     // ─── FIPE ───────────────────────────────────────────────────────────────
