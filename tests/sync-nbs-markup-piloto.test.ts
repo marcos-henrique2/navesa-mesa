@@ -19,7 +19,16 @@ import {
 } from "../scripts/sync-nbs/calcular-markup-estoque";
 
 function candidato(overrides: Partial<VeiculoCandidatoPiloto> = {}): VeiculoCandidatoPiloto {
-  return { codEmpresa: 2, codProduto: 10, codModelo: 300, chassiResumido: "163765", precoVenda: 85000, ...overrides };
+  return {
+    codEmpresa: 2,
+    codProduto: 10,
+    codModelo: 300,
+    chassiResumido: "163765",
+    precoVenda: 85000,
+    chassi: "9BWZZZ377VT004251",
+    placa: "ABC1234",
+    ...overrides,
+  };
 }
 
 function parametrosFinais(overrides: Partial<ParametrosFinaisPiloto> = {}): ParametrosFinaisPiloto {
@@ -52,6 +61,8 @@ describe("markup piloto — candidatos", () => {
       codModelo: 300,
       chassiResumido: "163765",
       precoVenda: 85000,
+      chassi: null,
+      placa: null,
     });
   });
 
@@ -65,10 +76,30 @@ describe("markup piloto — candidatos", () => {
       codModelo: 300,
       chassiResumido: "163765",
       precoVenda: 85000,
+      chassi: null,
+      placa: null,
     });
   });
 
-  it("LIMITE_CARROS_PILOTO é 1 — blast radius mínimo enquanto a procedure não é validada", () => {
+  it("resolve o chassi completo via CHASSI/CHASSI_COMPLETO/NUM_CHASSI (ordem de prioridade) e a placa via PLACA", () => {
+    const porChassi = mapearCandidatosPiloto([
+      { COD_EMPRESA: 2, COD_PRODUTO: 10, COD_MODELO: 300, CHASSI_RESUMIDO: "163765", PRECO_TABELA: 85000, CHASSI: "FULL1", CHASSI_COMPLETO: "FULL2", PLACA: "ABC1234" },
+    ]);
+    assert.equal(porChassi[0].chassi, "FULL1", "CHASSI tem prioridade sobre CHASSI_COMPLETO");
+    assert.equal(porChassi[0].placa, "ABC1234");
+
+    const porChassiCompleto = mapearCandidatosPiloto([
+      { COD_EMPRESA: 2, COD_PRODUTO: 10, COD_MODELO: 300, CHASSI_RESUMIDO: "163765", PRECO_TABELA: 85000, CHASSI_COMPLETO: "FULL2", NUM_CHASSI: "FULL3" },
+    ]);
+    assert.equal(porChassiCompleto[0].chassi, "FULL2", "sem CHASSI, cai pra CHASSI_COMPLETO");
+
+    const semNenhum = mapearCandidatosPiloto([
+      { COD_EMPRESA: 2, COD_PRODUTO: 10, COD_MODELO: 300, CHASSI_RESUMIDO: "163765", PRECO_TABELA: 85000 },
+    ]);
+    assert.equal(semNenhum[0].chassi, null, "sem nenhum candidato, chassi fica null (gravação pulada depois, não falha o mapeamento)");
+  });
+
+  it("LIMITE_CARROS_PILOTO é 1 — valor histórico/debug, não é mais o corte automático (ver executarMarkupPiloto)", () => {
     assert.equal(LIMITE_CARROS_PILOTO, 1);
   });
 
@@ -262,12 +293,18 @@ describe("markup piloto — executarMarkupPiloto com placaAlvo", () => {
     { COD_EMPRESA: 2, COD_PRODUTO: 10, COD_MODELO: 301, CHASSI_RESUMIDO: "A2", PRECO_TABELA: 2000 },
   ];
 
-  it("sem placaAlvo, aplica LIMITE_CARROS_PILOTO como hoje", async () => {
+  it("sem placaAlvo e sem limite, processa TODOS os candidatos do filtro (escalado em 22/10/2026)", async () => {
     const { conn, chamadas } = conexaoFalsa(duasLinhas);
     const resultado = await executarMarkupPiloto(conn);
-    assert.equal(resultado.candidatosAvaliados, LIMITE_CARROS_PILOTO);
+    assert.equal(resultado.candidatosAvaliados, duasLinhas.length);
     assert.deepEqual(chamadas[0].binds, {});
     assert.ok(!chamadas[0].sql.includes(":placaAlvo"));
+  });
+
+  it("sem placaAlvo, com limite explícito, corta a lista (rollout gradual manual)", async () => {
+    const { conn } = conexaoFalsa(duasLinhas);
+    const resultado = await executarMarkupPiloto(conn, undefined, 1);
+    assert.equal(resultado.candidatosAvaliados, 1);
   });
 
   const umaLinha = [duasLinhas[0]];

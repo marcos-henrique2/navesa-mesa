@@ -2,6 +2,8 @@ import type { Connection, BindParameters } from "oracledb";
 import oracledb from "oracledb";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { FILTRO_ESTOQUE } from "./sync-veiculos";
+import { chunk } from "../../src/lib/data/supabase";
+import { mapearMarkupOficial, type ResultadoMapeamentoMarkup } from "./mapear-markup-oficial";
 
 /**
  * Piloto da chamada real a NBS.PKG_MARKUP_VEIC.CALCULAR_MARKUP_ESTOQUE — ver
@@ -17,11 +19,9 @@ import { FILTRO_ESTOQUE } from "./sync-veiculos";
  * rodada, gravando o resultado bruto pra inspeção manual antes de qualquer
  * mapeamento pras 8 categorias do relatório.
  *
- * LIMITE_CARROS_PILOTO: só isto garante o menor "blast radius" possível
- * (plano combinado com o Marcos: 1 carro em produção primeiro, não os ~1100
- * de uma vez) enquanto não validamos o comportamento real da procedure.
- * Suba esse número SÓ depois de inspecionar `markup_piloto_debug` e
- * confirmar que não há efeito colateral.
+ * LIMITE_CARROS_PILOTO: garantiu o menor "blast radius" possível (plano
+ * combinado com o Marcos: 1 carro em produção primeiro, não os ~1100 de uma
+ * vez) enquanto não validávamos o comportamento real da procedure.
  *
  * ATUALIZAÇÃO 21/10/2026: a primeira tentativa em produção (ORA-06550 /
  * PLS-00306 — número incorreto de argumentos) revelou que
@@ -29,6 +29,15 @@ import { FILTRO_ESTOQUE } from "./sync-veiculos";
  * maioria IN OUT), não os 10 capturados no trace original. A assinatura real
  * foi lida direto do PACKAGE SPEC via ALL_SOURCE (owner='NBS',
  * name='PKG_MARKUP_VEIC') — ver docs/sync-custos-markup-acesso.md.
+ *
+ * ATUALIZAÇÃO 22/10/2026: piloto validado em 4 carros diferentes, batendo ao
+ * centavo contra relatórios oficiais do NBS nos 4 (mapeamento das 8
+ * categorias em mapear-markup-oficial.ts). `executarMarkupPiloto` agora
+ * processa TODO o estoque do filtro por padrão (sem `limite` nem
+ * `placaAlvo`) — LIMITE_CARROS_PILOTO deixou de ser o corte automático;
+ * fica só como valor histórico/de referência pra quem quiser um corte manual
+ * pequeno via o parâmetro `limite` (ou a flag `--markup-piloto-limite=N`, ver
+ * executar-custos-vendidos.ts) durante um rollout gradual.
  */
 export const LIMITE_CARROS_PILOTO = 1;
 
@@ -39,6 +48,19 @@ export type VeiculoCandidatoPiloto = {
   chassiResumido: string;
   /** NBS.VEICULOS.PRECO_TABELA do mesmo veículo — ver nota em bindsChamadaProcedure. */
   precoVenda: number;
+  /**
+   * Chassi COMPLETO (não o resumido) — mesma resolução de candidatos de
+   * CANDIDATOS.chassi em mapear-veiculo.ts (CHASSI, CHASSI_COMPLETO,
+   * NUM_CHASSI, em ordem de prioridade). É a chave usada pra casar com
+   * `veiculos.chassi` na gravação real (ver gravarMarkupOficialEmVeiculos) —
+   * CHASSI_RESUMIDO não é a mesma coisa e NÃO existe como coluna em
+   * `veiculos`. null quando nenhum candidato bateu nessa row — nesse caso a
+   * gravação é pulada pra esse veículo (ver processarMarkupOficialEstoque),
+   * preservando o valor já gravado pela heurística.
+   */
+  chassi: string | null;
+  /** NBS.VEICULOS.PLACA_USADO — hoje só informativo/filtro de placaAlvo; o match de gravação é por chassi. */
+  placa: string | null;
 };
 
 /**
@@ -96,6 +118,17 @@ export type RegistroMarkupPilotoDebug = {
  * placa normalizado (sem hífen, case-insensitive) via bind nomeado
  * `:placaAlvo` — nunca concatenado. Sem placaAlvo, mantém o comportamento
  * de hoje (todos os candidatos do filtro de estoque, sem filtro extra).
+ *
+ * `SELECT v.*` (em vez de uma lista explícita de colunas, como antes) —
+ * decisão de 22/10/2026: a gravação real (ver gravarMarkupOficialEmVeiculos)
+ * precisa do CHASSI COMPLETO pra casar com `veiculos.chassi`, mas não
+ * sabemos com certeza qual coluna real do Oracle é essa (CHASSI vs.
+ * CHASSI_COMPLETO vs. NUM_CHASSI — mesma incerteza de CANDIDATOS.chassi em
+ * mapear-veiculo.ts). `v.*` traz qualquer uma que exista sem arriscar
+ * ORA-00904 numa SELECT explícita de coluna inexistente; `mapearCandidatosPiloto`
+ * resolve o candidato certo em runtime (ver CANDIDATOS_CHASSI abaixo).
+ * `v.PLACA_USADO AS PLACA` continua explícito pro filtro de placaAlvo e pra
+ * ficar disponível como campo informativo em `candidato.placa`.
  */
 export function montarQueryCandidatosPiloto(placaAlvo?: string): string {
   const temPlacaAlvo = typeof placaAlvo === "string" && placaAlvo.length > 0;
@@ -103,7 +136,7 @@ export function montarQueryCandidatosPiloto(placaAlvo?: string): string {
     ? ` AND UPPER(REPLACE(v.PLACA_USADO, '-', '')) = UPPER(REPLACE(:placaAlvo, '-', ''))`
     : "";
   return `
-  SELECT v.COD_EMPRESA, v.COD_PRODUTO, v.COD_MODELO, v.CHASSI_RESUMIDO, v.PRECO_TABELA, v.PLACA_USADO AS PLACA
+  SELECT v.*, v.PLACA_USADO AS PLACA
   FROM NBS.VEICULOS v
   WHERE ${FILTRO_ESTOQUE}${filtroPlaca}
   ORDER BY v.CHASSI_RESUMIDO
@@ -160,6 +193,20 @@ function asNum(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/**
+ * Candidatos de coluna pro chassi COMPLETO — mesma lista de CANDIDATOS.chassi
+ * em mapear-veiculo.ts (duplicada aqui de propósito: evita acoplar os dois
+ * módulos só por isso; se a lista mudar lá, replicar aqui).
+ */
+const CANDIDATOS_CHASSI = ["CHASSI", "CHASSI_COMPLETO", "NUM_CHASSI"] as const;
+
+function achaColuna(row: Record<string, unknown>, candidatos: readonly string[]): unknown {
+  for (const c of candidatos) {
+    if (Object.prototype.hasOwnProperty.call(row, c) && row[c] !== null && row[c] !== undefined) return row[c];
+  }
+  return undefined;
+}
+
 /** Função pura — mapeia linhas brutas da query de candidatos pro tipo tipado. Testável sem Oracle. */
 export function mapearCandidatosPiloto(rows: Record<string, unknown>[]): VeiculoCandidatoPiloto[] {
   const candidatos: VeiculoCandidatoPiloto[] = [];
@@ -172,6 +219,8 @@ export function mapearCandidatosPiloto(rows: Record<string, unknown>[]): Veiculo
       codModelo: asNum(row.COD_MODELO),
       chassiResumido,
       precoVenda: asNum(row.PRECO_TABELA),
+      chassi: asStr(achaColuna(row, CANDIDATOS_CHASSI)),
+      placa: asStr(row.PLACA),
     });
   }
   return candidatos;
@@ -331,14 +380,26 @@ async function processarVeiculoPiloto(
 
 /**
  * Orquestra o piloto completo: busca candidatos (mesmo filtro "em estoque
- * hoje" de sync-veiculos.ts). Sem placaAlvo, corta em LIMITE_CARROS_PILOTO
- * (comportamento de hoje). Com placaAlvo, filtra na própria query (via bind)
- * e IGNORA o limite — ainda assim processa só esse 1 carro específico, não
- * aumenta o blast radius, só muda QUAL carro é processado. Processa cada
- * candidato sequencialmente (mesma Connection — sem Promise.all, ver
- * justificativa de concorrência em custos-estoque-detalhado.ts).
+ * hoje" de sync-veiculos.ts).
+ *
+ * ESCALADO em 22/10/2026 (piloto validado em 4 carros): sem placaAlvo E sem
+ * `limite`, processa TODO o estoque do filtro (não corta mais em
+ * LIMITE_CARROS_PILOTO por padrão) — é o comportamento de produção.
+ * `limite`, quando informado, corta a lista (rollout gradual manual: 10, 100,
+ * etc. — ver `--markup-piloto-limite=N` em executar-custos-vendidos.ts).
+ * Com placaAlvo, filtra na própria query (via bind) e IGNORA `limite` —
+ * processa só esse 1 carro específico, não aumenta o blast radius, só muda
+ * QUAL carro é processado. Processa cada candidato sequencialmente (mesma
+ * Connection — sem Promise.all, ver justificativa de concorrência em
+ * custos-estoque-detalhado.ts); log de progresso a cada 50 veículos (ver
+ * ~1089 veículos esperados em produção — não deixa a rodada "silenciosa"
+ * por minutos).
  */
-export async function executarMarkupPiloto(conn: Connection, placaAlvo?: string): Promise<ResultadoMarkupPiloto> {
+export async function executarMarkupPiloto(
+  conn: Connection,
+  placaAlvo?: string,
+  limite?: number,
+): Promise<ResultadoMarkupPiloto> {
   const temPlacaAlvo = typeof placaAlvo === "string" && placaAlvo.length > 0;
   const sql = montarQueryCandidatosPiloto(placaAlvo);
   const binds: BindParameters = temPlacaAlvo ? { placaAlvo } : {};
@@ -353,15 +414,25 @@ export async function executarMarkupPiloto(conn: Connection, placaAlvo?: string)
   }
   const candidatos = temPlacaAlvo
     ? candidatosMapeados
-    : limitarCandidatosPiloto(candidatosMapeados, LIMITE_CARROS_PILOTO);
+    : typeof limite === "number"
+      ? limitarCandidatosPiloto(candidatosMapeados, limite)
+      : candidatosMapeados;
 
   const sucessos: ResultadoVeiculoPiloto[] = [];
   const falhas: ResultadoVeiculoPiloto[] = [];
+  let processados = 0;
 
   for (const candidato of candidatos) {
     const resultado = await processarVeiculoPiloto(conn, candidato);
     if (resultado.erro) falhas.push(resultado);
     else sucessos.push(resultado);
+    processados++;
+    if (processados % 50 === 0 || processados === candidatos.length) {
+      console.log(
+        `  [markup oficial] ${processados}/${candidatos.length} veículo(s) processado(s) ` +
+          `(${sucessos.length} sucesso, ${falhas.length} falha).`,
+      );
+    }
   }
 
   return { candidatosAvaliados: candidatos.length, sucessos, falhas };
@@ -381,4 +452,239 @@ export async function gravarMarkupPilotoDebug(
 /** Lê a flag `--markup-piloto` do argv. Função pura — testável sem Oracle. */
 export function markupPilotoAtivado(args: string[]): boolean {
   return args.includes("--markup-piloto");
+}
+
+/** Payload pronto pras 8 colunas oficiais + custo_total — shape de `gravarMarkupOficialEmVeiculos`. */
+export type PayloadMarkupOficial = {
+  custo_revisoes: number;
+  custo_forplan: number;
+  custo_holdback: number;
+  custo_acessorios: number;
+  custo_adm: number;
+  custo_impostos: number;
+  custo_comissoes: number;
+  custo_despesas_gerais: number;
+  custo_total: number;
+};
+
+export type ItemGravacaoMarkupOficial = {
+  /** Chassi COMPLETO (ver VeiculoCandidatoPiloto.chassi) — chave de match com `veiculos.chassi`. */
+  chassi: string;
+  payload: PayloadMarkupOficial;
+};
+
+function payloadMarkupOficial(mapeamento: ResultadoMapeamentoMarkup): PayloadMarkupOficial {
+  return {
+    custo_revisoes: mapeamento.categorias.custo_revisoes,
+    custo_forplan: mapeamento.categorias.custo_forplan,
+    custo_holdback: mapeamento.categorias.custo_holdback,
+    custo_acessorios: mapeamento.categorias.custo_acessorios,
+    custo_adm: mapeamento.categorias.custo_adm,
+    custo_impostos: mapeamento.categorias.custo_impostos,
+    custo_comissoes: mapeamento.categorias.custo_comissoes,
+    custo_despesas_gerais: mapeamento.categorias.custo_despesas_gerais,
+    // custo_total_oficial nunca é null aqui — mapearMarkupOficial marca
+    // divergente=true quando COD_CUSTO=105 está ausente, e esse caso já foi
+    // filtrado antes de chegar aqui (ver processarMarkupOficialEstoque).
+    custo_total: mapeamento.custoTotalOficial ?? 0,
+  };
+}
+
+/**
+ * Atualiza as 9 colunas oficiais (8 categorias + custo_total) pro snapshot
+ * MAIS RECENTE — UPDATE real (não insert/upsert: a linha já existe, inserida
+ * pelo bloco VEÍCULOS desta mesma rodada com o valor da heurística antiga;
+ * aqui só sobrescrevemos quando a reconciliação confirmou o valor oficial).
+ *
+ * Match por `snapshot_id` + `chassi` — único por constraint de banco
+ * (`unique (snapshot_id, chassi)`, migration 002). NÃO usa upsert: um upsert
+ * parcial (só as 9 colunas) falharia a validação NOT NULL de colunas como
+ * `modelo`/`placa` antes mesmo de chegar no ON CONFLICT — update é a
+ * ferramenta certa aqui.
+ *
+ * Concorrência controlada (lotes de `concorrencia`, default 20): diferente
+ * das chamadas Oracle (sequenciais por natureza — mesma Connection
+ * serializa, ver custos-estoque-detalhado.ts), cada UPDATE aqui é uma
+ * requisição HTTP independente pro Supabase — paralelizar de verdade em
+ * lotes pequenos é seguro e evita ~1089 round-trips sequenciais no pior caso.
+ *
+ * `semCorrespondencia` lista chassis que reconciliaram no Oracle mas não
+ * bateram nenhuma linha do snapshot informado (ex.: filtro de estoque da
+ * query de candidatos divergiu do filtro usado no bloco VEÍCULOS, ou a linha
+ * já não está mais no snapshot) — não é erro fatal, só reportado pra quem
+ * chama logar e investigar; o valor anterior (heurística) permanece intacto
+ * nesse caso.
+ *
+ * `falhas` (achado do Quinn no review, 22/10/2026): cada UPDATE individual
+ * roda dentro de um try/catch PRÓPRIO — um erro isolado (rate limit do
+ * Supabase, blip de rede, etc.) não pode subir pelo `Promise.all` do lote e
+ * abortar os lotes seguintes da rodada. Antes, UM UPDATE falhando no meio de
+ * um lote de 20 derrubava a function inteira e deixava o resto da rodada
+ * (potencialmente centenas de veículos) sem gravação alguma, sem distinguir
+ * "abortado por erro técnico" de "divergência real de reconciliação". Agora
+ * o erro é capturado por item, acumulado em `falhas`, e os lotes seguintes
+ * continuam normalmente — quem chama decide o que fazer (logar, reprocessar
+ * os chassis de `falhas` numa rodada futura, etc.).
+ */
+export async function gravarMarkupOficialEmVeiculos(
+  sb: SupabaseClient,
+  snapshotId: number,
+  itens: readonly ItemGravacaoMarkupOficial[],
+  concorrencia = 20,
+): Promise<{ atualizados: number; semCorrespondencia: string[]; falhas: { chassi: string; erro: string }[] }> {
+  if (itens.length === 0) return { atualizados: 0, semCorrespondencia: [], falhas: [] };
+
+  let atualizados = 0;
+  const semCorrespondencia: string[] = [];
+  const falhas: { chassi: string; erro: string }[] = [];
+
+  for (const lote of chunk([...itens], concorrencia)) {
+    const resultados = await Promise.all(
+      lote.map(async (item) => {
+        try {
+          const { data, error } = await sb
+            .from("veiculos")
+            .update(item.payload)
+            .eq("snapshot_id", snapshotId)
+            .eq("chassi", item.chassi)
+            .select("id");
+          if (error) throw new Error(error.message);
+          return { chassi: item.chassi, atualizou: (data?.length ?? 0) > 0, erro: null as string | null };
+        } catch (err) {
+          const mensagem = err instanceof Error ? err.message : String(err);
+          return { chassi: item.chassi, atualizou: false, erro: mensagem };
+        }
+      }),
+    );
+    for (const r of resultados) {
+      if (r.erro) falhas.push({ chassi: r.chassi, erro: r.erro });
+      else if (r.atualizou) atualizados++;
+      else semCorrespondencia.push(r.chassi);
+    }
+  }
+
+  return { atualizados, semCorrespondencia, falhas };
+}
+
+export type ResumoMarkupOficial = {
+  candidatosAvaliados: number;
+  sucessosOracle: number;
+  falhasOracle: number;
+  /** Veículos com gravação de fato aplicada (reconciliados + chassi resolvido + bateu no snapshot). */
+  gravados: number;
+  /** Reconciliação falhou (diferença ≥ R$0,01 ou custo_total_oficial ausente) — valor anterior (heurística) preservado. */
+  divergentes: number;
+  /** Reconciliou, mas sem chassi completo resolvido na query de candidatos — gravação pulada, valor anterior preservado. */
+  semChassiParaGravar: number;
+  /** Reconciliou e tinha chassi, mas não bateu nenhuma linha do snapshot informado — ver gravarMarkupOficialEmVeiculos. */
+  semCorrespondenciaNoSnapshot: number;
+  /** UPDATE individual falhou (erro técnico, não divergência) — ver gravarMarkupOficialEmVeiculos. */
+  falhasGravacao: { chassi: string; erro: string }[];
+  avisos: string[];
+  /** Resultado bruto do Oracle pra quem chama reusar (ex.: gravação em markup_piloto_debug) sem repetir as chamadas. */
+  sucessos: ResultadoVeiculoPiloto[];
+  falhas: ResultadoVeiculoPiloto[];
+};
+
+/**
+ * Orquestra o fluxo completo: busca candidatos + chama a function Oracle pra
+ * cada um (executarMarkupPiloto) -> mapeia pras 8 categorias + reconcilia
+ * (mapearMarkupOficial) -> grava só os que reconciliaram (gravarMarkupOficialEmVeiculos).
+ *
+ * DECISÃO DE FALLBACK (22/10/2026, ver pedido do Marcos no item 4): quando um
+ * veículo falha na chamada Oracle OU diverge na reconciliação, este módulo
+ * NÃO escreve nada pra ele — e isso É o fallback pra heurística antiga, sem
+ * código extra: o bloco VEÍCULOS desta mesma rodada (`syncVeiculos`/
+ * `gravarVeiculosNode`, ver index.ts) já INSERIU o snapshot com o valor da
+ * heurística (`custos-estoque-detalhado.ts`) ANTES deste bloco rodar. "Não
+ * sobrescrever" aqui equivale exatamente a "manter o valor da heurística que
+ * já está na linha" — mesma filosofia de bloqueio de `executarCustosVendidos`,
+ * adaptada ao fato de que aqui a "gravação anterior" é a heurística do MESMO
+ * ciclo de sync, não um ciclo anterior (snapshot é recriado do zero a cada
+ * rodada, nunca é um UPDATE incremental — ver gravarVeiculosNode em gravar.ts).
+ * Isso só funciona se este bloco rodar DEPOIS do bloco VEÍCULOS na mesma
+ * rodada (garantido em index.ts) e com o `snapshotId` daquela mesma rodada —
+ * sem `snapshotId` (ex.: modo `--somente-markup-piloto`, que não roda
+ * VEÍCULOS), a gravação real é pulada inteiramente (`sb`/`snapshotId` nulos),
+ * ficando só leitura/diagnóstico.
+ */
+export async function processarMarkupOficialEstoque(
+  conn: Connection,
+  sb: SupabaseClient | null,
+  snapshotId: number | null,
+  opcoes: { placaAlvo?: string; limite?: number } = {},
+): Promise<ResumoMarkupOficial> {
+  const resultadoPiloto = await executarMarkupPiloto(conn, opcoes.placaAlvo, opcoes.limite);
+  const avisos: string[] = [];
+  let divergentes = 0;
+  let semChassiParaGravar = 0;
+  const itensGravacao: ItemGravacaoMarkupOficial[] = [];
+
+  for (const sucesso of resultadoPiloto.sucessos) {
+    const mapeamento = mapearMarkupOficial(sucesso.linhas);
+    for (const aviso of mapeamento.avisos) {
+      avisos.push(`chassi_resumido ${sucesso.candidato.chassiResumido}: ${aviso}`);
+    }
+    if (mapeamento.divergente) {
+      divergentes++;
+      avisos.push(
+        `chassi_resumido ${sucesso.candidato.chassiResumido}: divergência bloqueou a gravação (${mapeamento.motivoDivergencia}) ` +
+          `— valor da heurística já gravado neste snapshot foi preservado.`,
+      );
+      continue;
+    }
+    if (!sucesso.candidato.chassi) {
+      semChassiParaGravar++;
+      avisos.push(
+        `chassi_resumido ${sucesso.candidato.chassiResumido}: reconciliou, mas sem chassi completo resolvido na query de candidatos ` +
+          `— gravação pulada, valor da heurística preservado.`,
+      );
+      continue;
+    }
+    itensGravacao.push({ chassi: sucesso.candidato.chassi, payload: payloadMarkupOficial(mapeamento) });
+  }
+
+  for (const falha of resultadoPiloto.falhas) {
+    avisos.push(
+      `chassi_resumido ${falha.candidato.chassiResumido}: falha na chamada Oracle (${falha.erro}) ` +
+        `— valor da heurística já gravado neste snapshot foi preservado.`,
+    );
+  }
+
+  let gravados = 0;
+  let semCorrespondenciaNoSnapshot = 0;
+  const falhasGravacao: { chassi: string; erro: string }[] = [];
+  if (sb && snapshotId != null && itensGravacao.length > 0) {
+    const resultadoGravacao = await gravarMarkupOficialEmVeiculos(sb, snapshotId, itensGravacao);
+    gravados = resultadoGravacao.atualizados;
+    semCorrespondenciaNoSnapshot = resultadoGravacao.semCorrespondencia.length;
+    for (const chassi of resultadoGravacao.semCorrespondencia) {
+      avisos.push(`chassi ${chassi}: reconciliou, mas não encontrado no snapshot ${snapshotId} — gravação não aplicada.`);
+    }
+    for (const falha of resultadoGravacao.falhas) {
+      falhasGravacao.push(falha);
+      avisos.push(
+        `chassi ${falha.chassi}: falha ao gravar no Supabase (${falha.erro}) — valor da heurística já gravado neste snapshot foi preservado.`,
+      );
+    }
+  } else if (itensGravacao.length > 0) {
+    avisos.push(
+      `${itensGravacao.length} veículo(s) reconciliaram mas a gravação real foi pulada ` +
+        `(${sb ? "snapshot desta rodada indisponível" : "SUPABASE não configurado"}) — só leitura/diagnóstico.`,
+    );
+  }
+
+  return {
+    candidatosAvaliados: resultadoPiloto.candidatosAvaliados,
+    sucessosOracle: resultadoPiloto.sucessos.length,
+    falhasOracle: resultadoPiloto.falhas.length,
+    gravados,
+    divergentes,
+    semChassiParaGravar,
+    semCorrespondenciaNoSnapshot,
+    falhasGravacao,
+    avisos,
+    sucessos: resultadoPiloto.sucessos,
+    falhas: resultadoPiloto.falhas,
+  };
 }

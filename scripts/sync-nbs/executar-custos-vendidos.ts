@@ -3,15 +3,21 @@ import type { Connection } from "oracledb";
 import type { CustoDetalhado } from "@/lib/parsers/nbs-custos-xls";
 import { syncCustosVendidos, custoVendidoToRow } from "./sync-custos-vendidos";
 
-export function lerOpcoesCustos(
-  args: string[],
-): { somenteCustos: boolean; somenteMarkupPiloto: boolean; dryRun: boolean; dataInicio?: string; placaAlvo?: string } {
+export function lerOpcoesCustos(args: string[]): {
+  somenteCustos: boolean;
+  somenteMarkupPiloto: boolean;
+  dryRun: boolean;
+  dataInicio?: string;
+  placaAlvo?: string;
+  markupPilotoLimite?: number;
+} {
   const permitidos = ["--somente-custos", "--dry-run", "--markup-piloto", "--somente-markup-piloto"];
   for (const arg of args) {
     if (
       !permitidos.includes(arg) &&
       !arg.startsWith("--custos-desde=") &&
-      !arg.startsWith("--markup-piloto-placa=")
+      !arg.startsWith("--markup-piloto-placa=") &&
+      !arg.startsWith("--markup-piloto-limite=")
     )
       throw new Error(`Argumento desconhecido: ${arg}`);
   }
@@ -25,12 +31,25 @@ export function lerOpcoesCustos(
   if (placas.length > 1) throw new Error("Informe --markup-piloto-placa apenas uma vez.");
   const placaAlvo = placas[0]?.slice("--markup-piloto-placa=".length);
   if (placaAlvo !== undefined && placaAlvo.length === 0) throw new Error("--markup-piloto-placa exige um valor não vazio.");
+  // --markup-piloto-limite=N: corte manual pra rollout gradual (1 -> 10 -> 100
+  // -> estoque inteiro) sem precisar de --markup-piloto-placa — ver
+  // executarMarkupPiloto em calcular-markup-estoque.ts (sem esta flag, o
+  // padrão agora é processar TODO o estoque do filtro).
+  const limites = args.filter((arg) => arg.startsWith("--markup-piloto-limite="));
+  if (limites.length > 1) throw new Error("Informe --markup-piloto-limite apenas uma vez.");
+  const limiteStr = limites[0]?.slice("--markup-piloto-limite=".length);
+  let markupPilotoLimite: number | undefined;
+  if (limiteStr !== undefined) {
+    const n = Number(limiteStr);
+    if (!Number.isInteger(n) || n <= 0) throw new Error("--markup-piloto-limite exige um inteiro positivo.");
+    markupPilotoLimite = n;
+  }
   const somenteCustos = args.includes("--somente-custos");
   const somenteMarkupPiloto = args.includes("--somente-markup-piloto");
   const dryRun = args.includes("--dry-run");
   if (somenteCustos && somenteMarkupPiloto) throw new Error("Use --somente-custos OU --somente-markup-piloto, não os dois.");
   if (dryRun && !somenteCustos) throw new Error("Use --dry-run com --somente-custos para garantir uma execução apenas de leitura.");
-  return { somenteCustos, somenteMarkupPiloto, dryRun, dataInicio, placaAlvo };
+  return { somenteCustos, somenteMarkupPiloto, dryRun, dataInicio, placaAlvo, markupPilotoLimite };
 }
 
 export async function gravarCustosVendidosNode(sb: SupabaseClient, custos: CustoDetalhado[]): Promise<number> {
