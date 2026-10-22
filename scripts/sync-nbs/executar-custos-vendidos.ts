@@ -6,12 +6,18 @@ import { syncCustosVendidos, custoVendidoToRow } from "./sync-custos-vendidos";
 export function lerOpcoesCustos(args: string[]): {
   somenteCustos: boolean;
   somenteMarkupPiloto: boolean;
+  semMarkupOficial: boolean;
   dryRun: boolean;
   dataInicio?: string;
   placaAlvo?: string;
   markupPilotoLimite?: number;
 } {
-  const permitidos = ["--somente-custos", "--dry-run", "--markup-piloto", "--somente-markup-piloto"];
+  // --markup-piloto: ESCALADO em 22/10/2026 — o bloco MARKUP OFICIAL agora
+  // roda por padrão em TODA rodada (ver index.ts), não precisa mais de opt-in.
+  // A flag continua aceita de propósito, como no-op, só pra não quebrar quem
+  // ainda a tiver num comando/cron salvo em algum lugar durante a transição —
+  // ela não muda mais nenhum comportamento.
+  const permitidos = ["--somente-custos", "--dry-run", "--markup-piloto", "--somente-markup-piloto", "--sem-markup-oficial"];
   for (const arg of args) {
     if (
       !permitidos.includes(arg) &&
@@ -46,10 +52,18 @@ export function lerOpcoesCustos(args: string[]): {
   }
   const somenteCustos = args.includes("--somente-custos");
   const somenteMarkupPiloto = args.includes("--somente-markup-piloto");
+  // --sem-markup-oficial: escape hatch de emergência (22/10/2026) — desliga só
+  // o bloco MARKUP OFICIAL, mantendo o resto do sync normal. Pensada pra
+  // desligar rápido em produção sem reverter código, já que o bloco passou a
+  // rodar sempre, sem opt-in, processando o estoque inteiro (~1097 veículos)
+  // a cada ciclo. Contraditório com --somente-markup-piloto (pediria rodar
+  // isolado só o bloco que esta mesma flag desliga) — rejeitado explicitamente.
+  const semMarkupOficial = args.includes("--sem-markup-oficial");
   const dryRun = args.includes("--dry-run");
   if (somenteCustos && somenteMarkupPiloto) throw new Error("Use --somente-custos OU --somente-markup-piloto, não os dois.");
+  if (somenteMarkupPiloto && semMarkupOficial) throw new Error("--sem-markup-oficial com --somente-markup-piloto não faz sentido: a rodada ficaria sem nenhum bloco pra rodar.");
   if (dryRun && !somenteCustos) throw new Error("Use --dry-run com --somente-custos para garantir uma execução apenas de leitura.");
-  return { somenteCustos, somenteMarkupPiloto, dryRun, dataInicio, placaAlvo, markupPilotoLimite };
+  return { somenteCustos, somenteMarkupPiloto, semMarkupOficial, dryRun, dataInicio, placaAlvo, markupPilotoLimite };
 }
 
 export async function gravarCustosVendidosNode(sb: SupabaseClient, custos: CustoDetalhado[]): Promise<number> {

@@ -38,6 +38,17 @@ import { mapearMarkupOficial, type ResultadoMapeamentoMarkup } from "./mapear-ma
  * fica só como valor histórico/de referência pra quem quiser um corte manual
  * pequeno via o parâmetro `limite` (ou a flag `--markup-piloto-limite=N`, ver
  * executar-custos-vendidos.ts) durante um rollout gradual.
+ *
+ * ATUALIZAÇÃO 22/10/2026 (mesmo dia, rollout completo): o piloto rodou pro
+ * estoque INTEIRO em produção (1097/1097 veículos, zero falhas Oracle, zero
+ * divergências, 1097/1097 gravados) — este módulo deixou de ser "piloto" na
+ * prática e passou a rodar em TODA execução de `npm run sync-nbs`
+ * (`processarMarkupOficialEstoque`/`executarBlocoMarkupPiloto` em index.ts
+ * não dependem mais de flag nenhuma pra ativar). O nome dos
+ * tipos/funções/flags continua com "piloto" só por não exigir um rename em
+ * massa — não reflete mais um modo opt-in. Escape hatch de emergência:
+ * `--sem-markup-oficial` desliga só este bloco sem afetar o resto do sync
+ * (ver lerOpcoesCustos em executar-custos-vendidos.ts).
  */
 export const LIMITE_CARROS_PILOTO = 1;
 
@@ -447,11 +458,6 @@ export async function gravarMarkupPilotoDebug(
   const { error } = await sb.from("markup_piloto_debug").insert(registros);
   if (error) throw new Error(`gravarMarkupPilotoDebug: ${error.message}`);
   return registros.length;
-}
-
-/** Lê a flag `--markup-piloto` do argv. Função pura — testável sem Oracle. */
-export function markupPilotoAtivado(args: string[]): boolean {
-  return args.includes("--markup-piloto");
 }
 
 /** Payload pronto pras 8 colunas oficiais + custo_total — shape de `gravarMarkupOficialEmVeiculos`. */
