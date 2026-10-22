@@ -88,9 +88,9 @@ export type RegistroMarkupPilotoDebug = {
  * Mesmo filtro "em estoque hoje" validado em sync-veiculos.ts — não duplicar
  * a lógica aqui. PRECO_TABELA entra porque a function precisa do preço de
  * venda atual do veículo nos parâmetros in/out (ver bindsChamadaProcedure).
- * PLACA (NVL(v.PLACA, v.PLACA_USADO) — mesma resolução de mapear-veiculo.ts)
- * entra pra permitir mirar o piloto num carro específico (ver
- * montarQueryCandidatosPiloto).
+ * PLACA (v.PLACA_USADO — NBS.VEICULOS não tem coluna PLACA, só PLACA_USADO;
+ * confirmado via all_tab_columns em 22/10/2026) entra pra permitir mirar o
+ * piloto num carro específico (ver montarQueryCandidatosPiloto).
  *
  * Função pura — testável sem Oracle. Com placaAlvo, acrescenta o filtro de
  * placa normalizado (sem hífen, case-insensitive) via bind nomeado
@@ -100,10 +100,10 @@ export type RegistroMarkupPilotoDebug = {
 export function montarQueryCandidatosPiloto(placaAlvo?: string): string {
   const temPlacaAlvo = typeof placaAlvo === "string" && placaAlvo.length > 0;
   const filtroPlaca = temPlacaAlvo
-    ? ` AND UPPER(REPLACE(NVL(v.PLACA, v.PLACA_USADO), '-', '')) = UPPER(REPLACE(:placaAlvo, '-', ''))`
+    ? ` AND UPPER(REPLACE(v.PLACA_USADO, '-', '')) = UPPER(REPLACE(:placaAlvo, '-', ''))`
     : "";
   return `
-  SELECT v.COD_EMPRESA, v.COD_PRODUTO, v.COD_MODELO, v.CHASSI_RESUMIDO, v.PRECO_TABELA, NVL(v.PLACA, v.PLACA_USADO) AS PLACA
+  SELECT v.COD_EMPRESA, v.COD_PRODUTO, v.COD_MODELO, v.CHASSI_RESUMIDO, v.PRECO_TABELA, v.PLACA_USADO AS PLACA
   FROM NBS.VEICULOS v
   WHERE ${FILTRO_ESTOQUE}${filtroPlaca}
   ORDER BY v.CHASSI_RESUMIDO
