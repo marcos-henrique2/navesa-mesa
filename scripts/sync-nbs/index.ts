@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import type { Connection } from "oracledb";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
 import { getReferenciaAtual, __setFipeCacheStorage, type CacheStorageLike } from "@/lib/fipe/service";
 import { runFipeBatch, filtrarVeiculosPendentesFipe, type FipeBatchStatusRow } from "@/lib/fipe/batch";
@@ -99,6 +100,60 @@ async function gravarSyncLog(fonte: "veiculos" | "vendas" | "fipe" | "markup_pil
   }
 }
 
+/**
+ * Bloco MARKUP PILOTO extraído pra função própria — reusado tanto no fluxo
+ * completo (atrás da flag --markup-piloto) quanto no modo isolado
+ * (--somente-markup-piloto), que pula VEÍCULOS/VENDAS/CUSTOS/FIPE pra não
+ * precisar esperar o sync inteiro só pra testar esta parte. Ver
+ * docs/sync-custos-markup-acesso.md e calcular-markup-estoque.ts.
+ */
+async function executarBlocoMarkupPiloto(conn: Connection): Promise<void> {
+  console.log("\n--- MARKUP PILOTO (NBS.PKG_MARKUP_VEIC.CALCULAR_MARKUP_ESTOQUE) ---");
+  const inicioMarkupPiloto = new Date();
+  let linhasGravadasMarkupPiloto: number | null = null;
+  try {
+    const resultadoMarkup = await executarMarkupPiloto(conn);
+    console.log(
+      `Candidatos avaliados: ${resultadoMarkup.candidatosAvaliados}; ` +
+        `sucesso: ${resultadoMarkup.sucessos.length}; falha: ${resultadoMarkup.falhas.length}.`,
+    );
+    for (const falha of resultadoMarkup.falhas) {
+      console.warn(`  (aviso) chassi ${falha.candidato.chassiResumido}: ${falha.erro}`);
+    }
+
+    if (supabaseDisponivel() && resultadoMarkup.sucessos.length > 0) {
+      const sbEscrita = criarClienteSupabaseServiceRole();
+      const registros = resultadoMarkup.sucessos.map((s) =>
+        construirRegistroDebug(s.candidato, s.linhas, s.resultado, s.parametrosFinais),
+      );
+      linhasGravadasMarkupPiloto = await gravarMarkupPilotoDebug(sbEscrita, registros);
+      console.log(`Gravação real: ${linhasGravadasMarkupPiloto} registro(s) em markup_piloto_debug.`);
+    }
+
+    const fimMarkupPiloto = new Date();
+    await gravarSyncLog("markup_piloto", {
+      iniciado_em: inicioMarkupPiloto,
+      finalizado_em: fimMarkupPiloto,
+      status: resultadoMarkup.falhas.length > 0 && resultadoMarkup.sucessos.length === 0 ? "erro" : "sucesso",
+      linhas_lidas: resultadoMarkup.candidatosAvaliados,
+      linhas_gravadas: linhasGravadasMarkupPiloto,
+      erro_mensagem: resultadoMarkup.falhas.map((f) => `${f.candidato.chassiResumido}: ${f.erro}`).join("; ") || null,
+    });
+  } catch (err) {
+    const fimMarkupPiloto = new Date();
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`ERRO no bloco MARKUP PILOTO: ${msg}`);
+    await gravarSyncLog("markup_piloto", {
+      iniciado_em: inicioMarkupPiloto,
+      finalizado_em: fimMarkupPiloto,
+      status: "erro",
+      linhas_lidas: null,
+      linhas_gravadas: linhasGravadasMarkupPiloto,
+      erro_mensagem: msg,
+    });
+  }
+}
+
 async function main() {
   const opcoesCustos = lerOpcoesCustos(process.argv.slice(2));
   console.log("=== Sync NBS (Oracle) -> Supabase ===\n");
@@ -118,6 +173,10 @@ async function main() {
   try {
     if (opcoesCustos.somenteCustos) {
       await executarCustosVendidos(conn, opcoesCustos);
+      return;
+    }
+    if (opcoesCustos.somenteMarkupPiloto) {
+      await executarBlocoMarkupPiloto(conn);
       return;
     }
     // ─── VEÍCULOS ─────────────────────────────────────────────────────────
@@ -267,50 +326,7 @@ async function main() {
     // e docs/sync-custos-markup-acesso.md pro contexto completo (piloto de
     // 1 carro, chamada real a NBS.PKG_MARKUP_VEIC.CALCULAR_MARKUP_ESTOQUE).
     if (markupPilotoAtivado(process.argv.slice(2))) {
-      console.log("\n--- MARKUP PILOTO (NBS.PKG_MARKUP_VEIC.CALCULAR_MARKUP_ESTOQUE) ---");
-      const inicioMarkupPiloto = new Date();
-      let linhasGravadasMarkupPiloto: number | null = null;
-      try {
-        const resultadoMarkup = await executarMarkupPiloto(conn);
-        console.log(
-          `Candidatos avaliados: ${resultadoMarkup.candidatosAvaliados}; ` +
-            `sucesso: ${resultadoMarkup.sucessos.length}; falha: ${resultadoMarkup.falhas.length}.`,
-        );
-        for (const falha of resultadoMarkup.falhas) {
-          console.warn(`  (aviso) chassi ${falha.candidato.chassiResumido}: ${falha.erro}`);
-        }
-
-        if (supabaseDisponivel() && resultadoMarkup.sucessos.length > 0) {
-          const sbEscrita = criarClienteSupabaseServiceRole();
-          const registros = resultadoMarkup.sucessos.map((s) =>
-            construirRegistroDebug(s.candidato, s.linhas, s.resultado, s.parametrosFinais),
-          );
-          linhasGravadasMarkupPiloto = await gravarMarkupPilotoDebug(sbEscrita, registros);
-          console.log(`Gravação real: ${linhasGravadasMarkupPiloto} registro(s) em markup_piloto_debug.`);
-        }
-
-        const fimMarkupPiloto = new Date();
-        await gravarSyncLog("markup_piloto", {
-          iniciado_em: inicioMarkupPiloto,
-          finalizado_em: fimMarkupPiloto,
-          status: resultadoMarkup.falhas.length > 0 && resultadoMarkup.sucessos.length === 0 ? "erro" : "sucesso",
-          linhas_lidas: resultadoMarkup.candidatosAvaliados,
-          linhas_gravadas: linhasGravadasMarkupPiloto,
-          erro_mensagem: resultadoMarkup.falhas.map((f) => `${f.candidato.chassiResumido}: ${f.erro}`).join("; ") || null,
-        });
-      } catch (err) {
-        const fimMarkupPiloto = new Date();
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`ERRO no bloco MARKUP PILOTO: ${msg}`);
-        await gravarSyncLog("markup_piloto", {
-          iniciado_em: inicioMarkupPiloto,
-          finalizado_em: fimMarkupPiloto,
-          status: "erro",
-          linhas_lidas: null,
-          linhas_gravadas: linhasGravadasMarkupPiloto,
-          erro_mensagem: msg,
-        });
-      }
+      await executarBlocoMarkupPiloto(conn);
     }
 
     // ─── FIPE ───────────────────────────────────────────────────────────────

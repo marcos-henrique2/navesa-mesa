@@ -3,8 +3,10 @@ import type { Connection } from "oracledb";
 import type { CustoDetalhado } from "@/lib/parsers/nbs-custos-xls";
 import { syncCustosVendidos, custoVendidoToRow } from "./sync-custos-vendidos";
 
-export function lerOpcoesCustos(args: string[]): { somenteCustos: boolean; dryRun: boolean; dataInicio?: string } {
-  const permitidos = ["--somente-custos", "--dry-run", "--markup-piloto"];
+export function lerOpcoesCustos(
+  args: string[],
+): { somenteCustos: boolean; somenteMarkupPiloto: boolean; dryRun: boolean; dataInicio?: string } {
+  const permitidos = ["--somente-custos", "--dry-run", "--markup-piloto", "--somente-markup-piloto"];
   for (const arg of args) {
     if (!permitidos.includes(arg) && !arg.startsWith("--custos-desde=")) throw new Error(`Argumento desconhecido: ${arg}`);
   }
@@ -15,9 +17,11 @@ export function lerOpcoesCustos(args: string[]): { somenteCustos: boolean; dryRu
     throw new Error("--custos-desde exige uma data válida no formato YYYY-MM-DD.");
   }
   const somenteCustos = args.includes("--somente-custos");
+  const somenteMarkupPiloto = args.includes("--somente-markup-piloto");
   const dryRun = args.includes("--dry-run");
+  if (somenteCustos && somenteMarkupPiloto) throw new Error("Use --somente-custos OU --somente-markup-piloto, não os dois.");
   if (dryRun && !somenteCustos) throw new Error("Use --dry-run com --somente-custos para garantir uma execução apenas de leitura.");
-  return { somenteCustos, dryRun, dataInicio };
+  return { somenteCustos, somenteMarkupPiloto, dryRun, dataInicio };
 }
 
 export async function gravarCustosVendidosNode(sb: SupabaseClient, custos: CustoDetalhado[]): Promise<number> {
