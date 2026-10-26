@@ -15,8 +15,8 @@ import { useRouter } from "next/navigation";
 import { classificarPatio } from "@/lib/inventory/status";
 import { normalizarIdentificador, normalizarPlaca } from "@/lib/utils/placa";
 import { estaReservado } from "@/lib/inventory/reservado";
-import { CAUTELAR_ICONE, CAUTELAR_LABEL } from "@/lib/inventory/cautelar";
 import { cn, formatBRL, formatInt } from "@/lib/utils";
+import { calcularCustoReal } from "@/lib/export/custo-real";
 import { ResumoPorDimensao } from "./ResumoPorDimensao";
 import { FipeBatchRunner } from "./FipeBatchRunner";
 import { CautelarBatchActions } from "./CautelarBatchActions";
@@ -183,16 +183,6 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
       },
     },
     { accessorKey: "dias_patio", header: "Dias pátio", cell: (info) => <span className="tabular-nums whitespace-nowrap text-xs">{info.getValue<number | null>() ?? "—"}</span>, size: 50 },
-    {
-      id: "cautelar",
-      header: "Cautelar",
-      cell: ({ row }) => {
-        const cautelarVal = cautelares[row.original.chassi];
-        if (!cautelarVal) return <span className="text-[var(--text-subtle)] opacity-60 text-xs">—</span>;
-        return <span className="text-base" title={CAUTELAR_LABEL[cautelarVal]}>{CAUTELAR_ICONE[cautelarVal]}</span>;
-      },
-      size: 80,
-    },
     { accessorKey: "marca", header: "Marca", cell: (info) => <span className="text-xs whitespace-nowrap">{info.getValue<string>()}</span> },
     {
       accessorKey: "modelo",
@@ -215,22 +205,16 @@ export function VeiculosTable({ filtrosPrioridade }: VeiculosTableProps = {}) {
     }, size: 70 },
     { accessorKey: "cor_externa", header: "Cor", cell: (info) => <span className="text-xs whitespace-nowrap">{info.getValue<string>()}</span> },
     { accessorKey: "patio", header: "Pátio", cell: (info) => <span className="text-xs whitespace-nowrap">{info.getValue<string>().trim()}</span> },
-    { accessorKey: "preco_venda", header: "Preço", cell: (info) => <span className="tabular-nums whitespace-nowrap text-xs" title="Preço de venda">{formatBRL(info.getValue<number | null>())}</span> },
-    { accessorKey: "valor_aquisicao", header: "Aquis.", cell: (info) => <span className="tabular-nums whitespace-nowrap text-xs text-[var(--text-body)]" title="Valor de aquisição">{formatBRL(info.getValue<number | null>())}</span> },
     {
-      id: "gasto_pos_entrada",
-      header: "Gasto pós",
+      id: "custo_real",
+      header: "Custo Real",
       cell: ({ row }) => {
-        const v = row.original;
-        if (v.custo_total == null || v.valor_aquisicao == null) return <span className="tabular-nums text-[var(--text-subtle)] opacity-60">—</span>;
-        const diff = v.custo_total - v.valor_aquisicao;
-        if (diff === 0) return <span className="tabular-nums text-[var(--text-subtle)] opacity-60">—</span>;
-        if (diff < 0) return <span className="tabular-nums whitespace-nowrap text-xs text-red-700 dark:text-red-400" title="atenção: custo inferior à aquisição (gasto pós-entrada negativo)">{formatBRL(diff)}</span>;
-        return <span className="tabular-nums whitespace-nowrap text-xs text-[var(--text-body)]" title="Gasto pós-entrada">{formatBRL(diff)}</span>;
+        const v = calcularCustoReal(row.original.valor_aquisicao, row.original.valoriza);
+        return <span className="tabular-nums whitespace-nowrap text-xs text-[var(--text-body)]" title="Custo Real (Entrada − Valoriza)">{formatBRL(v)}</span>;
       },
     },
-    { accessorKey: "custo_total", header: "Custo", cell: (info) => <span className="tabular-nums whitespace-nowrap text-xs text-[var(--text-body)]" title="Custo total">{formatBRL(info.getValue<number | null>())}</span> },
-  ], [lojas, cautelares, chassisEmRepasse]);
+    { accessorKey: "preco_venda", header: "Preço", cell: (info) => <span className="tabular-nums whitespace-nowrap text-xs" title="Preço de venda">{formatBRL(info.getValue<number | null>())}</span> },
+  ], [lojas, chassisEmRepasse]);
 
   // TanStack Table v8 retorna funções não-puras que o React Compiler não consegue memorizar.
   // Limitação conhecida — remover este disable quando migrarmos pra v9 (compatível).
