@@ -14,6 +14,7 @@ import { EstatisticasModelo } from "./veiculos/EstatisticasModelo";
 import { FlagsVeiculo } from "./veiculos/FlagsVeiculo";
 import { ComposicaoCustos } from "./ComposicaoCustos";
 import { ComposicaoCustosEstoque } from "./ComposicaoCustosEstoque";
+import { montarCustoEstoqueView } from "@/lib/veiculos/custo-estoque-view";
 import {
   classificarVeiculo,
   contarPorModelo,
@@ -38,8 +39,14 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
   const veiculo = useMemo(() => veiculos.find((v) => v.chassi === chassi), [veiculos, chassi]);
 
   const custoDetalhado = veiculo?.placa ? custosPorPlaca[veiculo.placa] ?? null : null;
-  const custoEstoque = veiculo?.placa && !custoDetalhado
+  // Fallback manual (upload do PDF "Custos de Veículos em Estoque" em /upload) —
+  // só usado pelo view-model quando o cálculo automático NBS (Oracle) ainda não
+  // tiver custo_total/preco_venda pra esse carro (entrada muito recente).
+  const custoEstoqueManual = veiculo?.placa && !custoDetalhado
     ? custosEstoquePorPlaca[normalizarPlaca(veiculo.placa)] ?? null
+    : null;
+  const custoEstoque = veiculo && !custoDetalhado
+    ? montarCustoEstoqueView(veiculo, custoEstoqueManual)
     : null;
 
   const vendasDaPlaca = useMemo(() => {
@@ -155,7 +162,7 @@ export function VeiculoDetalhe({ chassi }: { chassi: string }) {
           <Row label="Data entrada" value={veiculo.data_entrada ? new Date(veiculo.data_entrada).toLocaleDateString("pt-BR") : "—"} />
           {!custoDetalhado && !custoEstoque && (
             <p className="mt-3 text-xs italic text-[var(--text-muted)]">
-              ℹ️ Detalhe completo por categoria aparece quando o relatório &quot;Custos de Veículos em Estoque&quot; do NBS for importado pra essa loja.
+              ℹ️ Detalhe completo por categoria aparece automaticamente após o sync do NBS (Oracle, a cada 2h) ou quando o relatório &quot;Custos de Veículos em Estoque&quot; for importado pra essa loja em /upload.
             </p>
           )}
         </Card>

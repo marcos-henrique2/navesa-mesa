@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Receipt, ShoppingCart, Banknote, Wrench, UserSquare2, Landmark, Briefcase, FileText, Gift, Star, Package, Info, ChevronDown, ChevronUp } from "lucide-react";
-import type { CustoEstoqueDetalhado } from "@/lib/parsers/nbs-custos-estoque-pdf";
+import { Receipt, ShoppingCart, Banknote, Wrench, UserSquare2, Landmark, Briefcase, FileText, Gift, Package, Info, ChevronDown, ChevronUp } from "lucide-react";
+import type { CustoEstoqueView } from "@/lib/veiculos/custo-estoque-view";
 import { formatBRL, cn } from "@/lib/utils";
 import { Tooltip } from "./ui/Tooltip";
 
@@ -19,15 +19,26 @@ type LineItem = {
 
 /**
  * Mostra o breakdown de custo do markup para um carro EM ESTOQUE.
- * Fonte: PDF "Custos de Veículos em Estoque" do NBS.
+ *
+ * Fonte PRIMÁRIA: cálculo automático NBS (PKG_MARKUP_VEIC.CALCULAR_MARKUP_ESTOQUE,
+ * sync Oracle a cada 2h), já gravado em `veiculos.custo_*` — cobre todo o
+ * estoque atual, sempre atualizado. Fallback: PDF "Custos de Veículos em
+ * Estoque" (upload manual em /upload), usado só quando o automático ainda
+ * não está disponível pra esse carro (ex. entrada recém-chegada). Ver
+ * `montarCustoEstoqueView` em lib/veiculos/custo-estoque-view.ts.
  *
  * Diferente de ComposicaoCustos (que cobre vendas), este componente é
  * single-veículo e mostra: Nota Fábrica (já líquida do Valoriza, exibido
  * em linha própria), Valoriza, Revisões, Forplan, HoldBack, Acessórios,
- * ADM, Impostos, Comissões, Desp.Gerais, (-)Bônus, (-)Ganhos Indiretos →
+ * ADM, Impostos, Comissões, Desp.Gerais →
  * Custo Total → Tabela (preço de venda) → Lucro Bruto.
+ *
+ * Bônus de Fábrica e Ganhos Indiretos não entram no view-model (ver
+ * CustoEstoqueView): bonus é campo morto (sempre 0, sem fonte) e
+ * ganhos_indiretos é o mesmo abatimento financeiro do Valoriza (bônus Ford)
+ * — a linha própria de Valoriza (fonte ao vivo) já cobre esse abatimento.
  */
-export function ComposicaoCustosEstoque({ custo, valoriza }: { custo: CustoEstoqueDetalhado; valoriza: number }) {
+export function ComposicaoCustosEstoque({ custo, valoriza }: { custo: CustoEstoqueView; valoriza: number }) {
   const [mostrarZerados, setMostrarZerados] = useState(false);
 
   const itens: LineItem[] = [
@@ -81,16 +92,6 @@ export function ComposicaoCustosEstoque({ custo, valoriza }: { custo: CustoEstoq
       icon: <FileText className="h-3.5 w-3.5" />, value: custo.desp_gerais, color: "bg-amber-500",
       tooltip: "Demais despesas operacionais alocadas ao veículo (limpeza, transporte interno, despachante, etc.).",
     },
-    {
-      label: "(−) Bônus de Fábrica",
-      icon: <Star className="h-3.5 w-3.5" />, value: custo.bonus, color: "bg-emerald-500", redutor: true,
-      tooltip: "ABATIMENTO. Bonificação especial da fábrica (campanha, meta atingida, prêmio de mix). Reduz o custo final.",
-    },
-    {
-      label: "(−) Ganhos Indiretos",
-      icon: <Gift className="h-3.5 w-3.5" />, value: custo.ganhos_indiretos, color: "bg-emerald-500", redutor: true,
-      tooltip: "ABATIMENTO. Ganhos auxiliares vinculados ao veículo (verba de marketing, comissão de financeira parceira, prêmio de seguradora, recuperação tributária). Reduz o custo final.",
-    },
   ];
 
   // Soma dos itens não-redutores (denominador da barra) — sempre considera TODOS,
@@ -113,7 +114,9 @@ export function ComposicaoCustosEstoque({ custo, valoriza }: { custo: CustoEstoq
         <h3 className="text-sm font-semibold text-[var(--text-strong)]">Composição de custos (markup)</h3>
         <span className="text-xs text-[var(--text-muted)]">— carro em estoque</span>
         <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
-          ✓ Relatório NBS &quot;Custos de Veículos em Estoque&quot;
+          {custo.fonte === "automatico"
+            ? "✓ Cálculo automático NBS (Oracle, sync a cada 2h)"
+            : "✓ Relatório NBS “Custos de Veículos em Estoque” (upload manual)"}
         </span>
       </header>
 
@@ -174,7 +177,7 @@ export function ComposicaoCustosEstoque({ custo, valoriza }: { custo: CustoEstoq
               <span className="inline-flex items-center gap-1.5 font-semibold text-[var(--text-strong)]">
                 Custo total NBS
                 <Tooltip
-                  content="Custo final do veículo conforme calculado pelo NBS DMS. Fórmula: soma dos custos (Nota Fábrica + Revisões + Floor Plan + Acessórios + ADM + Impostos + Comissões + Despesas Gerais) menos os abatimentos (HoldBack + Bônus de Fábrica + Ganhos Indiretos)."
+                  content={'Custo final do veículo conforme calculado pelo NBS DMS. Fórmula: soma dos custos (Nota Fábrica + Revisões + Floor Plan + Acessórios + ADM + Impostos + Comissões + Despesas Gerais) menos os abatimentos (HoldBack + Valoriza). O NBS também reporta o abatimento do Valoriza como "Ganhos Indiretos" no total oficial do relatório.'}
                   side="top"
                 >
                   <Info className="h-3 w-3 text-[var(--text-subtle)] opacity-60 hover:opacity-100" aria-label="Sobre custo total NBS" />
@@ -183,7 +186,7 @@ export function ComposicaoCustosEstoque({ custo, valoriza }: { custo: CustoEstoq
               <span className="tabular-nums font-bold text-[var(--text-strong)]">{formatBRL(custo.custo_total)}</span>
             </div>
             <p className="mt-1 text-[10px] text-[var(--text-muted)]">
-              = Σ(componentes) − HoldBack − Bônus − Ganhos Indiretos
+              = Σ(componentes) − HoldBack − Valoriza (o NBS também reporta esse abatimento como &quot;Ganhos Indiretos&quot; no total oficial)
             </p>
           </div>
         </div>
