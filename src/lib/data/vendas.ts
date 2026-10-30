@@ -1,6 +1,7 @@
 "use client";
 
 import type { VendaParsed } from "@/lib/parsers/nbs-vendas-xlsx";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSupabase, chunk, selectAll, parseDate } from "./supabase";
 
 type VendaRow = Omit<VendaParsed, "data_venda" | "data_faturamento" | "data_entrada"> & {
@@ -138,6 +139,47 @@ export async function listVendasPorPeriodo(ini: Date, fim: Date): Promise<VendaP
  * @returns { total, duplicatasIgnoradas }
  */
 export async function upsertVendas(vendas: VendaParsed[]): Promise<{ total: number; duplicatasIgnoradas: number }> {
+  return upsertVendasCom(getSupabase(), vendas);
+}
+
+/**
+ * Separa as linhas do upsert em dois grupos homogêneos: com `cliente_tipo`
+ * e SEM a chave `cliente_tipo` (quando o tipo parseado é null).
+ *
+ * Por quê: o XLSX só sabe o tipo pelo tamanho do documento (detectTipoCliente
+ * no parser) e devolve null pra CPF/CNPJ com zero à esquerda perdido. O sync
+ * do Oracle tem o tipo explícito (NBS.CLIENTES.COD_CLASSE). Mandar null no
+ * upsert apagaria esse PF/PJ correto. Omitir a coluna faz o PostgREST deixar
+ * ela fora do INSERT/ON CONFLICT UPDATE — valor existente preservado, linha
+ * nova fica com o default (NULL).
+ *
+ * Precisa ser em lotes separados: o supabase-js monta `?columns=` com a
+ * UNIÃO das chaves do lote e (defaultToNull=true) preenche com null quem não
+ * tem a chave — misturar as duas formas no mesmo lote voltaria a gravar null.
+ */
+export function separarLinhasPorTipoCliente(rows: Record<string, unknown>[]): {
+  comTipo: Record<string, unknown>[];
+  semTipo: Record<string, unknown>[];
+} {
+  const comTipo: Record<string, unknown>[] = [];
+  const semTipo: Record<string, unknown>[] = [];
+  for (const row of rows) {
+    if (row.cliente_tipo === null || row.cliente_tipo === undefined) {
+      const resto = { ...row };
+      delete resto.cliente_tipo;
+      semTipo.push(resto);
+    } else {
+      comTipo.push(row);
+    }
+  }
+  return { comTipo, semTipo };
+}
+
+/** Núcleo de `upsertVendas` com client injetável (testável fora do browser). */
+export async function upsertVendasCom(
+  sb: SupabaseClient,
+  vendas: VendaParsed[],
+): Promise<{ total: number; duplicatasIgnoradas: number }> {
   if (vendas.length === 0) return { total: 0, duplicatasIgnoradas: 0 };
 
   // Dedup mantendo a última ocorrência por chassi
@@ -149,10 +191,12 @@ export async function upsertVendas(vendas: VendaParsed[]): Promise<{ total: numb
   const unicas = [...porChassi.values()];
   const duplicatasIgnoradas = vendas.length - unicas.length;
 
-  const sb = getSupabase();
-  for (const lote of chunk(unicas.map(toRow), 500)) {
-    const { error } = await sb.from("vendas").upsert(lote, { onConflict: "chassi" });
-    if (error) throw new Error(`upsertVendas: ${error.message}`);
+  const { comTipo, semTipo } = separarLinhasPorTipoCliente(unicas.map(toRow));
+  for (const grupo of [comTipo, semTipo]) {
+    for (const lote of chunk(grupo, 500)) {
+      const { error } = await sb.from("vendas").upsert(lote, { onConflict: "chassi" });
+      if (error) throw new Error(`upsertVendas: ${error.message}`);
+    }
   }
   return { total: unicas.length, duplicatasIgnoradas };
 }

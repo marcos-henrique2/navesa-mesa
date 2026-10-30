@@ -29,7 +29,29 @@ const MAX_PLAUSIVEL = 1500;
  * JOIN (ver `sqlSelectVendas` abaixo) e alguma tabela joinada poderia, em
  * teoria, ter coluna homônima.
  */
-const FILTRO_VENDAS = `v.DATA_VENDA IS NOT NULL AND v.DATA_VENDA <> TO_DATE('1899-12-30','YYYY-MM-DD') AND v.NOVO_USADO IN ('U','C') AND v.DATA_VENDA >= (SYSDATE - ${JANELA_DIAS})`;
+const FILTRO_VENDAS_BASE = `v.DATA_VENDA IS NOT NULL AND v.DATA_VENDA <> TO_DATE('1899-12-30','YYYY-MM-DD') AND v.NOVO_USADO IN ('U','C')`;
+
+/**
+ * Sem `desde`: janela móvel padrão de JANELA_DIAS (ciclo normal de 2h). Com
+ * `desde` (YYYY-MM-DD, flag `--vendas-desde`, execução única de
+ * reprocessamento): tudo a partir daquela data, via bind (`:desde`).
+ */
+function filtroVendas(desde?: string): string {
+  return desde
+    ? `${FILTRO_VENDAS_BASE} AND v.DATA_VENDA >= TO_DATE(:desde,'YYYY-MM-DD')`
+    : `${FILTRO_VENDAS_BASE} AND v.DATA_VENDA >= (SYSDATE - ${JANELA_DIAS})`;
+}
+
+/**
+ * Faixa de sanidade proporcional ao período: [500, 1500] vale pra 90 dias;
+ * com `--vendas-desde` escala pelo nº de dias até hoje (mesma densidade de
+ * vendas/dia).
+ */
+export function faixaPlausivel(desde: string | undefined, hoje: Date = new Date()): { min: number; max: number } {
+  if (!desde) return { min: MIN_PLAUSIVEL, max: MAX_PLAUSIVEL };
+  const dias = Math.max(1, Math.ceil((hoje.getTime() - new Date(`${desde}T00:00:00`).getTime()) / 86_400_000));
+  return { min: Math.floor((MIN_PLAUSIVEL * dias) / JANELA_DIAS), max: Math.ceil((MAX_PLAUSIVEL * dias) / JANELA_DIAS) };
+}
 
 /**
  * JOINs confirmados empiricamente contra o Oracle real (8 vendas reais
@@ -57,6 +79,8 @@ const FILTRO_VENDAS = `v.DATA_VENDA IS NOT NULL AND v.DATA_VENDA <> TO_DATE('189
  * - cliente_nome/uf: NBS.CLIENTES. cliente_cidade fica de fora — CLIENTES só
  *   tem COD_CID_RES (código) e não há tabela de cidades acessível pro
  *   usuário `comissao`.
+ * - cliente_tipo: NBS.CLIENTES.COD_CLASSE ('F'/'J') — ver
+ *   resolverTipoCliente em mapear-venda.ts.
  * - consignado: NÃO precisou de JOIN nem de entrada nova no SELECT — v.*
  *   já traz CONSIGNATO (coluna direta de NBS.VEICULOS, mesma usada como
  *   FILTRO_ESTOQUE em sync-veiculos.ts). Mapeado em mapear-venda.ts.
@@ -76,7 +100,7 @@ const FILTRO_VENDAS = `v.DATA_VENDA IS NOT NULL AND v.DATA_VENDA <> TO_DATE('189
  * Todas as colunas joinadas usam alias `JOIN_*` pra nunca colidir com nomes
  * de coluna reais de NBS.VEICULOS (selecionada via `v.*`).
  */
-const SQL_SELECT_VENDAS = `
+const sqlSelectVendas = (desde?: string) => `
   SELECT v.*,
     COALESCE(NULLIF(v.COD_EMPRESA_ATUAL, 0), v.COD_EMPRESA) AS LOJA_ATUAL,
     pm.DESCRICAO_MODELO AS JOIN_MODELO,
@@ -85,7 +109,8 @@ const SQL_SELECT_VENDAS = `
     eu.CPF AS JOIN_VENDEDOR_CPF,
     emp.NOME AS JOIN_EMPRESA_NOME,
     cli.NOME AS JOIN_CLIENTE_NOME,
-    COALESCE(cli.UF_RES, cli.UF_COM) AS JOIN_CLIENTE_UF
+    COALESCE(cli.UF_RES, cli.UF_COM) AS JOIN_CLIENTE_UF,
+    cli.COD_CLASSE AS JOIN_CLIENTE_CLASSE
   FROM NBS.VEICULOS v
   LEFT JOIN NBS.PRODUTOS_MODELOS pm ON pm.COD_PRODUTO = v.COD_PRODUTO AND pm.COD_MODELO = v.COD_MODELO
   LEFT JOIN NBS.PRODUTOS p ON p.COD_PRODUTO = v.COD_PRODUTO
@@ -93,8 +118,28 @@ const SQL_SELECT_VENDAS = `
   LEFT JOIN NBS.EMPRESAS_USUARIOS eu ON eu.NOME = v.VENDEDOR
   LEFT JOIN NBS.EMPRESAS emp ON emp.COD_EMPRESA = v.COD_EMPRESA_VENDEDORA
   LEFT JOIN NBS.CLIENTES cli ON cli.COD_CLIENTE = v.COD_CLIENTE
-  WHERE ${FILTRO_VENDAS}
+  WHERE ${filtroVendas(desde)}
 `;
+
+/**
+ * Versão enxuta da leitura de vendas pro backfill de cliente_tipo
+ * (backfill-cliente-tipo.ts): MESMO filtro (`filtroVendas`) e MESMO LEFT JOIN
+ * em NBS.CLIENTES de `sqlSelectVendas`, só com as colunas que decidem chassi
+ * e tipo — nomes de coluna iguais aos da query completa, pra que a row passe
+ * direto por `mapearVenda` (NBS.VEICULOS não tem CHASSI; o candidato que
+ * bate é CHASSI_COMPLETO).
+ */
+export async function lerTipoClienteVendas(conn: Connection, desde: string): Promise<Record<string, unknown>[]> {
+  const result = await conn.execute<Record<string, unknown>>(
+    `SELECT v.CHASSI_COMPLETO, v.COD_CLIENTE, cli.COD_CLASSE AS JOIN_CLIENTE_CLASSE
+     FROM NBS.VEICULOS v
+     LEFT JOIN NBS.CLIENTES cli ON cli.COD_CLIENTE = v.COD_CLIENTE
+     WHERE ${filtroVendas(desde)}
+     ORDER BY v.DATA_VENDA`,
+    { desde },
+  );
+  return result.rows ?? [];
+}
 
 export type ResultadoSyncVendas = {
   contagemJanela: number;
@@ -106,23 +151,32 @@ export type ResultadoSyncVendas = {
   warnings: string[];
 };
 
-async function contarVendasNaJanela(conn: Connection): Promise<number> {
+async function contarVendasNaJanela(conn: Connection, desde?: string): Promise<number> {
   const result = await conn.execute<{ QTD: number }>(
-    `SELECT COUNT(*) AS QTD FROM NBS.VEICULOS v WHERE ${FILTRO_VENDAS}`,
+    `SELECT COUNT(*) AS QTD FROM NBS.VEICULOS v WHERE ${filtroVendas(desde)}`,
+    desde ? { desde } : {},
   );
   return Number(result.rows?.[0]?.QTD ?? 0);
 }
 
-export async function syncVendas(conn: Connection): Promise<ResultadoSyncVendas> {
+/**
+ * `opcoes.desde` (YYYY-MM-DD): reprocessa tudo desde essa data em vez da
+ * janela de 90 dias — mesma query, mesmo mapeamento, mesmo upsert por chassi.
+ * Ver `--vendas-desde` em lerOpcoesCustos (executar-custos-vendidos.ts).
+ */
+export async function syncVendas(conn: Connection, opcoes: { desde?: string } = {}): Promise<ResultadoSyncVendas> {
   const warnings: string[] = [];
+  const { desde } = opcoes;
 
-  const contagemJanela = await contarVendasNaJanela(conn);
-  const filtroPlausivel = contagemJanela >= MIN_PLAUSIVEL && contagemJanela <= MAX_PLAUSIVEL;
+  const contagemJanela = await contarVendasNaJanela(conn, desde);
+  const faixa = faixaPlausivel(desde);
+  const filtroPlausivel = contagemJanela >= faixa.min && contagemJanela <= faixa.max;
 
   if (!filtroPlausivel) {
+    const periodo = desde ? `desde ${desde}` : `de ${JANELA_DIAS} dias`;
     warnings.push(
-      `Janela de ${JANELA_DIAS} dias em NBS.VEICULOS (DATA_VENDA real + NOVO_USADO='U') retornou ${contagemJanela} linhas — ` +
-        `fora da faixa plausível [${MIN_PLAUSIVEL}, ${MAX_PLAUSIVEL}]. Reporte pro Marcos antes de inventar outro filtro.`,
+      `Janela ${periodo} em NBS.VEICULOS (DATA_VENDA real + NOVO_USADO IN ('U','C')) retornou ${contagemJanela} linhas — ` +
+        `fora da faixa plausível [${faixa.min}, ${faixa.max}]. Reporte pro Marcos antes de inventar outro filtro.`,
     );
   }
 
@@ -135,7 +189,7 @@ export async function syncVendas(conn: Connection): Promise<ResultadoSyncVendas>
   const tempoMsMapaValoriza = Date.now() - inicioMapaValoriza;
   const lookups: LookupsVenda = { mapaValoriza };
 
-  const result = await conn.execute(SQL_SELECT_VENDAS);
+  const result = await conn.execute(sqlSelectVendas(desde), desde ? { desde } : {});
 
   const rows = (result.rows ?? []) as Record<string, unknown>[];
 
