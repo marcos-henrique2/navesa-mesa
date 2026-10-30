@@ -51,7 +51,7 @@ const CANDIDATOS: Record<keyof VendaParsed, string[]> = {
   cliente_codigo: ["COD_CLIENTE"],
   // JOIN_CLIENTE_NOME/JOIN_CLIENTE_UF vêm do LEFT JOIN em NBS.CLIENTES.
   cliente_nome: ["JOIN_CLIENTE_NOME", "NOME_CLIENTE"],
-  cliente_tipo: [], // derivado de cliente_codigo, sem coluna própria
+  cliente_tipo: [], // derivado: JOIN_CLIENTE_CLASSE com fallback em cliente_codigo (ver resolverTipoCliente)
   cliente_cidade: ["CIDADE_CLIENTE"], // sem fonte confirmada — pendência (CLIENTES só tem COD_CID_RES, sem tabela de cidades acessível)
   cliente_uf: ["JOIN_CLIENTE_UF", "UF_CLIENTE", "UF"],
 
@@ -131,7 +131,27 @@ function asBool(v: unknown): boolean | null {
   return null;
 }
 
-function detectTipoCliente(codigo: string | null): "PF" | "PJ" | null {
+/**
+ * PF/PJ do cliente da venda.
+ *
+ * 1. Campo explícito: NBS.CLIENTES.COD_CLASSE ('F' = física, 'J' = jurídica),
+ *    trazido como JOIN_CLIENTE_CLASSE em SQL_SELECT_VENDAS (sync-vendas.ts).
+ *    Validado no Oracle em 30/10/2026: nunca nulo em CLIENTES (543.869 F /
+ *    122.245 J) e preenchido em 100% das vendas da janela de 90 dias.
+ * 2. Fallback (classe ausente — ex.: JOIN sem match): tamanho do documento,
+ *    só dígitos — 11 = CPF (PF), 14 = CNPJ (PJ).
+ * 3. Nenhum dos dois decide → null (não chuta).
+ *
+ * Por que não só o documento: COD_CLIENTE é NUMBER no NBS (é o próprio
+ * CPF/CNPJ), então zeros à esquerda somem — CPF "012..." chega com 10
+ * dígitos, CNPJ "01..." com 13. A regra antiga (só tamanho) deixava ~38% das
+ * vendas sem tipo. Não dá pra completar com zeros no fallback: 10 dígitos
+ * pode ser CPF com 1 zero ou CNPJ com 4 zeros — ambíguo.
+ */
+export function resolverTipoCliente(classe: string | null, codigo: string | null): "PF" | "PJ" | null {
+  const c = classe?.trim().toUpperCase();
+  if (c === "F") return "PF";
+  if (c === "J") return "PJ";
   if (!codigo) return null;
   const digits = codigo.replace(/\D/g, "");
   if (digits.length === 11) return "PF";
@@ -219,7 +239,9 @@ export function mapearVenda(row: Record<string, unknown>, lookups: LookupsVenda 
 
     cliente_codigo,
     cliente_nome: asStr(get("cliente_nome")) ?? "(sem nome)",
-    cliente_tipo: detectTipoCliente(cliente_codigo),
+    // JOIN_CLIENTE_CLASSE lido direto da row (não via get()/CANDIDATOS): o
+    // campo tem fallback próprio, ausência não é "campo sem fonte".
+    cliente_tipo: resolverTipoCliente(asStr(row["JOIN_CLIENTE_CLASSE"]), cliente_codigo),
     cliente_cidade: asStr(get("cliente_cidade")),
     cliente_uf: asStr(get("cliente_uf")),
 
