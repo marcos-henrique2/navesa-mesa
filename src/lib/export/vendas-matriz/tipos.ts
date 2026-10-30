@@ -77,6 +77,12 @@ export type LinhaVendaMatriz = {
    * RESUMO) incluem normalmente.
    */
   consignado: boolean;
+
+  // ─── Só pro painel (/vendas-usados-matriz) — NENHUMA aba do Excel lê estes campos ───
+  /** `vendas.cliente_tipo` direto do sync (CPF → PF, CNPJ → PJ, `null` = não preenchido). */
+  clienteTipo: "PF" | "PJ" | null;
+  /** `vendas.data_venda` — usado no corte "até o mesmo dia" da comparação com o mês anterior. */
+  dataVenda: Date | null;
 };
 
 /** Resultado de M (Custo Real), Q (Lucro Bruto) e AA (Margem Líquida) pra uma linha. */

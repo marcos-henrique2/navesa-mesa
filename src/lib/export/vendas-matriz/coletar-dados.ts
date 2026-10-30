@@ -23,6 +23,7 @@ import { listLojaOrigemPorChassis } from "@/lib/data/veiculos";
 import { normalizarPlaca, normalizarIdentificador } from "@/lib/utils/placa";
 import { hojeLocal } from "@/lib/utils/data-local";
 import type { ColetarVendasMatrizInput, LinhaVendaMatriz } from "./tipos";
+import { mesAnterior } from "./resumir-painel";
 import type { VendaParaMediaVendedor } from "./aba-media-vendedor";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -160,6 +161,9 @@ export function mapearLinha(
     vendedorNome: v.vendedor_nome,
 
     consignado: v.consignado,
+
+    clienteTipo: v.cliente_tipo,
+    dataVenda: v.data_venda,
   };
 }
 
@@ -185,9 +189,20 @@ export type ColetarVendasMatrizResult = {
   vendasAnoAtual: VendaParaMediaVendedor[];
 };
 
-export async function coletarVendasMatriz(input: ColetarVendasMatrizInput): Promise<ColetarVendasMatrizResult> {
-  const { codEmpresa, mes, ano } = input;
+/**
+ * Tudo que é independente do mês: vendas do grupo inteiro + lookups de custo/FIPE/nome de
+ * loja. Separado de `montarLinhasMes` pra que o painel (/vendas-usados-matriz) monte mês
+ * selecionado + mês anterior com UMA carga só, e o Excel reaproveite a mesma base que
+ * está na tela — painel e Excel sempre saem da mesma fonte.
+ */
+export type BaseVendasMatriz = {
+  todasVendas: VendaParsed[];
+  custosPorPlaca: Map<string, CustoDetalhado>;
+  fipePorChassi: Map<string, { precoFipe: number; confirmado: boolean }>;
+  nomePorCodEmpresa: Map<number, string>;
+};
 
+export async function carregarBaseVendasMatriz(): Promise<BaseVendasMatriz> {
   const [todasVendas, custos, fipeBatch] = await Promise.all([listVendas(), listCustos(), loadBatchFromSupabase()]);
 
   const custosPorPlaca = new Map<string, CustoDetalhado>();
@@ -215,6 +230,14 @@ export async function coletarVendasMatriz(input: ColetarVendasMatrizInput): Prom
     }
   }
 
+  return { todasVendas, custosPorPlaca, fipePorChassi, nomePorCodEmpresa };
+}
+
+/** Linhas da aba 1 (todas as vendas da loja `codEmpresa` no mês `mes/ano`). */
+export async function montarLinhasMes(base: BaseVendasMatriz, input: ColetarVendasMatrizInput): Promise<LinhaVendaMatriz[]> {
+  const { codEmpresa, mes, ano } = input;
+  const { todasVendas, custosPorPlaca, fipePorChassi, nomePorCodEmpresa } = base;
+
   // ─── Vendas do mês selecionado, só da loja escolhida ───
   const iniMes = inicioMesBrasilia(ano, mes);
   const fimMes = fimMesBrasilia(ano, mes);
@@ -230,9 +253,21 @@ export async function coletarVendasMatriz(input: ColetarVendasMatrizInput): Prom
   // relatório. Sem filtro de loja: conta as compras do cliente em todo o grupo.
   const comprasPorCliente = contarComprasPorClienteNoAno(todasVendas, ano);
 
-  const linhasMes = vendasMes.map((v) =>
+  return vendasMes.map((v) =>
     mapearLinha(v, custosPorPlaca, fipePorChassi, lojaOrigemPorChassi, nomePorCodEmpresa, comprasPorCliente),
   );
+}
+
+/** `base` opcional: o painel passa a base já carregada pra o Excel sair exatamente do que está na tela. */
+export async function coletarVendasMatriz(
+  input: ColetarVendasMatrizInput,
+  baseCarregada?: BaseVendasMatriz,
+): Promise<ColetarVendasMatrizResult> {
+  const { codEmpresa } = input;
+  const base = baseCarregada ?? (await carregarBaseVendasMatriz());
+  const { todasVendas, nomePorCodEmpresa } = base;
+
+  const linhasMes = await montarLinhasMes(base, input);
 
   const nomeLojaPropria = nomePorCodEmpresa.get(codEmpresa) ?? `Loja ${codEmpresa}`;
 
@@ -254,4 +289,26 @@ export async function coletarVendasMatriz(input: ColetarVendasMatrizInput): Prom
     .map((v) => ({ vendedorNome: v.vendedor_nome, dataVenda: v.data_venda }));
 
   return { linhasMes, nomeLojaPropria, anoAtual, mesAtualIndex, vendasAnoAtual };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Painel (/vendas-usados-matriz) — mês selecionado + mês anterior, mesma base
+// ═══════════════════════════════════════════════════════════════════════════
+
+export type ColetarPainelMatrizResult = {
+  linhasMes: LinhaVendaMatriz[];
+  /** Mês anterior INTEIRO — o corte "até o mesmo dia" é aplicado em `resumirPainelMatriz`. */
+  linhasMesAnterior: LinhaVendaMatriz[];
+};
+
+export async function coletarPainelMatriz(
+  base: BaseVendasMatriz,
+  input: ColetarVendasMatrizInput,
+): Promise<ColetarPainelMatrizResult> {
+  const anterior = mesAnterior(input.mes, input.ano);
+  const [linhasMes, linhasMesAnterior] = await Promise.all([
+    montarLinhasMes(base, input),
+    montarLinhasMes(base, { codEmpresa: input.codEmpresa, mes: anterior.mes, ano: anterior.ano }),
+  ]);
+  return { linhasMes, linhasMesAnterior };
 }
