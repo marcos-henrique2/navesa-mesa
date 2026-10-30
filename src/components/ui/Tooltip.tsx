@@ -19,6 +19,7 @@ export function Tooltip({
   side = "top",
   className,
   ariaLabel,
+  focavel = true,
 }: {
   content: ReactNode;
   children: ReactNode;
@@ -26,6 +27,13 @@ export function Tooltip({
   className?: string;
   /** aria-label do gatilho (span focável). Útil quando `children` é só um ícone decorativo. */
   ariaLabel?: string;
+  /**
+   * `false` = o wrapper NÃO vira ponto de foco nem botão (use quando `children` já é
+   * focável, ex. um <button>, ou quando o conteúdo já está acessível em texto). Abre no
+   * hover e no foco do filho (onFocus/onBlur borbulham). Descreva o filho com
+   * aria-describedby se o conteúdo do tooltip for importante.
+   */
+  focavel?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLSpanElement | null>(null);
@@ -70,15 +78,16 @@ export function Tooltip({
         e.stopPropagation();
         setOpen((v) => !v);
       }}
-      tabIndex={0}
-      role="button"
-      aria-expanded={open}
-      aria-label={ariaLabel}
+      tabIndex={focavel ? 0 : undefined}
+      role={focavel ? "button" : undefined}
+      aria-expanded={focavel ? open : undefined}
+      aria-label={focavel ? ariaLabel : undefined}
     >
       {children}
       {open && (
         <span
           role="tooltip"
+          aria-hidden={focavel ? undefined : true}
           className={cn(
             "absolute z-50 max-w-[280px] whitespace-normal rounded-md border border-[var(--border-soft)] bg-[var(--bg-surface)] px-2.5 py-1.5 text-xs leading-snug text-[var(--text-strong)] shadow-lg dark:bg-zinc-800 dark:text-white",
             pos,

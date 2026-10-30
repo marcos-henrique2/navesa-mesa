@@ -1,13 +1,12 @@
 "use client";
 
 import { useMemo } from "react";
-import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { useInventory } from "@/lib/store/inventory";
 import { agregarMargem } from "@/lib/analytics/margem";
-import { formatBRL, formatInt, cn } from "@/lib/utils";
+import { formatBRL, formatInt } from "@/lib/utils";
+import { KpiDelta, type DirecaoUp } from "@/components/ui/KpiDelta";
 
 type CardFormat = "money" | "int" | "pct";
-type DirecaoUp = "good" | "bad";
 
 type Comparacao = {
   label: string;
@@ -113,22 +112,6 @@ export function ComparativoMesAnterior() {
 
 function CardComparativo({ c }: { c: Comparacao }) {
   const subiu = c.delta > 0;
-  const sem = c.delta === 0;
-
-  // Cor da variação:
-  // direcaoUp "good" (vendas/margem): subiu = verde, desceu = vermelho
-  // direcaoUp "bad" (capital/dias): subiu = vermelho, desceu = verde
-  const cor: "good" | "bad" | "neutral" = sem
-    ? "neutral"
-    : c.direcaoUp === "good"
-      ? subiu
-        ? "good"
-        : "bad"
-      : subiu
-        ? "bad"
-        : "good";
-
-  const Icon = sem ? Minus : subiu ? TrendingUp : TrendingDown;
 
   function fmt(v: number): string {
     if (c.format === "money") return formatBRL(v);
@@ -140,15 +123,7 @@ function CardComparativo({ c }: { c: Comparacao }) {
     <div className="rounded-lg border border-[var(--border-soft)] bg-[var(--bg-muted)] p-3">
       <div className="text-[11px] uppercase tracking-wider text-[var(--text-muted)]">{c.label}</div>
       <div className="mt-1 text-lg font-bold text-[var(--text-strong)]">{fmt(c.atual)}</div>
-      <div
-        className={cn(
-          "mt-1 flex items-center gap-1 text-xs font-medium",
-          cor === "good" && "text-emerald-700 dark:text-emerald-400",
-          cor === "bad" && "text-red-700 dark:text-red-400",
-          cor === "neutral" && "text-[var(--text-muted)]",
-        )}
-      >
-        <Icon className="h-3.5 w-3.5" />
+      <KpiDelta delta={c.delta} direcaoUp={c.direcaoUp}>
         <span>
           {subiu && "+"}
           {c.deltaPct.toFixed(1)}%
@@ -157,7 +132,7 @@ function CardComparativo({ c }: { c: Comparacao }) {
           ({c.delta > 0 ? "+" : ""}
           {fmt(c.delta)})
         </span>
-      </div>
+      </KpiDelta>
     </div>
   );
 }

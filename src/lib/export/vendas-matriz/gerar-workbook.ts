@@ -14,7 +14,7 @@ import { COL } from "./colunas";
 import { renderAbaMediaVendedorAtual } from "./aba-media-vendedor";
 import { renderAbaPlayPlan } from "./aba-play-plan";
 import { aplicarApresentacaoWorkbook } from "@/lib/export/vendas-matriz/apresentacao";
-import { coletarVendasMatriz, type ColetarVendasMatrizResult } from "./coletar-dados";
+import { coletarVendasMatriz, type BaseVendasMatriz, type ColetarVendasMatrizResult } from "./coletar-dados";
 import { COR_BANNER_N1_BG, COR_PROPRIO_BG, COR_REPASSE_BG } from "./estilo";
 
 // Paleta de banners das abas 4/5/6 — NÃO é "verde sempre = próprio, vermelho sempre
@@ -210,8 +210,8 @@ export async function gerarVendasMatrizWorkbook(
 /**
  * Busca os dados, gera o workbook e dispara o download no browser — atalho pra tela.
  */
-export async function baixarVendasMatrizWorkbook(input: ColetarVendasMatrizInput): Promise<void> {
-  const dados = await coletarVendasMatriz(input);
+export async function baixarVendasMatrizWorkbook(input: ColetarVendasMatrizInput, base?: BaseVendasMatriz): Promise<void> {
+  const dados = await coletarVendasMatriz(input, base);
   const blob = await gerarVendasMatrizWorkbook(dados, input);
   const nomes = nomesAbas(input.mes, input.ano);
 

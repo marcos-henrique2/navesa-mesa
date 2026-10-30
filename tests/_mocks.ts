@@ -161,6 +161,8 @@ export function linhaVendaMatriz(over: Partial<LinhaVendaMatriz> = {}): LinhaVen
     lojista: false,
     vendedorNome: "VENDEDOR TESTE",
     consignado: false,
+    clienteTipo: "PF",
+    dataVenda: new Date("2026-05-10T12:00:00-03:00"),
     ...over,
   };
 }
