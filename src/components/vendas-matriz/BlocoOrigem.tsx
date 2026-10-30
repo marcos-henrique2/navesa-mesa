@@ -7,6 +7,7 @@ import { formatBRL, formatInt, cn } from "@/lib/utils";
 import { BarraCategorica, ROTULO_ORIGEM } from "./Barras";
 import { InfoTooltip } from "./BlocoKpis";
 import { fmtMargemPct, fmtPct, notaConsignadas } from "./formato";
+import { LinkVerVendas, type AoFiltrarVendas } from "./comum";
 
 type Modo = "qtd" | "margem" | "margemPct";
 
@@ -26,7 +27,15 @@ function detalheDe(m: MetricasRecorte): string {
 }
 
 /** Bloco 2 — origem do estoque vendido em 3 parcelas (mesma regra das abas 2/4 do Excel). */
-export function BlocoOrigem({ origem, total }: { origem: Record<OrigemChave, MetricasRecorte>; total: MetricasRecorte }) {
+export function BlocoOrigem({
+  origem,
+  total,
+  onFiltrar,
+}: {
+  origem: Record<OrigemChave, MetricasRecorte>;
+  total: MetricasRecorte;
+  onFiltrar?: AoFiltrarVendas;
+}) {
   const [modo, setModo] = useState<Modo>("qtd");
 
   const visiveis = ORDEM_ORIGEM.filter((k) => k !== "naoIdentificada" || origem[k].qtd > 0);
@@ -104,6 +113,7 @@ export function BlocoOrigem({ origem, total }: { origem: Record<OrigemChave, Met
               negativo={negativo}
               ariaLabel={aria}
               detalhe={detalheDe(m)}
+              acao={<LinkVerVendas qtd={m.qtd} descricao={`de ${rotulo.toLowerCase()}`} filtro={{ origem: k }} onFiltrar={onFiltrar} rotulo="Ver" />}
             />
           );
         })}

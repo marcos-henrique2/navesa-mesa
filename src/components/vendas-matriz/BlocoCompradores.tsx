@@ -3,6 +3,7 @@ import { formatBRL, formatInt, cn } from "@/lib/utils";
 import { BarraEmpilhada100, PontoOrigem, ROTULO_ORIGEM_CURTO } from "./Barras";
 import { InfoTooltip } from "./BlocoKpis";
 import { DeltaMoM, fmtMargemPct, fmtPct, notaConsignadas, type ContextoComparacao } from "./formato";
+import { LinkVerVendas, type AoFiltrarVendas } from "./comum";
 
 type Identidade = "pf" | "pj";
 
@@ -29,12 +30,14 @@ function CardComprador({
   anterior,
   totalMes,
   ctx,
+  onFiltrar,
 }: {
   tipo: Identidade;
   atual: RecorteComprador;
   anterior: RecorteComprador;
   totalMes: number;
   ctx: ContextoComparacao;
+  onFiltrar?: AoFiltrarVendas;
 }) {
   const cfg = CONFIG[tipo];
   const m = atual.metricas;
@@ -112,6 +115,14 @@ function CardComprador({
                       <span className={cn((o.margem ?? 0) < 0 && "text-red-700 dark:text-red-400")}>{formatBRL(o.margem)}</span> ·{" "}
                       <span className={cn((o.margemPct ?? 0) < 0 && "text-red-700 dark:text-red-400")}>{fmtMargemPct(o.margemPct)}</span>
                     </span>
+                    <LinkVerVendas
+                      qtd={o.qtd}
+                      descricao={`para ${cfg.titulo.toLowerCase()}, origem ${ROTULO_ORIGEM_CURTO[k].toLowerCase()}`}
+                      filtro={{ comprador: [tipo], origem: k }}
+                      onFiltrar={onFiltrar}
+                      rotulo="Ver"
+                      className="ml-auto"
+                    />
                   </li>
                 );
               })}
@@ -119,6 +130,9 @@ function CardComprador({
           </div>
         </>
       )}
+      <div className="mt-3 border-t border-[var(--border-soft)] pt-2">
+        <LinkVerVendas qtd={m.qtd} descricao={`para ${cfg.titulo.toLowerCase()}`} filtro={{ comprador: [tipo] }} onFiltrar={onFiltrar} />
+      </div>
     </section>
   );
 }
@@ -131,6 +145,7 @@ export function BlocoCompradores({
   pjAnterior,
   totalMes,
   ctx,
+  onFiltrar,
 }: {
   pf: RecorteComprador;
   pj: RecorteComprador;
@@ -138,11 +153,12 @@ export function BlocoCompradores({
   pjAnterior: RecorteComprador;
   totalMes: number;
   ctx: ContextoComparacao;
+  onFiltrar?: AoFiltrarVendas;
 }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2">
-      <CardComprador tipo="pf" atual={pf} anterior={pfAnterior} totalMes={totalMes} ctx={ctx} />
-      <CardComprador tipo="pj" atual={pj} anterior={pjAnterior} totalMes={totalMes} ctx={ctx} />
+      <CardComprador tipo="pf" atual={pf} anterior={pfAnterior} totalMes={totalMes} ctx={ctx} onFiltrar={onFiltrar} />
+      <CardComprador tipo="pj" atual={pj} anterior={pjAnterior} totalMes={totalMes} ctx={ctx} onFiltrar={onFiltrar} />
     </div>
   );
 }

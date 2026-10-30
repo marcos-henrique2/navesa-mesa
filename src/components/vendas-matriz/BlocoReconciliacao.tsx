@@ -3,8 +3,26 @@ import type { MetricasRecorte, ResumoPeriodo } from "@/lib/export/vendas-matriz/
 import { formatBRL, formatBRLCents, formatInt, cn } from "@/lib/utils";
 import { InfoTooltip } from "./BlocoKpis";
 import { fmtMargemPct, fmtPct, notaConsignadas } from "./formato";
+import { LinkVerVendas, type AoFiltrarVendas } from "./comum";
+import type { FiltrosVendas } from "@/lib/export/vendas-matriz/filtrar-vendas";
 
-function CardCompacto({ titulo, tooltip, m, total }: { titulo: string; tooltip: string; m: MetricasRecorte; total: number }) {
+function CardCompacto({
+  titulo,
+  tooltip,
+  m,
+  total,
+  filtro,
+  descricao,
+  onFiltrar,
+}: {
+  titulo: string;
+  tooltip: string;
+  m: MetricasRecorte;
+  total: number;
+  filtro: Partial<FiltrosVendas>;
+  descricao: string;
+  onFiltrar?: AoFiltrarVendas;
+}) {
   const nota = notaConsignadas(m.qtdConsignadas);
   return (
     <div className="rounded-lg border border-[var(--border-soft)] bg-[var(--bg-muted)] p-3">
@@ -32,6 +50,9 @@ function CardCompacto({ titulo, tooltip, m, total }: { titulo: string; tooltip: 
         </span>
         {nota && <span> · {nota}</span>}
       </p>
+      <div className="mt-1">
+        <LinkVerVendas qtd={m.qtd} descricao={descricao} filtro={filtro} onFiltrar={onFiltrar} />
+      </div>
     </div>
   );
 }
@@ -40,7 +61,7 @@ function CardCompacto({ titulo, tooltip, m, total }: { titulo: string; tooltip: 
  * Bloco 4 — Auto Avaliar + Não informado + nota de reconciliação (sempre visível):
  * Total = PF + PJ + Auto Avaliar + Não informado, em quantidade e em margem.
  */
-export function BlocoReconciliacao({ resumo }: { resumo: ResumoPeriodo }) {
+export function BlocoReconciliacao({ resumo, onFiltrar }: { resumo: ResumoPeriodo; onFiltrar?: AoFiltrarVendas }) {
   const total = resumo.total.qtd;
   const aa = resumo.autoAvaliar;
   const ni = resumo.naoInformado;
@@ -64,6 +85,9 @@ export function BlocoReconciliacao({ resumo }: { resumo: ResumoPeriodo }) {
               tooltip="Carros vendidos por leilão na plataforma Auto Avaliar, sem vendedor da loja. Contados como canal próprio, igual ao relatório Excel (aba Resumo). Margem sem consignados."
               m={aa}
               total={total}
+              filtro={{ comprador: ["autoAvaliar"] }}
+              descricao="do Auto Avaliar"
+              onFiltrar={onFiltrar}
             />
           )}
           {ni.qtd > 0 && (
@@ -72,6 +96,9 @@ export function BlocoReconciliacao({ resumo }: { resumo: ResumoPeriodo }) {
               tooltip="Vendas cujo cliente não tem tipo (CPF ou CNPJ) preenchido nos dados importados do NBS. Aparecem aqui pra que o total (vendas e margem) feche. Margem sem consignados."
               m={ni}
               total={total}
+              filtro={{ comprador: ["naoInformado"] }}
+              descricao="com cliente não informado"
+              onFiltrar={onFiltrar}
             />
           )}
         </div>
