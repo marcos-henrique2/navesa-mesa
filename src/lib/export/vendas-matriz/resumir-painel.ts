@@ -17,7 +17,14 @@
  * total = PF + PJ + Auto Avaliar + Não informado, sempre.
  */
 
-import { calcularDerivadosLinha, isAutoAvaliar, type LinhaVendaMatriz } from "./tipos";
+import {
+  ORDEM_ORIGEM,
+  calcularDerivadosLinha,
+  classificarOrigem,
+  isAutoAvaliar,
+  type LinhaVendaMatriz,
+  type OrigemChave,
+} from "./tipos";
 import { somaCampo } from "./aba-margens";
 import { hojeLocal } from "@/lib/utils/data-local";
 
@@ -60,21 +67,21 @@ export function definirCorte(mes: number, ano: number, hojeISO: string): CorteCo
 }
 
 /** Dia do mês (1-31) da venda no calendário de Brasília. */
-function diaBrasilia(d: Date): number {
+export function diaBrasilia(d: Date): number {
   return Number(hojeLocal(d).slice(8, 10));
+}
+
+/** Mês (1-12) da venda no calendário de Brasília. */
+export function mesBrasilia(d: Date): number {
+  return Number(hojeLocal(d).slice(5, 7));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Recortes
 // ═══════════════════════════════════════════════════════════════════════════
 
-export type OrigemChave = "proprio" | "outras" | "naoIdentificada";
-export const ORDEM_ORIGEM: readonly OrigemChave[] = ["proprio", "outras", "naoIdentificada"];
-
-export function classificarOrigem(l: LinhaVendaMatriz, codEmpresa: number): OrigemChave {
-  if (l.lojaOrigemCodEmpresa == null) return "naoIdentificada";
-  return l.lojaOrigemCodEmpresa === codEmpresa ? "proprio" : "outras";
-}
+// Regra de origem mora em tipos.ts (compartilhada com o Excel); reexportada aqui por compatibilidade.
+export { ORDEM_ORIGEM, classificarOrigem, type OrigemChave };
 
 export type CompradorChave = "pf" | "pj" | "autoAvaliar" | "naoInformado";
 

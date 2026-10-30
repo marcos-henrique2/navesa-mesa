@@ -16,6 +16,7 @@ import { renderAbaPlayPlan } from "./aba-play-plan";
 import { aplicarApresentacaoWorkbook } from "@/lib/export/vendas-matriz/apresentacao";
 import { coletarVendasMatriz, type BaseVendasMatriz, type ColetarVendasMatrizResult } from "./coletar-dados";
 import { COR_BANNER_N1_BG, COR_PROPRIO_BG, COR_REPASSE_BG } from "./estilo";
+import { separarBlocosMargens } from "./blocos-margens";
 
 // Paleta de banners das abas 4/5/6 — NÃO é "verde sempre = próprio, vermelho sempre
 // = outras": cada aba usa um par diferente, confirmado contra o relatório original
@@ -39,10 +40,12 @@ export async function gerarVendasMatrizWorkbook(
   workbook.created = new Date();
 
   const linhasAba1 = dados.linhasMes;
-  // Aba 2 = só estoque próprio: exclui repasse de outras lojas (loja de origem !== a
-  // loja do relatório). Linhas com origem desconhecida também ficam de fora — não dá
-  // pra afirmar "é estoque próprio" sem saber a origem.
-  const linhasAba2 = linhasAba1.filter((l) => l.lojaOrigemCodEmpresa === codEmpresa);
+  // Subconjuntos de TODOS os blocos (abas 2/4/5/6) vêm de `separarBlocosMargens` — a mesma
+  // função que alimenta a aba Margens do painel. Aba 2 = só estoque próprio: exclui
+  // repasse de outras lojas e origem desconhecida (não dá pra afirmar "é estoque próprio"
+  // sem saber a origem).
+  const blocos = separarBlocosMargens(linhasAba1, codEmpresa);
+  const linhasAba2 = blocos.aba2;
   const nomeLojaPropria = dados.nomeLojaPropria;
 
   const ws1 = workbook.addWorksheet(nomes.aba1);
@@ -74,13 +77,11 @@ export async function gerarVendasMatrizWorkbook(
   // consignado entra normalmente.
   const criterioNaoConsignado: CriterioMargens = { col: COL.AH_CONSIGNADO, criterio: "NÃO" };
 
-  const linhasOrigemOutras = linhasAba1.filter(
-    (l) => l.lojaOrigemCodEmpresa != null && l.lojaOrigemCodEmpresa !== codEmpresa && l.consignado === false,
-  );
+  const linhasOrigemOutras = blocos.outras;
 
   // ─── Aba 4 "MARGENS" — 3 blocos sobre a aba 1 inteira (todas as origens), SEM consignado ───
-  const linhasAba1SemConsignado = linhasAba1.filter((l) => l.consignado === false);
-  const linhasAba2SemConsignado = linhasAba2.filter((l) => l.consignado === false);
+  const linhasAba1SemConsignado = blocos.total;
+  const linhasAba2SemConsignado = blocos.proprio;
 
   const ws4 = workbook.addWorksheet(nomes.aba4);
   renderAbaMargens(ws4, {
@@ -123,16 +124,8 @@ export async function gerarVendasMatrizWorkbook(
   // sempre que existirem vendas com `lojista=null` no período. Isso é esperado, não é bug
   // — essas linhas aparecem contabilizadas explicitamente no Bloco C ("NÃO INFORMADO") da
   // aba 3 RESUMO (ver aba-resumo.ts). ───
-  const linhasLojistaOutras = linhasAba1.filter(
-    (l) =>
-      l.lojista === true &&
-      l.lojaOrigemCodEmpresa != null &&
-      l.lojaOrigemCodEmpresa !== codEmpresa &&
-      l.consignado === false,
-  );
-  const linhasLojistaPropria = linhasAba1.filter(
-    (l) => l.lojista === true && l.lojaOrigemCodEmpresa === codEmpresa && l.consignado === false,
-  );
+  const linhasLojistaOutras = blocos.lojistaOutras;
+  const linhasLojistaPropria = blocos.lojistaPropria;
 
   const ws5 = workbook.addWorksheet(nomes.aba5);
   renderAbaMargens(ws5, {
@@ -161,16 +154,8 @@ export async function gerarVendasMatrizWorkbook(
 
   // ─── Aba 6 "MARGENS VENDAS CLIENTES" — 2 blocos, lojista=NÃO sobre a aba 1 inteira.
   // Mesma nota da aba 5: `lojista=null` fica de fora daqui também, de propósito. ───
-  const linhasClientePropria = linhasAba1.filter(
-    (l) => l.lojista === false && l.lojaOrigemCodEmpresa === codEmpresa && l.consignado === false,
-  );
-  const linhasClienteOutras = linhasAba1.filter(
-    (l) =>
-      l.lojista === false &&
-      l.lojaOrigemCodEmpresa != null &&
-      l.lojaOrigemCodEmpresa !== codEmpresa &&
-      l.consignado === false,
-  );
+  const linhasClientePropria = blocos.clientePropria;
+  const linhasClienteOutras = blocos.clienteOutras;
 
   const ws6 = workbook.addWorksheet(nomes.aba6);
   renderAbaMargens(ws6, {

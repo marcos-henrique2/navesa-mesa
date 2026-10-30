@@ -71,6 +71,56 @@ export function mediaCampo(linhas: LinhaVendaMatriz[], campo: (l: LinhaVendaMatr
   return valores.reduce((s, v) => s + v, 0) / valores.length;
 }
 
+/**
+ * Números de UM bloco das abas 4/5/6 — exatamente o `result` cacheado de cada fórmula de
+ * `renderBloco`. Fonte única: o Excel e o painel (aba Margens) chamam esta função sobre o
+ * mesmo subconjunto de linhas (`separarBlocosMargens`), então batem ao centavo.
+ */
+export type MetricasBlocoMargens = {
+  valorVendaTotal: number;
+  qtdeFaturados: number;
+  /** Valor da Venda ÷ Qtde (0 sem venda — igual ao IFERROR(…,0) da planilha). */
+  ticketMedio: number;
+  /** AVERAGEIFS ignora vazios; sem nenhum valor → 0 (IFERROR(…,0)). */
+  kmMedia: number;
+  fipeTotal: number;
+  custoRealTotal: number;
+  lucroBrutoTotal: number;
+  despesaGeralTotal: number;
+  forplanTotal: number;
+  impostosTotal: number;
+  comissaoTotal: number;
+  admTotal: number;
+  margemLiquidaTotal: number;
+  diasEstoqueMedio: number;
+};
+
+export function calcularMetricasBloco(linhas: LinhaVendaMatriz[]): MetricasBlocoMargens {
+  const valorVendaTotal = somaCampo(linhas, (l) => l.valorVenda);
+  const qtdeFaturados = linhas.length;
+  return {
+    valorVendaTotal,
+    qtdeFaturados,
+    ticketMedio: qtdeFaturados > 0 ? valorVendaTotal / qtdeFaturados : 0,
+    kmMedia: mediaCampo(linhas, (l) => l.km),
+    fipeTotal: somaCampo(linhas, (l) => l.valorFipe),
+    custoRealTotal: somaCampo(linhas, (l) => calcularDerivadosLinha(l).custoReal),
+    lucroBrutoTotal: somaCampo(linhas, (l) => calcularDerivadosLinha(l).lucroBruto),
+    despesaGeralTotal: somaCampo(linhas, (l) => l.despesaGeral),
+    forplanTotal: somaCampo(linhas, (l) => l.forplan),
+    impostosTotal: somaCampo(linhas, (l) => l.impostos),
+    comissaoTotal: somaCampo(linhas, (l) => l.comissao),
+    admTotal: somaCampo(linhas, (l) => l.adm),
+    margemLiquidaTotal: somaCampo(linhas, (l) => calcularDerivadosLinha(l).margemLiquida),
+    diasEstoqueMedio: mediaCampo(linhas, (l) => l.diasEstoque),
+  };
+}
+
+/** % sobre o Valor da Venda do bloco (fórmula `IFERROR(x/venda,"")`): venda ≤ 0 → "". */
+export function pctSobreVendaBloco(n: number, valorVendaTotal: number): number | "" {
+  return valorVendaTotal > 0 ? n / valorVendaTotal : "";
+}
+
 /** Contador de prioridade de conditional formatting compartilhado por toda a aba (worksheet). */
 type CfContador = { proxima: number };
 
@@ -159,22 +209,24 @@ function renderBloco(
     return linhaAtual;
   };
 
-  const { linhas } = bloco;
-  const valorVendaTotal = somaCampo(linhas, (l) => l.valorVenda);
-  const qtdeFaturados = linhas.length;
-  const kmMedia = mediaCampo(linhas, (l) => l.km);
-  const fipeTotal = somaCampo(linhas, (l) => l.valorFipe);
-  const custoRealTotal = somaCampo(linhas, (l) => calcularDerivadosLinha(l).custoReal);
-  const lucroBrutoTotal = somaCampo(linhas, (l) => calcularDerivadosLinha(l).lucroBruto);
-  const despesaGeralTotal = somaCampo(linhas, (l) => l.despesaGeral);
-  const forplanTotal = somaCampo(linhas, (l) => l.forplan);
-  const impostosTotal = somaCampo(linhas, (l) => l.impostos);
-  const comissaoTotal = somaCampo(linhas, (l) => l.comissao);
-  const admTotal = somaCampo(linhas, (l) => l.adm);
-  const margemLiquidaTotal = somaCampo(linhas, (l) => calcularDerivadosLinha(l).margemLiquida);
-  const diasEstoqueMedio = mediaCampo(linhas, (l) => l.diasEstoque);
+  const {
+    valorVendaTotal,
+    qtdeFaturados,
+    ticketMedio,
+    kmMedia,
+    fipeTotal,
+    custoRealTotal,
+    lucroBrutoTotal,
+    despesaGeralTotal,
+    forplanTotal,
+    impostosTotal,
+    comissaoTotal,
+    admTotal,
+    margemLiquidaTotal,
+    diasEstoqueMedio,
+  } = calcularMetricasBloco(bloco.linhas);
 
-  const pct = (n: number): number | "" => (valorVendaTotal > 0 ? n / valorVendaTotal : "");
+  const pct = (n: number): number | "" => pctSobreVendaBloco(n, valorVendaTotal);
 
   const rValorVenda = r; // linha do "Valor da Venda" — referência fixa pra todas as % do bloco
   linha("Valor da Venda", fSum(COL.O_VALOR_VENDA), valorVendaTotal, FMT_MONEY);
@@ -189,7 +241,7 @@ function renderBloco(
     labelCell.value = "Ticket Médio";
     comVerticalMiddle(labelCell);
     const cell = row.getCell(valorCol);
-    cell.value = { formula: `IFERROR(${colLetter(valorCol)}${rValorVenda}/${colLetter(valorCol)}${rValorVenda + 1},0)`, result: qtdeFaturados > 0 ? valorVendaTotal / qtdeFaturados : 0 };
+    cell.value = { formula: `IFERROR(${colLetter(valorCol)}${rValorVenda}/${colLetter(valorCol)}${rValorVenda + 1},0)`, result: ticketMedio };
     cell.numFmt = FMT_MONEY;
     cell.alignment = { horizontal: "right", vertical: "middle" };
     r++;

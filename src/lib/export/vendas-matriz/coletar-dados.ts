@@ -258,6 +258,32 @@ export async function montarLinhasMes(base: BaseVendasMatriz, input: ColetarVend
   );
 }
 
+/**
+ * Linhas do ANO `ano` (1º de janeiro até o fim do mês `ateMes`) da loja `codEmpresa` — alimenta
+ * a evolução mês a mês e as médias de vendedor do painel. Mesmo mapeamento de
+ * `montarLinhasMes` (mesmos custos, FIPE, lojista do ano), com UMA busca de origem pros
+ * chassis do ano inteiro (em vez de uma por mês). Recortar um mês destas linhas dá as mesmas
+ * linhas de `montarLinhasMes` daquele mês.
+ */
+export async function montarLinhasAno(
+  base: BaseVendasMatriz,
+  codEmpresa: number,
+  ano: number,
+  ateMes: number,
+): Promise<LinhaVendaMatriz[]> {
+  const { todasVendas, custosPorPlaca, fipePorChassi, nomePorCodEmpresa } = base;
+  const ini = inicioAnoBrasilia(ano).getTime();
+  const fim = fimMesBrasilia(ano, ateMes).getTime();
+  const vendasAno = todasVendas.filter(
+    (v) => v.cod_empresa === codEmpresa && v.data_venda != null && v.data_venda.getTime() >= ini && v.data_venda.getTime() <= fim,
+  );
+  const lojaOrigemPorChassi = await listLojaOrigemPorChassis(vendasAno.map((v) => v.chassi).filter((c) => c.length > 0));
+  const comprasPorCliente = contarComprasPorClienteNoAno(todasVendas, ano);
+  return vendasAno.map((v) =>
+    mapearLinha(v, custosPorPlaca, fipePorChassi, lojaOrigemPorChassi, nomePorCodEmpresa, comprasPorCliente),
+  );
+}
+
 /** `base` opcional: o painel passa a base já carregada pra o Excel sair exatamente do que está na tela. */
 export async function coletarVendasMatriz(
   input: ColetarVendasMatrizInput,

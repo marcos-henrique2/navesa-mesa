@@ -4,6 +4,7 @@ import { calcularDelta, type MetricasRecorte } from "@/lib/export/vendas-matriz/
 import { Tooltip } from "@/components/ui/Tooltip";
 import { formatBRL, formatInt, cn } from "@/lib/utils";
 import { DeltaMoM, fmtMargemPct, type ContextoComparacao } from "./formato";
+import { LinkVerVendas, type AoFiltrarVendas } from "./comum";
 
 export function InfoTooltip({ texto, rotulo }: { texto: string; rotulo: string }) {
   return (
@@ -53,11 +54,12 @@ function LinhaVs({ ctx, valor }: { ctx: ContextoComparacao; valor: string | null
   );
 }
 
-function NotaConsignadas({ n }: { n: number }) {
+function NotaConsignadas({ n, onFiltrar }: { n: number; onFiltrar?: AoFiltrarVendas }) {
   if (n < 1) return null;
+  const texto = `${n} consignada${n === 1 ? "" : "s"} fora da margem`;
   return (
     <p className="mt-1 text-[10px] text-[var(--text-muted)]">
-      {n} consignada{n === 1 ? "" : "s"} fora da margem
+      {onFiltrar ? <LinkVerVendas qtd={n} descricao="consignadas" filtro={{ consig: "so" }} onFiltrar={onFiltrar} rotulo={texto} className="text-[10px]" /> : texto}
     </p>
   );
 }
@@ -69,10 +71,12 @@ export function BlocoKpis({
   atual,
   anterior,
   ctx,
+  onFiltrar,
 }: {
   atual: MetricasRecorte;
   anterior: MetricasRecorte;
   ctx: ContextoComparacao;
+  onFiltrar?: AoFiltrarVendas;
 }) {
   const motivo = `Não houve vendas em ${ctx.recorteAnterior}`;
   const motivoMargem = ctx.semBaseMes ? motivo : `Sem margem calculável em ${ctx.recorteAnterior}`;
@@ -89,6 +93,9 @@ export function BlocoKpis({
       >
         <DeltaMoM delta={calcularDelta(atual.qtd, ant(anterior.qtd), "valor")} motivoSemBase={motivo} />
         <LinhaVs ctx={ctx} valor={formatInt(anterior.qtd)} />
+        <div className="mt-1">
+          <LinkVerVendas qtd={atual.qtd} descricao="do mês" filtro={{}} onFiltrar={onFiltrar} rotulo="Ver todas" />
+        </div>
       </KpiCard>
 
       <KpiCard rotulo="Margem" tooltip={tooltipConsig} valor={formatBRL(atual.margem)} negativo={(atual.margem ?? 0) < 0}>
@@ -98,7 +105,7 @@ export function BlocoKpis({
           <>
             <DeltaMoM delta={calcularDelta(atual.margem, ant(anterior.margem), "valor")} formato="money" motivoSemBase={motivoMargem} />
             <LinhaVs ctx={ctx} valor={anterior.margem == null ? null : formatBRL(anterior.margem)} />
-            <NotaConsignadas n={atual.qtdConsignadas} />
+            <NotaConsignadas n={atual.qtdConsignadas} onFiltrar={onFiltrar} />
           </>
         )}
       </KpiCard>
@@ -110,7 +117,7 @@ export function BlocoKpis({
           <>
             <DeltaMoM delta={calcularDelta(atual.margemPct, ant(anterior.margemPct), "pontos")} motivoSemBase={motivoMargem} />
             <LinhaVs ctx={ctx} valor={anterior.margemPct == null ? null : fmtMargemPct(anterior.margemPct)} />
-            <NotaConsignadas n={atual.qtdConsignadas} />
+            <NotaConsignadas n={atual.qtdConsignadas} onFiltrar={onFiltrar} />
           </>
         )}
       </KpiCard>
@@ -122,7 +129,7 @@ export function BlocoKpis({
           <>
             <DeltaMoM delta={calcularDelta(atual.ticket, ant(anterior.ticket), "valor")} formato="money" motivoSemBase={motivoMargem} />
             <LinhaVs ctx={ctx} valor={anterior.ticket == null ? null : formatBRL(anterior.ticket)} />
-            <NotaConsignadas n={atual.qtdConsignadas} />
+            <NotaConsignadas n={atual.qtdConsignadas} onFiltrar={onFiltrar} />
           </>
         )}
       </KpiCard>

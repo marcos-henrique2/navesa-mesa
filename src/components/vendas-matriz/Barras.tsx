@@ -40,9 +40,12 @@ export function BarraCategorica({
   negativo = false,
   ariaLabel,
   detalhe,
+  acao,
 }: {
   rotulo: string;
   extraRotulo?: ReactNode;
+  /** Link de cross-filter no fim da linha (opcional). */
+  acao?: ReactNode;
   origem: OrigemChave;
   /** 0–100 */
   larguraPct: number;
@@ -63,6 +66,7 @@ export function BarraCategorica({
         <span className={cn("shrink-0 tabular-nums font-semibold", negativo ? "text-red-700 dark:text-red-400" : "text-[var(--text-strong)]")}>
           {valor}
           {participacao != null && <span className="ml-2 inline-block min-w-[3.5rem] text-right text-xs font-normal text-[var(--text-muted)]">{participacao}</span>}
+          {acao && <span className="ml-2 inline-block">{acao}</span>}
         </span>
       </div>
       {/* Número já visível em texto acima: barra não é ponto de Tab; detalhe vai no aria-label. */}

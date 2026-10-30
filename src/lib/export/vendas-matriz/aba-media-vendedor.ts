@@ -83,6 +83,75 @@ export type VendaParaMediaVendedor = {
 
 const NOMES_MESES_ABREV = ["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"];
 
+/** Linha da matriz vendedor × mês fechado (aba 8). */
+export type LinhaMatrizMediaVendedor = {
+  vendedor: string;
+  /** Vendas por mês fechado: `meses[m - 1]` = mês m (1..nFechados). */
+  meses: number[];
+  total: number;
+  /** Só quando há Bloco A. */
+  totalA: number | null;
+  mediaA: number | null;
+  totalB: number;
+  /** ÷ tamanho do bloco, mesmo com mês zerado (regra do Marcos, 02/10/2026). */
+  mediaB: number;
+  /** média B − média A; `null` sem Bloco A. */
+  delta: number | null;
+};
+
+export type MatrizMediaVendedor = {
+  nFechados: number;
+  mesesBlocoA: number[];
+  mesesBlocoB: number[];
+  temBlocoA: boolean;
+  /** Ordenado por total desc (empate: ordem da 1ª venda — sort estável, igual à aba 8). */
+  vendedores: LinhaMatrizMediaVendedor[];
+  /** TOTAL do DELTA = soma dos deltas individuais (não delta dos totais). `null` sem Bloco A. */
+  somaDeltas: number | null;
+};
+
+/**
+ * Conta da aba 8 ("MEDIA 2026"), PURA — fonte única do Excel e da aba Vendedores do painel.
+ * `mesReferencia` (1-12) é o mês que NÃO entra (o Excel passa o mês corrente real; o painel,
+ * o mês selecionado): só os meses 1..mesReferencia−1 (fechados) contam.
+ * Bloco B = últimos 3 fechados; Bloco A = os anteriores. Vendas sem vendedor são ignoradas.
+ */
+export function calcularMatrizMediaVendedor(mesReferencia: number, vendas: VendaParaMediaVendedor[]): MatrizMediaVendedor {
+  const nFechados = Math.max(0, mesReferencia - 1);
+  const mesesFechados = Array.from({ length: nFechados }, (_, i) => i + 1); // [1..nFechados]
+  const nBlocoB = Math.min(3, nFechados);
+  const mesesBlocoB = mesesFechados.slice(nFechados - nBlocoB);
+  const mesesBlocoA = mesesFechados.slice(0, nFechados - nBlocoB);
+  const temBlocoA = mesesBlocoA.length > 0;
+  if (nFechados === 0) return { nFechados, mesesBlocoA, mesesBlocoB, temBlocoA, vendedores: [], somaDeltas: null };
+
+  // Matriz vendedor × mês FECHADO (1..nFechados) — mês de referência excluído.
+  const porVendedor = new Map<string, number[]>();
+  for (const v of vendas) {
+    if (!v.vendedorNome || !v.dataVenda) continue;
+    const mes = mesBrasilia(v.dataVenda);
+    if (mes < 1 || mes > nFechados) continue;
+    const arr = porVendedor.get(v.vendedorNome) ?? new Array<number>(nFechados).fill(0);
+    arr[mes - 1]++;
+    porVendedor.set(v.vendedorNome, arr);
+  }
+
+  const somaBloco = (meses: number[], doVendedor: number[]): number => meses.reduce((s, m) => s + doVendedor[m - 1], 0);
+  const vendedores: LinhaMatrizMediaVendedor[] = [...porVendedor.entries()]
+    .map(([vendedor, meses]) => ({ vendedor, meses, total: meses.reduce((s, n) => s + n, 0) }))
+    .sort((a, b) => b.total - a.total)
+    .map(({ vendedor, meses, total }) => {
+      const totalA = temBlocoA ? somaBloco(mesesBlocoA, meses) : null;
+      const mediaA = totalA != null ? totalA / mesesBlocoA.length : null;
+      const totalB = somaBloco(mesesBlocoB, meses);
+      const mediaB = totalB / mesesBlocoB.length;
+      return { vendedor, meses, total, totalA, mediaA, totalB, mediaB, delta: mediaA != null ? mediaB - mediaA : null };
+    });
+
+  const somaDeltas = temBlocoA ? vendedores.reduce((s, v) => s + (v.delta ?? 0), 0) : null;
+  return { nFechados, mesesBlocoA, mesesBlocoB, temBlocoA, vendedores, somaDeltas };
+}
+
 /**
  * Renderiza a aba 8. `mesAtualIndex` (1-12) é sempre o mês corrente REAL (não o mês
  * selecionado no seletor do relatório).
@@ -118,29 +187,9 @@ export function renderAbaMediaVendedorAtual(
   header.getCell(COL_VENDEDOR).fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLOR_HEADER_BG } };
   comVerticalMiddle(header.getCell(COL_VENDEDOR));
 
-  const nFechados = Math.max(0, mesAtualIndex - 1);
-  if (nFechados === 0) return; // Jan — nenhum mês fechado, nada além do header.
-
-  const mesesFechados = Array.from({ length: nFechados }, (_, i) => i + 1); // [1..nFechados]
-  const nBlocoB = Math.min(3, nFechados);
-  const mesesBlocoB = mesesFechados.slice(nFechados - nBlocoB);
-  const mesesBlocoA = mesesFechados.slice(0, nFechados - nBlocoB);
-  const temBlocoA = mesesBlocoA.length > 0;
-
-  // Matriz vendedor × mês FECHADO (1..nFechados) — mês corrente (mesAtualIndex) excluído.
-  const porVendedor = new Map<string, number[]>();
-  for (const v of vendasAnoAtual) {
-    if (!v.vendedorNome || !v.dataVenda) continue;
-    const mes = mesBrasilia(v.dataVenda);
-    if (mes < 1 || mes > nFechados) continue;
-    const arr = porVendedor.get(v.vendedorNome) ?? new Array<number>(nFechados).fill(0);
-    arr[mes - 1]++;
-    porVendedor.set(v.vendedorNome, arr);
-  }
-
-  const vendedores = [...porVendedor.entries()]
-    .map(([vendedor, meses]) => ({ vendedor, meses, total: meses.reduce((s, n) => s + n, 0) }))
-    .sort((a, b) => b.total - a.total);
+  const matriz = calcularMatrizMediaVendedor(mesAtualIndex, vendasAnoAtual);
+  if (matriz.nFechados === 0) return; // Jan — nenhum mês fechado, nada além do header.
+  const { mesesBlocoA, mesesBlocoB, temBlocoA, vendedores } = matriz;
 
   // ─── Layout de colunas: Bloco A (se existir) + Bloco B + DELTA (só se os 2 blocos existirem) ───
   let colCursor = COL_VENDEDOR + 1;

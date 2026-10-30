@@ -128,7 +128,26 @@ export function calcularDerivadosLinha(l: LinhaVendaMatriz): DerivadosLinha {
  * nunca deixar cair no balde de um vendedor humano.
  */
 export function isAutoAvaliar(l: LinhaVendaMatriz): boolean {
-  return (l.vendedorNome ?? "").toUpperCase().includes("MOZAINEL");
+  return isNomeAutoAvaliar(l.vendedorNome);
+}
+
+/** Mesma regra de `isAutoAvaliar`, a partir só do nome do vendedor (matriz da aba 8). */
+export function isNomeAutoAvaliar(vendedorNome: string | null): boolean {
+  return (vendedorNome ?? "").toUpperCase().includes("MOZAINEL");
+}
+
+/** Origem do carro vendido em 3 parcelas — a mesma regra das abas 2/4/5/6 do Excel e do painel. */
+export type OrigemChave = "proprio" | "outras" | "naoIdentificada";
+export const ORDEM_ORIGEM: readonly OrigemChave[] = ["proprio", "outras", "naoIdentificada"];
+
+/**
+ * Próprio = `lojaOrigemCodEmpresa === codEmpresa`; outras = conhecida e diferente; não
+ * identificada = `null` (chassi sem snapshot de estoque). Fonte ÚNICA dessa regra: o
+ * Excel (`separarBlocosMargens` em blocos-margens.ts) e o painel chamam esta função.
+ */
+export function classificarOrigem(l: LinhaVendaMatriz, codEmpresa: number): OrigemChave {
+  if (l.lojaOrigemCodEmpresa == null) return "naoIdentificada";
+  return l.lojaOrigemCodEmpresa === codEmpresa ? "proprio" : "outras";
 }
 
 /** Critérios de wildcard Excel equivalentes a `isAutoAvaliar`, pra COUNTIF/SUMIF/COUNTIFS
