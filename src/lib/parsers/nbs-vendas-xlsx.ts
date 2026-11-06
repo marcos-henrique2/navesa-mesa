@@ -31,6 +31,13 @@ export type VendaParsed = {
   cliente_tipo: "PF" | "PJ" | null;
   cliente_cidade: string | null;
   cliente_uf: string | null;
+  /**
+   * Marcador do mapper (`vendaFromRow`): a linha veio SEM as colunas PII de cliente
+   * (role `cerebro_leitor`, migration 051), então `cliente_nome` é placeholder e a
+   * venda não identifica cliente. Nunca presente no app web (que lê PII) nem no parser.
+   * Análises que agrupam por cliente (ex.: `clientesRecorrentes`) ignoram essas vendas.
+   */
+  cliente_pii_ausente?: true;
 
   // Datas
   data_venda: Date | null;

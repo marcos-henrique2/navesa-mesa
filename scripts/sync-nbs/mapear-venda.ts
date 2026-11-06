@@ -11,7 +11,9 @@ import { buscarValoriza } from "./valoriza";
  * "melhor hipótese + fallback gracioso" de mapear-veiculo.ts — ver comentário
  * lá.
  */
-const CANDIDATOS: Record<keyof VendaParsed, string[]> = {
+// `cliente_pii_ausente` é marcador do mapper do cérebro, não coluna do Oracle.
+type CampoOracle = Exclude<keyof VendaParsed, "cliente_pii_ausente">;
+const CANDIDATOS: Record<CampoOracle, string[]> = {
   chassi: ["CHASSI", "CHASSI_COMPLETO", "NUM_CHASSI"],
   placa: ["PLACA", "PLACA_USADO"],
   // JOIN_MODELO/JOIN_MARCA vêm do LEFT JOIN em sync-vendas.ts (mesma lógica
@@ -176,7 +178,7 @@ export type ResultadoMapeamentoVenda = {
 
 export function mapearVenda(row: Record<string, unknown>, lookups: LookupsVenda = {}): ResultadoMapeamentoVenda {
   const camposSemFonte: string[] = [];
-  const get = (campo: keyof VendaParsed) => {
+  const get = (campo: CampoOracle) => {
     const candidatos = CANDIDATOS[campo];
     if (candidatos.length === 0) return undefined; // campo derivado, não é erro
     const v = achaColuna(row, candidatos);

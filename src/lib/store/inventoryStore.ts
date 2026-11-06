@@ -17,18 +17,14 @@ import { listVeiculosAtual, getMetaAtual, inserirEstoqueSnapshot, clearEstoque }
 import { getSupabase } from "@/lib/data/supabase";
 import { LOJAS_IGNORADAS, isLojaIgnorada } from "@/lib/config/lojas-ignoradas";
 import { normalizarPlaca } from "@/lib/utils/placa";
+import {
+  prepararDatasets,
+  derivarVendedores,
+  type LojaInfo,
+  type VendedorInfo,
+} from "@/lib/data/preparar-datasets";
 
-export type LojaInfo = {
-  cod_empresa: number;
-  nome: string;
-  cidade: string;
-};
-
-export type VendedorInfo = {
-  codigo: string;
-  nome: string;
-  cpf?: string | null;
-};
+export type { LojaInfo, VendedorInfo };
 
 export type LoadingState = "loading" | "ready" | "error";
 
@@ -70,69 +66,6 @@ const LOJAS_KEY = "navesa-mesa:lojas-v1";
 const SEED_LOJAS: Record<number, LojaInfo> = {
   2: { cod_empresa: 2, nome: "NAVESA FORD AEROPORTO", cidade: "Goiânia" },
 };
-
-/** Deriva mapa de vendedores a partir de uma lista de vendas (sem persistir). */
-function derivarVendedores(vendas: VendaParsed[]): Record<string, VendedorInfo> {
-  const out: Record<string, VendedorInfo> = {};
-  for (const v of vendas) {
-    if (v.vendedor_codigo && v.vendedor_nome) {
-      out[v.vendedor_codigo] = {
-        codigo: v.vendedor_codigo,
-        nome: v.vendedor_nome,
-        cpf: v.vendedor_cpf,
-      };
-    }
-  }
-  return out;
-}
-
-/** Reconstrói vendasMeta a partir da lista de vendas carregadas. */
-function derivarVendasMeta(vendas: VendaParsed[]): VendasSnapshotMeta | null {
-  if (vendas.length === 0) return null;
-  let ini: number | null = null, fim: number | null = null;
-  const lojas = new Set<number>(), vendedores = new Set<string>();
-  for (const v of vendas) {
-    if (v.data_venda) {
-      const t = new Date(v.data_venda).getTime();
-      if (ini == null || t < ini) ini = t;
-      if (fim == null || t > fim) fim = t;
-    }
-    lojas.add(v.cod_empresa);
-    if (v.vendedor_codigo) vendedores.add(v.vendedor_codigo);
-  }
-  return {
-    arquivo_nome: "supabase",
-    data_geracao: null,
-    total_vendas: vendas.length,
-    total_lojas: lojas.size,
-    total_vendedores: vendedores.size,
-    periodo_inicio: ini ? new Date(ini) : null,
-    periodo_fim: fim ? new Date(fim) : null,
-  };
-}
-
-function derivarCustosMeta(qt: number): CustosMeta | null {
-  if (qt === 0) return null;
-  return {
-    arquivo_nome: "supabase",
-    periodo: null,
-    data_geracao: null,
-    total_vendas: qt,
-    loja_principal: null,
-  };
-}
-
-function derivarCustosEstoqueMeta(qt: number): CustosEstoquePdfMeta | null {
-  if (qt === 0) return null;
-  return {
-    arquivo_nome: "supabase",
-    empresa: "",
-    filial: "",
-    cod_empresa: null, // não apurado — este meta é reconstruído pós-load, não vem de um PDF específico
-    data_impressao: null,
-    total_veiculos: qt,
-  };
-}
 
 function getInitialLojas(): Record<number, LojaInfo> {
   if (typeof window === "undefined") return SEED_LOJAS;
@@ -218,75 +151,36 @@ export const useInventoryStore = create<InventoryStoreState>((set, get) => ({
         }
       }
 
-      // Filtra lojas ignoradas (config central — ver src/lib/config/lojas-ignoradas.ts)
-      const vendasFiltradas = vendasDb.filter((v) => !isLojaIgnorada(v.cod_empresa));
-      const veiculosFiltrados = veiculosDb.filter((v) => !isLojaIgnorada(v.cod_empresa));
-      // Custos: remove placas que pertencem só a lojas ignoradas (mapeadas via vendasDb original)
-      const placasIgnoradas = new Set<string>();
-      for (const v of vendasDb) {
-        if (isLojaIgnorada(v.cod_empresa) && v.placa) placasIgnoradas.add(v.placa);
-      }
-      const custosFiltrados = custosDb.filter((c) => !placasIgnoradas.has(c.placa));
-
-      // Custos de estoque: filtra por cod_empresa (vem direto na linha)
-      const custosEstoqueFiltrados = custosEstoqueDb.itens.filter((c) => {
-        const cod = custosEstoqueDb.codEmpresaPorPlaca[c.placa];
-        return !isLojaIgnorada(cod);
-      });
-
-      // Processa custos
-      const cMap: Record<string, CustoDetalhado> = {};
-      for (const c of custosFiltrados) if (c.placa) cMap[c.placa] = c;
-
-      // Processa custos de estoque — chaves normalizadas (sem hífen/espaço, maiúsculas)
-      // pra bater com placas do estoque vindas em formato "ABC-1234" ou "ABC1234"
-      const ceMap: Record<string, CustoEstoqueDetalhado> = {};
-      for (const c of custosEstoqueFiltrados) {
-        if (c.placa) ceMap[normalizarPlaca(c.placa)] = c;
-      }
-
-      // Deriva lojas
-      const currentLojas = get().lojas;
-      const nextLojas = { ...currentLojas };
-      for (const v of vendasFiltradas) {
-        if (v.empresa_nome && !nextLojas[v.cod_empresa]?.nome) {
-          nextLojas[v.cod_empresa] = {
-            cod_empresa: v.cod_empresa,
-            nome: v.empresa_nome,
-            cidade: nextLojas[v.cod_empresa]?.cidade ?? "",
-          };
-        } else if (!nextLojas[v.cod_empresa]) {
-          nextLojas[v.cod_empresa] = { cod_empresa: v.cod_empresa, nome: "", cidade: "" };
-        }
-      }
-      for (const v of veiculosFiltrados) {
-        if (!nextLojas[v.cod_empresa]) {
-          nextLojas[v.cod_empresa] = { cod_empresa: v.cod_empresa, nome: "", cidade: "" };
-        }
-      }
-      // Garante que lojas ignoradas não fiquem persistidas (mesmo se vieram do localStorage)
-      for (const cod of LOJAS_IGNORADAS) {
-        delete nextLojas[cod];
-      }
+      // Filtragem + montagem: função pura compartilhada com o cérebro (src/lib/data/preparar-datasets.ts)
+      const ds = prepararDatasets(
+        {
+          vendas: vendasDb,
+          veiculos: veiculosDb,
+          custos: custosDb,
+          custosEstoque: custosEstoqueDb,
+          meta: metaDb,
+        },
+        get().lojas,
+      );
       try {
-        localStorage.setItem(LOJAS_KEY, JSON.stringify(nextLojas));
+        localStorage.setItem(LOJAS_KEY, JSON.stringify(ds.lojas));
       } catch {}
 
       set({
-        vendas: vendasFiltradas,
-        vendasMeta: derivarVendasMeta(vendasFiltradas),
+        vendas: ds.vendas,
+        vendasMeta: ds.vendasMeta,
         vendasWarnings: [],
-        vendedores: derivarVendedores(vendasFiltradas),
-        custosPorPlaca: cMap,
-        custosMeta: derivarCustosMeta(custosFiltrados.length),
+        vendedores: ds.vendedores,
+        custosPorPlaca: ds.custosPorPlaca,
+        custosMeta: ds.custosMeta,
         custosWarnings: [],
-        custosEstoquePorPlaca: ceMap,
-        custosEstoqueMeta: derivarCustosEstoqueMeta(custosEstoqueFiltrados.length),
+        custosEstoquePorPlaca: ds.custosEstoquePorPlaca,
+        custosEstoqueMeta: ds.custosEstoqueMeta,
         custosEstoqueWarnings: [],
-        veiculos: veiculosFiltrados,
-        meta: metaDb,
+        veiculos: ds.veiculos,
+        meta: ds.meta,
         warnings: [],
-        lojas: nextLojas,
+        lojas: ds.lojas,
         isHydrated: true,
         loadingState: "ready",
       });

@@ -590,6 +590,9 @@ export function clientesRecorrentes(
     { nome: string; codigo: string | null; tipo: "PF" | "PJ" | "?"; qt: number; valor: number; margem: number }
   >();
   for (const v of vendas) {
+    // Venda sem PII de cliente (cérebro) não identifica ninguém: agrupá-las criaria
+    // um "cliente recorrente" falso com todas as vendas.
+    if (v.cliente_pii_ausente) continue;
     const k = v.cliente_codigo?.trim() || `__sem_doc__${v.cliente_nome ?? ""}`;
     if (!map.has(k)) {
       map.set(k, {
