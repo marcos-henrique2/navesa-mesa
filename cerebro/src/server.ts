@@ -57,11 +57,13 @@ async function main() {
     ? criarPool({
         url: config.SUPABASE_DB_URL,
         caFile: config.SUPABASE_DB_CA_FILE,
+        tlsInseguro: config.SUPABASE_DB_TLS_INSEGURO,
         onErro: (e) => log.erro("pool pg: conexão ociosa caiu", { erro: resumoErro(e) }),
       })
     : null;
   if (!pool) log.erro("SUPABASE_DB_URL ausente: /v1/chat vai responder 503 dados_indisponiveis");
-  if (!config.SUPABASE_DB_CA_FILE) log.info("TLS do banco sem verificação de CA (defina SUPABASE_DB_CA_FILE para verificar)");
+  if (config.SUPABASE_DB_TLS_INSEGURO) log.erro("SUPABASE_DB_TLS_INSEGURO ligado: TLS do banco SEM verificação de certificado");
+  else if (!config.SUPABASE_DB_CA_FILE) log.erro("SUPABASE_DB_CA_FILE ausente: TLS do banco verifica só contra as CAs do sistema (Supabase vai falhar)");
 
   const consulta = pool ? consultaDoPool(pool) : null;
   const cache = new CacheSnapshot(

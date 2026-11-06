@@ -28,5 +28,27 @@ services:
     stop_grace_period: 15s
     restart: unless-stopped
 
+  # /login interativo da assinatura. Mesma imagem e MESMO volume do home, mas SEM
+  # env_file: a sessão do Claude Code aberta aqui não enxerga SUPABASE_DB_URL nem
+  # CEREBRO_TOKENS. Sem portas. Só roda sob demanda (profile), nunca no `up`:
+  #   docker compose -f cerebro/docker-compose.yml run --rm login
+  login:
+    profiles: [login]
+    image: navesa-cerebro:local
+    command: ["claude"]
+    stdin_open: true
+    tty: true
+    volumes:
+      - cerebro-claude-home:/home/cerebro
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    init: true
+    restart: "no"
+
 volumes:
   cerebro-claude-home:

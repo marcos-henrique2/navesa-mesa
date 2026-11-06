@@ -24,7 +24,10 @@ export type DepsServidor = {
   autenticar: Autenticador;
   semaforo: Semaforo;
   executor: ExecutorChat;
+  /** Orçamento total por request, contado da chegada (inclui corpo e fila). */
   timeoutMs: number;
+  /** Teto de espera pelo encerramento do executor antes de liberar o slot (padrão 3s). */
+  esperaEncerrarMs?: number;
   health: () => Promise<Record<string, unknown>>;
   log: Log;
 };
@@ -105,44 +108,58 @@ function proximo<T>(it: AsyncIterator<T>, signal: AbortSignal): Promise<Iterator
   });
 }
 
+/** Teto para o executor encerrar (matar o CLI) antes de o slot do semáforo ser liberado. */
+export const ESPERA_ENCERRAR_MS = 3_000;
+
+/** Aguarda `it.return()` por no máximo `tetoMs` (nunca rejeita). */
+async function encerrarIterador(it: AsyncIterator<unknown> | null, tetoMs: number): Promise<void> {
+  if (!it?.return) return;
+  let timer: NodeJS.Timeout | undefined;
+  await Promise.race([
+    Promise.resolve().then(() => it.return?.()).catch(() => {}),
+    new Promise<void>((r) => { timer = setTimeout(r, tetoMs); }),
+  ]);
+  clearTimeout(timer);
+}
+
 async function tratarChat(req: IncomingMessage, res: ServerResponse, deps: DepsServidor, requestId: string, perfil: NonNullable<ReturnType<Autenticador>>) {
   const inicio = Date.now();
   if (!PERFIS[perfil].chatHabilitado) {
     throw new ErroCerebro("perfil_sem_chat", "Este token não tem acesso ao chat nesta versão.");
   }
-  const bruto = await lerCorpo(req);
-  let corpo: unknown;
-  try {
-    corpo = JSON.parse(bruto);
-  } catch {
-    throw new ErroCerebro("entrada_invalida", "Corpo não é JSON válido.");
-  }
-  const parsed = PedidoChatSchema.safeParse(corpo);
-  if (!parsed.success) {
-    const campos = parsed.error.issues.map((i) => `${i.path.join(".") || "(raiz)"}: ${i.message}`).slice(0, 5).join("; ");
-    throw new ErroCerebro("entrada_invalida", `Entrada inválida: ${campos}`);
-  }
 
+  // O orçamento de tempo começa na CHEGADA do request: leitura do corpo e espera
+  // na fila contam. Assim o /api/chat (modo auto) sabe quando o cérebro desiste.
   const ac = new AbortController();
+  const timer = setTimeout(
+    () => ac.abort(new ErroCerebro("timeout", `Sem resposta completa em ${Math.round(deps.timeoutMs / 1000)}s.`)),
+    deps.timeoutMs,
+  );
   const onClose = () => {
     if (!res.writableFinished) ac.abort(new ErroCerebro("timeout", "Cliente desconectou."));
   };
   res.on("close", onClose);
 
-  let liberar: () => void;
-  try {
-    liberar = await deps.semaforo.adquirir(ac.signal);
-  } catch (err) {
-    res.off("close", onClose);
-    throw err;
-  }
-  const timer = setTimeout(
-    () => ac.abort(new ErroCerebro("timeout", `Sem resposta completa em ${Math.round(deps.timeoutMs / 1000)}s.`)),
-    deps.timeoutMs,
-  );
+  let liberar: (() => void) | null = null;
   let iniciado = false;
   let it: AsyncIterator<EventoAgente> | null = null;
   try {
+    const bruto = await lerCorpo(req);
+    let corpo: unknown;
+    try {
+      corpo = JSON.parse(bruto);
+    } catch {
+      throw new ErroCerebro("entrada_invalida", "Corpo não é JSON válido.");
+    }
+    const parsed = PedidoChatSchema.safeParse(corpo);
+    if (!parsed.success) {
+      const campos = parsed.error.issues.map((i) => `${i.path.join(".") || "(raiz)"}: ${i.message}`).slice(0, 5).join("; ");
+      throw new ErroCerebro("entrada_invalida", `Entrada inválida: ${campos}`);
+    }
+    if (ac.signal.aborted) throw ac.signal.reason;
+
+    liberar = await deps.semaforo.adquirir(ac.signal);
+
     const { modelo, eventos } = deps.executor({ pedido: parsed.data, perfil, requestId, signal: ac.signal });
     const iniciar = () => {
       if (iniciado) return;
@@ -173,10 +190,12 @@ async function tratarChat(req: IncomingMessage, res: ServerResponse, deps: DepsS
   } finally {
     clearTimeout(timer);
     if (!ac.signal.aborted) ac.abort(new ErroCerebro("timeout", "Requisição encerrada."));
-    void it?.return?.().catch(() => {});
-    liberar();
     res.off("close", onClose);
     if (iniciado && !res.writableEnded) res.end();
+    // O slot só volta para a fila depois que o executor encerrou (CLI morto) ou
+    // depois do teto: evita ter MAX_CONC+1 CLIs vivos ao mesmo tempo.
+    await encerrarIterador(it, deps.esperaEncerrarMs ?? ESPERA_ENCERRAR_MS);
+    liberar?.();
   }
 }
 

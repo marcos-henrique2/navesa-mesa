@@ -21,7 +21,7 @@ FROM node:22-bookworm-slim
 ENV NODE_ENV=production \
     TZ=America/Sao_Paulo \
     HOME=/home/cerebro \
-    CEREBRO_CWD=/srv/cerebro/empty \
+    CEREBRO_CWD=/srv/cerebro/empty     CEREBRO_HOST=0.0.0.0     SUPABASE_DB_CA_FILE=/srv/cerebro/certs/supabase-prod-ca-2021.crt \
     DISABLE_AUTOUPDATER=1 \
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
     DISABLE_TELEMETRY=1 \
@@ -31,7 +31,7 @@ ENV NODE_ENV=production \
 # (o CLI grava ~/.claude/ E ~/.claude.json, por isso o volume é o home inteiro).
 RUN groupadd --gid 10001 cerebro \
  && useradd --uid 10001 --gid cerebro --home-dir /home/cerebro --create-home --shell /usr/sbin/nologin cerebro \
- && mkdir -p /home/cerebro/.claude /srv/cerebro/empty \
+ && mkdir -p /home/cerebro/.claude /srv/cerebro/empty /srv/cerebro/certs \
  && chown -R cerebro:cerebro /home/cerebro \
  && chmod 0700 /home/cerebro /home/cerebro/.claude \
  && chmod 0555 /srv/cerebro/empty
@@ -40,6 +40,10 @@ WORKDIR /srv/cerebro/app
 COPY --from=build /app/cerebro/node_modules ./node_modules
 COPY --from=build /app/cerebro/dist ./dist
 COPY cerebro/package.json ./package.json
+# CA pública do Supabase (Supabase Root 2021 CA, vale até 2031-04-26): TLS do banco
+# verificado por padrão. Desligar só com SUPABASE_DB_TLS_INSEGURO=1 (ver README).
+# O diretório é criado no RUN acima (0755): COPY --chmod no arquivo não pode criar o pai.
+COPY --chmod=0444 cerebro/certs/supabase-prod-ca-2021.crt /srv/cerebro/certs/supabase-prod-ca-2021.crt
 
 # O Agent SDK traz o CLI nativo do Claude Code (pacote por plataforma, versão
 # PINADA pelo package-lock: atualizar = rebuild consciente). Expõe como `claude`

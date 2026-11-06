@@ -66,14 +66,35 @@ export function urlSemSslParams(url: string): string {
   return u.toString();
 }
 
+/**
+ * TLS do banco, verificação LIGADA por padrão:
+ *   - `caPem` (CA pública do Supabase, embutida na imagem em cerebro/certs/ e
+ *     apontada por SUPABASE_DB_CA_FILE) → verifica cadeia E hostname;
+ *   - sem `caPem` → verifica contra as CAs do sistema (para o Supabase isso FALHA
+ *     com SELF_SIGNED_CERT_IN_CHAIN: fail-closed, nunca cai em "sem verificação");
+ *   - `inseguro` (SUPABASE_DB_TLS_INSEGURO=1, flag explícita) → TLS sem verificar.
+ *
+ * Pooler (Supavisor, aws-N-<região>.pooler.supabase.com, portas 5432 e 6543)
+ * apresenta a MESMA cadeia "Supabase Root 2021 CA" (testado em 06/11/2026). O SNI
+ * e a checagem de hostname usam o host da URL: o `pg` já preenche `servername`
+ * com o host quando não é IP, então não há servername manual a configurar. Se a
+ * URL apontar para IP, a checagem de hostname falha (use o nome DNS do pooler).
+ */
+export function opcoesTls(opts: { caPem?: string; inseguro?: boolean }): NonNullable<pg.PoolConfig["ssl"]> {
+  if (opts.inseguro) return { rejectUnauthorized: false };
+  return opts.caPem ? { ca: opts.caPem, rejectUnauthorized: true } : { rejectUnauthorized: true };
+}
+
 export function criarPool(opts: {
   url: string;
   caFile?: string;
+  tlsInseguro?: boolean;
   onErro: (err: Error) => void;
 }): pg.Pool {
-  const ssl: pg.PoolConfig["ssl"] = opts.caFile
-    ? { ca: readFileSync(opts.caFile, "utf8"), rejectUnauthorized: true }
-    : { rejectUnauthorized: false };
+  const ssl = opcoesTls({
+    caPem: opts.caFile && !opts.tlsInseguro ? readFileSync(opts.caFile, "utf8") : undefined,
+    inseguro: opts.tlsInseguro,
+  });
   const pool = new pg.Pool({
     connectionString: urlSemSslParams(opts.url),
     ssl,

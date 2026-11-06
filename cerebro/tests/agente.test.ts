@@ -12,6 +12,7 @@ import {
   TradutorSdk,
   criarCanUseTool,
   criarExecutorAgente,
+  hookPreToolUse,
   envDoCli,
   opcoesAgente,
   type DepsAgente,
@@ -86,7 +87,11 @@ test("opções: sem built-ins, allowlist explícita mcp__navesa__*, deny-by-defa
   for (const b of ["Bash", "Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "WebFetch", "WebSearch", "Task", "Agent", "TodoWrite", "NotebookEdit", "Skill"]) {
     assert.ok(o.disallowedTools!.includes(b), b);
   }
-  assert.equal(o.permissionMode, "default");
+  assert.equal(o.permissionMode, "dontAsk");
+  assert.equal(o.hooks?.PreToolUse?.length, 1);
+  assert.deepEqual(o.hooks?.PreToolUse?.[0].hooks, [hookPreToolUse]);
+  assert.equal(o.hooks?.PreToolUse?.[0].onFailure, "block");
+  assert.equal(o.canUseTool !== undefined, true);
   assert.equal(o.allowDangerouslySkipPermissions, undefined);
   assert.deepEqual(o.settingSources, []);
   assert.equal(o.strictMcpConfig, true);
@@ -111,9 +116,33 @@ test("canUseTool: aprova só tool do perfil vinda do MCP in-process; nega todo o
   }
   // Mesmo nome vindo de MCP configurado por arquivo (não pelo host) é negado
   assert.equal((await can("mcp__navesa__carros_parados", {}, op({ name: "navesa", source: "project" })))?.behavior, "deny");
+  // Sem procedência (CLI antigo / tool fora de MCP) também é negado: exige source "sdk"
+  assert.equal((await can("mcp__navesa__carros_parados", {}, op()))?.behavior, "deny");
+  assert.equal((await can("mcp__navesa__carros_parados", {}, op({ name: "outro", source: "sdk" })))?.behavior, "deny");
   // Perfil whatsapp não tem tools nesta fatia
   assert.equal((await criarCanUseTool("whatsapp")("mcp__navesa__carros_parados", {}, op({ name: "navesa", source: "sdk" })))?.behavior, "deny");
   assert.ok(BUILTINS_NEGADAS.length > 20);
+});
+
+test("hook PreToolUse: nega tudo fora de mcp__navesa__* e MCP que não seja do host", async () => {
+  const chamar = (tool_name: string, mcp_server?: { name: string; source: string }) =>
+    hookPreToolUse(
+      { hook_event_name: "PreToolUse", tool_name, tool_input: {}, tool_use_id: "t1", session_id: "s", transcript_path: "", cwd: "/", ...(mcp_server ? { mcp_server } : {}) } as Parameters<typeof hookPreToolUse>[0],
+      "t1",
+      { signal: new AbortController().signal },
+    );
+  const negou = (r: Awaited<ReturnType<typeof chamar>>) =>
+    "hookSpecificOutput" in r && r.hookSpecificOutput?.hookEventName === "PreToolUse" && r.hookSpecificOutput.permissionDecision === "deny";
+
+  for (const nome of ["Bash", "Read", "Write", "WebFetch", "Task", "Skill", "mcp__outro__ler", "mcp__navesa", "MCP__NAVESA__x"]) {
+    assert.ok(negou(await chamar(nome)), nome);
+  }
+  assert.ok(negou(await chamar("mcp__navesa__carros_parados", { name: "navesa", source: "project" })));
+  assert.ok(negou(await chamar("mcp__navesa__carros_parados", { name: "navesa", source: "plugin" })));
+  // Tool do servidor in-process: o hook NÃO decide (nem allow) — segue para allowedTools/dontAsk.
+  const ok = await chamar("mcp__navesa__carros_parados", { name: "navesa", source: "sdk" });
+  assert.deepEqual(ok, {});
+  assert.ok(!negou(await chamar("mcp__navesa__resumo_estoque")));
 });
 
 test("env do CLI: sem API key, sem URL do banco, sem tokens do cérebro; com flags de tráfego mínimo", () => {

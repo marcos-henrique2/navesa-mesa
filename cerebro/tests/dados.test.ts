@@ -6,7 +6,9 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { VENDAS_COLUNAS_CEREBRO } from "@/lib/data/mappers/vendas";
 import { SQL, SYNC_LOG_COLUNAS, carregarSnapshot } from "@cerebro/data/loader";
-import { parserEstiloPostgrest, urlSemSslParams } from "@cerebro/data/db";
+import { opcoesTls, parserEstiloPostgrest, urlSemSslParams } from "@cerebro/data/db";
+import { carregarConfig } from "@cerebro/config";
+import { X509Certificate } from "node:crypto";
 import { CacheSnapshot } from "@cerebro/data/cache";
 import type { Snapshot } from "@cerebro/data/loader";
 import { AGORA, consultaFalsa, tabelasPadrao } from "./fixtures";
@@ -62,6 +64,29 @@ test("db: parâmetros ssl* saem da URL (TLS só pelo objeto ssl)", () => {
   const u = urlSemSslParams("postgresql://cerebro_leitor.ref:senha@aws-0-sa-east-1.pooler.supabase.com:6543/postgres?sslmode=require&application_name=x");
   assert.ok(!u.includes("sslmode"));
   assert.ok(u.includes("application_name=x"));
+});
+
+test("db: TLS verifica por padrão; só a flag explícita desliga", () => {
+  assert.deepEqual(opcoesTls({ caPem: "PEM" }), { ca: "PEM", rejectUnauthorized: true });
+  assert.deepEqual(opcoesTls({}), { rejectUnauthorized: true }, "sem CA: CAs do sistema, nunca sem verificação");
+  assert.deepEqual(opcoesTls({ caPem: "PEM", inseguro: true }), { rejectUnauthorized: false });
+
+  const base = { CEREBRO_TOKENS: `web:${"a".repeat(40)}` };
+  assert.equal(carregarConfig(base).SUPABASE_DB_TLS_INSEGURO, false);
+  assert.equal(carregarConfig({ ...base, SUPABASE_DB_TLS_INSEGURO: "0" }).SUPABASE_DB_TLS_INSEGURO, false);
+  assert.equal(carregarConfig({ ...base, SUPABASE_DB_TLS_INSEGURO: "sim" }).SUPABASE_DB_TLS_INSEGURO, false);
+  assert.equal(carregarConfig({ ...base, SUPABASE_DB_TLS_INSEGURO: "1" }).SUPABASE_DB_TLS_INSEGURO, true);
+  assert.equal(carregarConfig({ ...base, SUPABASE_DB_TLS_INSEGURO: "true" }).SUPABASE_DB_TLS_INSEGURO, true);
+  // Fora do Docker o servidor escuta só no loopback
+  assert.equal(carregarConfig(base).CEREBRO_HOST, "127.0.0.1");
+});
+
+test("db: CA do Supabase embutida é X.509 válido, CA raiz, dentro da validade", () => {
+  const cert = new X509Certificate(readFileSync(new URL("../certs/supabase-prod-ca-2021.crt", import.meta.url)));
+  assert.ok(cert.ca);
+  assert.match(cert.subject, /CN=Supabase Root 2021 CA/);
+  assert.ok(new Date(cert.validTo).getTime() > Date.now());
+  assert.equal(cert.fingerprint256, "80:70:25:AD:50:D4:ED:21:9D:2C:9C:7D:29:9C:00:4F:82:4E:B0:0C:F7:F6:5A:FE:F6:07:D0:7B:72:E6:CA:FA");
 });
 
 // ───── Cache ─────

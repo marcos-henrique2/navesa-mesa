@@ -42,7 +42,8 @@ const inteiro = (def: number, min: number, max: number) =>
 
 const EnvSchema = z.object({
   CEREBRO_PORT: inteiro(8787, 1, 65535),
-  CEREBRO_HOST: z.string().default("0.0.0.0"),
+  /** Loopback por padrão; a imagem Docker define 0.0.0.0 via ENV (porta publicada só no 127.0.0.1 do host). */
+  CEREBRO_HOST: z.string().default("127.0.0.1"),
   CEREBRO_MAX_CONC: inteiro(2, 1, 8),
   CEREBRO_FILA_MAX: inteiro(4, 0, 32),
   CEREBRO_FILA_ESPERA_MS: inteiro(15_000, 0, 120_000),
@@ -54,8 +55,13 @@ const EnvSchema = z.object({
   /** Diretório vazio usado como cwd do CLI (read-only na imagem). */
   CEREBRO_CWD: z.string().min(1).default("/srv/cerebro/empty"),
   SUPABASE_DB_URL: z.string().min(1).optional(),
-  /** CA do pooler (PEM). Sem ela, TLS é exigido mas o certificado não é verificado. */
+  /**
+   * CA do Supabase (PEM). A imagem já define /srv/cerebro/certs/supabase-prod-ca-2021.crt.
+   * Sem ela o TLS verifica contra as CAs do sistema (e falha para o Supabase: fail-closed).
+   */
   SUPABASE_DB_CA_FILE: z.string().min(1).optional(),
+  /** Desliga a verificação do certificado do banco. Só "1"/"true" explícito; qualquer outro valor = verificação ligada. */
+  SUPABASE_DB_TLS_INSEGURO: z.string().optional().transform((v) => v === "1" || v?.toLowerCase() === "true"),
 });
 
 export type Config = z.infer<typeof EnvSchema> & { tokens: TokenPerfil[] };

@@ -6,8 +6,17 @@
  *   tools: []                 → nenhuma built-in registrada (doc do campo: "[] disable all built-in tools")
  *   disallowedTools           → defesa em profundidade, caso `tools` mude de semântica
  *   allowedTools              → lista explícita mcp__navesa__<nome> do perfil
- *   canUseTool                → deny-by-default; só tools do perfil vindas do servidor in-process (source "sdk")
- *   permissionMode "default"  → nunca bypassPermissions/acceptEdits/auto
+ *
+ * Defesa em camadas para tools (cada uma sozinha bastaria; nenhuma depende da outra):
+ *   1. hooks.PreToolUse       → roda em TODA chamada de tool, antes da permissão: nega
+ *                               qualquer tool_name fora de mcp__navesa__* e qualquer
+ *                               MCP cuja procedência (mcp_server.source) não seja "sdk".
+ *                               Para as permitidas não decide nada (segue o fluxo normal).
+ *   2. permissionMode "dontAsk" → "deny if not pre-approved": só passa o que está em
+ *                               allowedTools; nada vira pergunta. Nunca bypass/acceptEdits/auto.
+ *   3. canUseTool             → só é chamado quando o CLI PERGUNTARIA (em dontAsk, na prática
+ *                               não é). Fica como última rede: tool do perfil E servidor
+ *                               in-process (mcpServer.source === "sdk", name "navesa").
  *   settingSources []         → não lê ~/.claude/settings.json, .claude/, CLAUDE.md
  *   strictMcpConfig true      → ignora .mcp.json, MCP de usuário/plugin
  *   skills [] / plugins []    → nenhuma skill/plugin
@@ -16,13 +25,13 @@
  *   env                       → env MÍNIMO para o CLI: sem SUPABASE_DB_URL, CEREBRO_TOKENS
  *                               nem ANTHROPIC_API_KEY (o CLI usa o login OAuth do volume)
  */
-import type { Options, Query, SDKMessage, CanUseTool } from "@anthropic-ai/claude-agent-sdk";
+import type { Options, Query, SDKMessage, CanUseTool, HookCallback } from "@anthropic-ai/claude-agent-sdk";
 import type { Config } from "@cerebro/config";
 import type { EstadoCache } from "@cerebro/data/cache";
 import type { EventoAgente, ExecutorChat, PedidoChat } from "@cerebro/contrato";
 import { ErroCerebro } from "@cerebro/erros";
 import { criarServidorMcp } from "@cerebro/mcp/sdk-server";
-import { PERFIS, SERVIDOR_MCP, nomeMcp, type Perfil } from "@cerebro/perfis";
+import { PERFIS, PREFIXO_MCP, SERVIDOR_MCP, nomeMcp, type Perfil } from "@cerebro/perfis";
 import { SYSTEM_PROMPT, montarPrompt } from "@cerebro/prompt";
 import { isoDia } from "@cerebro/tools/comum";
 import { resumoErro, type Log } from "@cerebro/log";
@@ -65,14 +74,34 @@ export function envDoCli(env: NodeJS.ProcessEnv = process.env): Record<string, s
   };
 }
 
+const MSG_NEGADA = "Ferramenta não permitida neste assistente.";
+
+/** Camada 3: só tool do perfil E vinda do servidor in-process do host (source "sdk"). */
 export function criarCanUseTool(perfil: Perfil): CanUseTool {
   const permitidas = new Set(PERFIS[perfil].tools.map(nomeMcp));
   return async (toolName, _input, opts) => {
-    const doServidorInterno = !opts.mcpServer || (opts.mcpServer.source === "sdk" && opts.mcpServer.name === SERVIDOR_MCP);
+    const doServidorInterno = opts.mcpServer?.source === "sdk" && opts.mcpServer.name === SERVIDOR_MCP;
     if (permitidas.has(toolName) && doServidorInterno) return { behavior: "allow" };
-    return { behavior: "deny", message: "Ferramenta não permitida neste assistente." };
+    return { behavior: "deny", message: MSG_NEGADA };
   };
 }
+
+/**
+ * Camada 1: hook PreToolUse programático. Nega tudo fora de `mcp__navesa__*` e
+ * MCP de procedência diferente de "sdk". Não devolve "allow" para as demais:
+ * a decisão continua com allowedTools/dontAsk/canUseTool.
+ */
+export const hookPreToolUse: HookCallback = async (input) => {
+  if (input.hook_event_name !== "PreToolUse") return {};
+  const origem = input.mcp_server;
+  const ok = input.tool_name.startsWith(PREFIXO_MCP) && (!origem || (origem.source === "sdk" && origem.name === SERVIDOR_MCP));
+  if (ok) return {};
+  return {
+    decision: "block",
+    reason: MSG_NEGADA,
+    hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: MSG_NEGADA },
+  };
+};
 
 export function opcoesAgente(args: {
   config: Pick<Config, "CEREBRO_MAX_TURNS" | "CEREBRO_CWD">;
@@ -92,7 +121,9 @@ export function opcoesAgente(args: {
     allowedTools: PERFIS[args.perfil].tools.map(nomeMcp),
     disallowedTools: [...BUILTINS_NEGADAS],
     canUseTool: criarCanUseTool(args.perfil),
-    permissionMode: "default",
+    // Falha do hook (exceção/saída inválida) bloqueia a tool em vez de deixá-la seguir.
+    hooks: { PreToolUse: [{ hooks: [hookPreToolUse], onFailure: "block" }] },
+    permissionMode: "dontAsk",
     settingSources: [],
     skills: [],
     plugins: [],

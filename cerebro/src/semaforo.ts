@@ -41,7 +41,10 @@ export class Semaforo {
         signal?.removeEventListener("abort", onAbort);
         rejeitar(e);
       };
-      const onAbort = () => sair(new ErroCerebro("timeout", "Requisição cancelada enquanto aguardava na fila."));
+      const onAbort = () =>
+        sair(signal?.reason instanceof ErroCerebro
+          ? signal.reason
+          : new ErroCerebro("timeout", "Requisição cancelada enquanto aguardava na fila."));
       const espera: Espera = {
         resolver: (liberar) => {
           signal?.removeEventListener("abort", onAbort);

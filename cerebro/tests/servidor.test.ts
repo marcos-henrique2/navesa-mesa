@@ -230,6 +230,7 @@ test("POST /v1/chat: timeout sem nenhum evento → 504; com texto já enviado �
   }
   const s2 = await subir({
     timeoutMs: 100,
+    esperaEncerrarMs: 50,
     executor: () => ({
       modelo: "m",
       eventos: (async function* () {
@@ -242,9 +243,76 @@ test("POST /v1/chat: timeout sem nenhum evento → 504; com texto já enviado �
     const ev = parseSse(await (await post(s2.base, corpo())).text());
     assert.deepEqual(ev.map((e) => e.evento), ["meta", "delta", "error"]);
     assert.equal(ev[2].data.codigo, "timeout");
+    // Executor que nunca encerra: o slot volta depois do teto de espera (50 ms aqui).
+    await new Promise((r) => setTimeout(r, 120));
     assert.equal(s2.deps.semaforo.estado().ativos, 0, "slot liberado");
   } finally {
     await s2.fechar();
+  }
+});
+
+test("timeout conta da chegada: espera na fila consome o orçamento (504 timeout, não 429 tardio)", async () => {
+  const sem = new Semaforo(1, 4, 15_000);
+  const s = await subir({
+    semaforo: sem,
+    timeoutMs: 300,
+    esperaEncerrarMs: 1_500, // o 1º executor ignora o abort: segura o slot por 300 ms + 1,5 s
+    executor: () => ({
+      modelo: "m",
+      eventos: (async function* () {
+        await new Promise(() => {});
+      })(),
+    }),
+  });
+  try {
+    const primeiro = post(s.base, corpo());
+    await new Promise((r) => setTimeout(r, 30));
+    const t0 = Date.now();
+    const r = await post(s.base, corpo());
+    const ms = Date.now() - t0;
+    assert.equal(r.status, 504);
+    assert.equal(((await r.json()) as { codigo: string }).codigo, "timeout");
+    assert.ok(ms < 1_000, `cortou pelo orçamento total (${ms} ms), não esperou o slot`);
+    assert.equal((await primeiro).status, 504);
+  } finally {
+    await s.fechar();
+  }
+});
+
+test("slot só é liberado depois que o executor encerra (it.return aguardado)", async () => {
+  const ordem: string[] = [];
+  const real = new Semaforo(1, 4, 15_000);
+  const semaforo = {
+    adquirir: async (sig?: AbortSignal) => {
+      const l = await real.adquirir(sig);
+      return () => { ordem.push("liberou"); l(); };
+    },
+    estado: () => real.estado(),
+  } as unknown as Semaforo;
+  const s = await subir({
+    semaforo,
+    timeoutMs: 100,
+    executor: ({ signal }) => ({
+      modelo: "m",
+      eventos: (async function* () {
+        try {
+          yield { tipo: "delta", texto: "parcial" } as EventoAgente;
+          await new Promise((r) => signal.addEventListener("abort", r, { once: true }));
+          yield { tipo: "delta", texto: "nunca enviado" } as EventoAgente;
+        } finally {
+          await new Promise((r) => setTimeout(r, 150)); // CLI demorando para morrer
+          ordem.push("encerrou");
+        }
+      })(),
+    }),
+  });
+  try {
+    const ev = parseSse(await (await post(s.base, corpo())).text());
+    assert.equal(ev.at(-1)?.data.codigo, "timeout");
+    await new Promise((r) => setTimeout(r, 300));
+    assert.deepEqual(ordem, ["encerrou", "liberou"]);
+  } finally {
+    await s.fechar();
   }
 });
 
@@ -296,6 +364,7 @@ test("semáforo: espera máxima na fila estoura em 429 e libera a vaga da fila",
 test("cliente desconectando no meio aborta o executor e libera o slot", async () => {
   let abortado = false;
   const s = await subir({
+    esperaEncerrarMs: 50, // executor que nunca encerra: slot volta pelo teto
     executor: ({ signal }) => ({
       modelo: "m",
       eventos: (async function* () {
