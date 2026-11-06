@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { VendaParsed } from "../../src/lib/parsers/nbs-vendas-xlsx";
 import type { VeiculoParsed, SnapshotMeta } from "../../src/lib/parsers/nbs-xlsx";
 import { toRow as vendaToRow } from "../../src/lib/data/vendas";
-import { toRow as veiculoToRow } from "../../src/lib/data/veiculos";
+import { gravarSnapshotEstoque, type OpcoesGravacaoSnapshot } from "@/lib/data/snapshot-estoque";
 import { chunk } from "../../src/lib/data/supabase";
 
 /**
@@ -94,34 +94,17 @@ export async function removerVendasFantasma(
 
 /**
  * Gravação real (Node, client de service-role) do snapshot de estoque
- * sincronizado do Oracle. Reaproveita a MESMA lógica de
- * `src/lib/data/veiculos.ts` (`toRow`, modelo "cada rodada = snapshot
- * completo novo" de `inserirEstoqueSnapshot`) — só troca o client pelo
- * mesmo motivo de `gravarVendasNode` acima.
+ * sincronizado do Oracle. Delega pra `gravarSnapshotEstoque`
+ * (src/lib/data/snapshot-estoque.ts): lotes de 250, retry com backoff em
+ * statement timeout, conferência de contagem e ROLLBACK do snapshot se
+ * qualquer passo falhar — nunca deixa um snapshot incompleto como o mais
+ * recente (incidente 06/11/2026, snapshot 394 com 0 veículos).
  */
 export async function gravarVeiculosNode(
   sb: SupabaseClient,
   veiculos: VeiculoParsed[],
   meta: SnapshotMeta,
+  opcoes?: OpcoesGravacaoSnapshot,
 ): Promise<{ snapshotId: number; inseridos: number }> {
-  const { data: snap, error: snapErr } = await sb
-    .from("estoque_snapshots")
-    .insert({
-      arquivo_nome: meta.arquivo_nome,
-      data_geracao: meta.data_geracao?.toISOString() ?? null,
-      total_veiculos: meta.total_veiculos,
-      total_lojas: meta.total_lojas,
-    })
-    .select("id")
-    .single();
-  if (snapErr || !snap) throw new Error(`gravarVeiculosNode: ${snapErr?.message ?? "sem id"}`);
-
-  const snapshotId = snap.id as number;
-
-  for (const lote of chunk(veiculos.map((v) => veiculoToRow(v, snapshotId)), 500)) {
-    const { error } = await sb.from("veiculos").insert(lote);
-    if (error) throw new Error(`gravarVeiculosNode (snapshot ${snapshotId}): ${error.message}`);
-  }
-
-  return { snapshotId, inseridos: veiculos.length };
+  return gravarSnapshotEstoque(sb, veiculos, meta, "gravarVeiculosNode", opcoes);
 }

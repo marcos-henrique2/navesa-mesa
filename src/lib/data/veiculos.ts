@@ -2,6 +2,7 @@
 
 import type { VeiculoParsed, SnapshotMeta } from "@/lib/parsers/nbs-xlsx";
 import { getSupabase, chunk, selectAll, parseDate } from "@/lib/data/supabase";
+import { gravarSnapshotEstoque } from "@/lib/data/snapshot-estoque";
 import {
   veiculoToRow,
   veiculoFromRow as fromRow,
@@ -41,35 +42,13 @@ export async function getMetaAtual(): Promise<SnapshotMeta | null> {
 /**
  * Cria um NOVO snapshot e insere os veículos vinculados.
  * Cada upload de estoque gera um snapshot novo — histórico é preservado.
+ * Tudo ou nada: se algum lote falhar, o snapshot é apagado (ver `gravarSnapshotEstoque`).
  */
 export async function inserirEstoqueSnapshot(
   veiculos: VeiculoParsed[],
   meta: SnapshotMeta,
 ): Promise<{ snapshotId: number; inseridos: number }> {
-  const sb = getSupabase();
-
-  // 1) Cria snapshot
-  const { data: snap, error: snapErr } = await sb
-    .from("estoque_snapshots")
-    .insert({
-      arquivo_nome: meta.arquivo_nome,
-      data_geracao: meta.data_geracao?.toISOString() ?? null,
-      total_veiculos: meta.total_veiculos,
-      total_lojas: meta.total_lojas,
-    })
-    .select("id")
-    .single();
-  if (snapErr || !snap) throw new Error(`inserirEstoqueSnapshot: ${snapErr?.message ?? "sem id"}`);
-
-  const snapshotId = snap.id as number;
-
-  // 2) Insere veículos em lote
-  for (const lote of chunk(veiculos.map((v) => veiculoToRow(v, snapshotId)), 500)) {
-    const { error } = await sb.from("veiculos").insert(lote);
-    if (error) throw new Error(`inserir veículos (snapshot ${snapshotId}): ${error.message}`);
-  }
-
-  return { snapshotId, inseridos: veiculos.length };
+  return gravarSnapshotEstoque(getSupabase(), veiculos, meta, "inserirEstoqueSnapshot");
 }
 
 /** Lista todos os snapshots de estoque (pra histórico). */
