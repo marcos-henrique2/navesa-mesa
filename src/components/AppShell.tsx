@@ -45,14 +45,14 @@ const NAV: NavItem[] = [
   // { href: "/precificar", label: "Precificar", icon: <Calculator className="h-4 w-4" />, match: (p) => p.startsWith("/precificar") },
   { href: "/leads", label: "Leads", icon: <Users className="h-4 w-4" />, match: (p) => p.startsWith("/leads") },
   { href: "/historico", label: "Histórico", icon: <History className="h-4 w-4" />, match: (p) => p.startsWith("/historico") },
-  // Chat IA reativado (cérebro Claude, docs/arquitetura/cerebro-claude.md). O backend é
-  // escolhido no servidor por CHAT_BACKEND (providers | cerebro | auto).
+  // Chat IA (cérebro Claude, docs/arquitetura/cerebro-claude.md): só aparece com
+  // CHAT_BACKEND=cerebro|auto (prop `chatHabilitado`, ver filtro em SidebarContent).
   { href: "/chat", label: "Chat IA", icon: <MessageSquare className="h-4 w-4" />, match: (p) => p.startsWith("/chat") },
   { href: "/upload", label: "Upload de Relatórios", icon: <Upload className="h-4 w-4" />, match: (p) => p.startsWith("/upload") },
   { href: "/lojas", label: "Cadastro de Lojas", icon: <Building2 className="h-4 w-4" />, match: (p) => p.startsWith("/lojas") },
 ];
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export function AppShell({ children, chatHabilitado }: { children: React.ReactNode; chatHabilitado: boolean }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   // Sempre começa false (igual SSR) pra evitar hydration mismatch.
@@ -97,7 +97,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           collapsed ? "w-16" : "w-64",
         )}
       >
-        <SidebarContent pathname={pathname} collapsed={collapsed} onToggle={toggle} />
+        <SidebarContent pathname={pathname} collapsed={collapsed} onToggle={toggle} chatHabilitado={chatHabilitado} />
       </aside>
 
       {/* Sidebar mobile (drawer) — sempre full no mobile, sem toggle */}
@@ -106,7 +106,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="absolute inset-0 bg-black/50" />
           <aside className="absolute inset-y-0 left-0 w-64 bg-[var(--bg-surface)] shadow-lg" onClick={(e) => e.stopPropagation()}>
             <button onClick={() => setOpen(false)} className="absolute right-3 top-3 rounded-md p-1 text-[var(--text-muted)] hover:bg-[var(--bg-muted)]"><X className="h-5 w-5" /></button>
-            <SidebarContent pathname={pathname} collapsed={false} onItemClick={() => setOpen(false)} />
+            <SidebarContent pathname={pathname} collapsed={false} onItemClick={() => setOpen(false)} chatHabilitado={chatHabilitado} />
           </aside>
         </div>
       )}
@@ -133,7 +133,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Toasts globais — montado 1x no shell, fora do <main> pra não afetar layout/scroll */}
       <ToastContainer />
       {/* Command palette global — Ctrl+K em qualquer página, montado fora do DataGate */}
-      <CommandPalette />
+      <CommandPalette chatHabilitado={chatHabilitado} />
     </div>
   );
 }
@@ -211,12 +211,15 @@ function SidebarContent({
   collapsed,
   onItemClick,
   onToggle,
+  chatHabilitado,
 }: {
   pathname: string;
   collapsed: boolean;
   onItemClick?: () => void;
   onToggle?: () => void;
+  chatHabilitado: boolean;
 }) {
+  const nav = chatHabilitado ? NAV : NAV.filter((i) => i.href !== "/chat");
   return (
     <>
       {/* Logo + toggle */}
@@ -268,7 +271,7 @@ function SidebarContent({
           <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-subtle)]">Navegação</p>
         )}
         <ul className="space-y-1">
-          {NAV.map((item) => {
+          {nav.map((item) => {
             const active = item.match ? item.match(pathname) : pathname.startsWith(item.href);
             const link = (
               <Link

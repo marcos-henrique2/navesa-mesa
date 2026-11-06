@@ -18,9 +18,22 @@ import type { RequestBody } from "@/lib/chat/providers";
 
 export type ChatBackend = "providers" | "cerebro" | "auto";
 
+/**
+ * `timeoutMs` = orçamento até o PRIMEIRO texto, contado da chegada do request no
+ * /api/chat. É o ponto em que o modo `auto` ainda pode cair nos providers.
+ * Depois do primeiro texto vale o teto total `CEREBRO_TETO_TOTAL_MS`.
+ */
 export type ConfigCerebro = { url: string; token: string; timeoutMs: number };
 
-export const CEREBRO_TIMEOUT_PADRAO_MS = 110_000;
+/** maxDuration do /api/chat é 120 s: o teto total deixa 5 s de folga para fechar a resposta. */
+export const CEREBRO_TETO_TOTAL_MS = 115_000;
+/** Modo `cerebro`: sem fallback, espera até o teto (o cérebro corta em 110 s e manda o `error`). */
+export const CEREBRO_TIMEOUT_PADRAO_MS = CEREBRO_TETO_TOTAL_MS;
+/**
+ * Modo `auto`: desiste do cérebro aos 85 s sem texto, sobrando ~35 s dentro do
+ * maxDuration 120 para o fallback nos providers. Também é o máximo aceito no auto.
+ */
+export const CEREBRO_TIMEOUT_AUTO_MS = 85_000;
 /** Mesmo teto do cérebro (32 KB); fica uma folga para os headers do JSON. */
 const LIMITE_CORPO_BYTES = 30 * 1024;
 const MAX_MENSAGENS = 30;
@@ -30,15 +43,25 @@ export function lerBackend(env: Record<string, string | undefined> = process.env
   return v === "cerebro" || v === "auto" ? v : "providers";
 }
 
+/**
+ * A aba/rota "Chat IA" só existe com o cérebro ligado (`cerebro` | `auto`).
+ * Com CHAT_BACKEND ausente (= providers pagos/gratuitos, desligados por custo)
+ * o chat continua fora do menu, como antes da fatia 1d.
+ */
+export function chatHabilitado(env: Record<string, string | undefined> = process.env): boolean {
+  return lerBackend(env) !== "providers";
+}
+
 export function lerConfigCerebro(env: Record<string, string | undefined> = process.env): ConfigCerebro | null {
   const url = env.CEREBRO_URL?.trim();
   const token = env.CEREBRO_TOKEN?.trim();
   if (!url || !token) return null;
+  const teto = lerBackend(env) === "auto" ? CEREBRO_TIMEOUT_AUTO_MS : CEREBRO_TIMEOUT_PADRAO_MS;
   const t = Number(env.CEREBRO_TIMEOUT_MS);
   return {
     url: url.replace(/\/+$/, ""),
     token,
-    timeoutMs: Number.isFinite(t) && t >= 5_000 ? t : CEREBRO_TIMEOUT_PADRAO_MS,
+    timeoutMs: Number.isFinite(t) && t >= 5_000 ? Math.min(t, teto) : teto,
   };
 }
 
@@ -138,13 +161,19 @@ export async function abrirStreamCerebro(args: {
   userId: string;
   /** Abort do request do browser (aba fechada). */
   signal?: AbortSignal;
+  /** Chegada do request no /api/chat (epoch ms): o orçamento conta daqui. Padrão: agora. */
+  inicioMs?: number;
   fetchImpl?: typeof fetch;
+  agora?: () => number;
 }): Promise<ResultadoCerebro> {
   const { config } = args;
   const fetchImpl = args.fetchImpl ?? fetch;
+  const agora = args.agora ?? Date.now;
+  const inicio = args.inicioMs ?? agora();
   const ac = new AbortController();
-  // +5s: o cérebro corta em CEREBRO_TIMEOUT_MS e manda o evento `error`; damos tempo de ele chegar.
-  const timer = setTimeout(() => ac.abort(new Error("timeout")), config.timeoutMs + 5_000);
+  const restante = (ms: number) => Math.max(0, inicio + ms - agora());
+  // Até o primeiro texto: orçamento `timeoutMs` (no auto, 85 s → sobra tempo para o fallback).
+  let timer = setTimeout(() => ac.abort(new Error("timeout")), restante(Math.min(config.timeoutMs, CEREBRO_TETO_TOTAL_MS)));
   const repassarAbort = () => ac.abort(new Error("cliente desconectou"));
   args.signal?.addEventListener("abort", repassarAbort, { once: true });
   const limpar = () => {
@@ -230,6 +259,9 @@ export async function abrirStreamCerebro(args: {
     limpar();
     return { ok: false, erro: { status: 200, codigo: "resposta_vazia", mensagem: "O cérebro terminou sem resposta." } };
   }
+  // Já há texto (sem volta para o fallback): o resto do stream vai até o teto total.
+  clearTimeout(timer);
+  timer = setTimeout(() => ac.abort(new Error("timeout")), restante(CEREBRO_TETO_TOTAL_MS));
 
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {

@@ -18,7 +18,11 @@ import {
  *   CHAT_BACKEND=providers (default) — DeepSeek/Groq/Gemini/Anthropic, comportamento histórico.
  *   CHAT_BACKEND=cerebro             — só o cérebro (Claude no Docker); erro vira resposta de erro.
  *   CHAT_BACKEND=auto                — cérebro; se falhar ANTES do primeiro texto, cai nos providers.
- *   CEREBRO_URL, CEREBRO_TOKEN, CEREBRO_TIMEOUT_MS (110000).
+ *   CEREBRO_URL, CEREBRO_TOKEN, CEREBRO_TIMEOUT_MS (orçamento até o 1º texto, contado
+ *   da chegada do request: 115000 no modo cerebro; 85000 — e no máximo isso — no auto,
+ *   para o fallback caber no maxDuration).
+ *
+ * A aba/página "Chat IA" só aparece com CHAT_BACKEND=cerebro|auto (chatHabilitado).
  *
  * Rate limit:
  *   10 req/min por user (sliding window via Upstash Redis).
@@ -27,7 +31,8 @@ import {
  *   → create Redis database → copiar REST URL + TOKEN pro .env.local e Vercel.
  */
 export const runtime = "nodejs";
-// 120s: o cérebro corta em 110s (CEREBRO_TIMEOUT_MS) e o cliente espera +5s pelo evento de erro.
+// 120s: teto total do cliente 115s (CEREBRO_TETO_TOTAL_MS). No auto o cérebro tem 85s
+// para o 1º texto; o fallback nos providers usa o que sobra.
 export const maxDuration = 120;
 
 const json = (status: number, corpo: unknown, headers: Record<string, string> = {}) =>
@@ -52,6 +57,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const inicioMs = Date.now();
   try {
     // 1) Autenticação — precisa do user.id pra chavear o rate limit.
     //    Sem user, devolve 401 antes de gastar qualquer recurso.
@@ -86,17 +92,18 @@ export async function POST(req: Request) {
 
     const body = (await req.json()) as RequestBody;
     const backend = lerBackend();
-    if (backend === "providers") return responderComProviders(body);
+    // `return await` dentro do try: erro dos providers vira o JSON 500 {error} do catch.
+    if (backend === "providers") return await responderComProviders(body);
 
     // 3) Cérebro
     const config = lerConfigCerebro();
     if (!config) {
-      if (backend === "auto") return responderComProviders(body);
+      if (backend === "auto") return await responderComProviders(body);
       return json(500, { error: "CHAT_BACKEND=cerebro, mas CEREBRO_URL/CEREBRO_TOKEN não estão configurados no servidor." });
     }
 
     const requestId = randomUUID();
-    const r = await abrirStreamCerebro({ config, body, requestId, userId: user.id, signal: req.signal });
+    const r = await abrirStreamCerebro({ config, body, requestId, userId: user.id, signal: req.signal, inicioMs });
     if (r.ok) {
       return new Response(r.stream, {
         headers: {
@@ -109,7 +116,7 @@ export async function POST(req: Request) {
 
     const log = r.erro.codigo === "token_invalido" || r.erro.codigo === "claude_nao_logado" ? console.error : console.warn;
     log(`[chat] cérebro falhou (${requestId}): ${r.erro.status} ${r.erro.codigo}`);
-    if (backend === "auto") return responderComProviders(body);
+    if (backend === "auto") return await responderComProviders(body);
 
     return json(
       statusParaBrowser(r.erro),

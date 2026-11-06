@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { InventoryProvider } from "@/lib/store/inventory";
 import { AppShell } from "@/components/AppShell";
+import { chatHabilitado } from "@/lib/chat/cerebro-client";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -36,7 +37,9 @@ export default function RootLayout({
       </head>
       <body className="min-h-full bg-[var(--bg-app)] text-[var(--text-body)]">
         <InventoryProvider>
-          <AppShell>{children}</AppShell>
+          {/* Flag booleana calculada no servidor (sem URL/token): o HTML do SSR já sai
+              com ou sem a aba "Chat IA", então não há flash nem hydration mismatch. */}
+          <AppShell chatHabilitado={chatHabilitado()}>{children}</AppShell>
         </InventoryProvider>
       </body>
     </html>
