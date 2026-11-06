@@ -19,8 +19,9 @@ import {
   deleteCautelar,
   upsertCautelaresEmLote,
 } from "@/lib/data/cautelar";
+import type { StatusCautelar } from "@/lib/inventory/cautelar-tipos";
 
-export type StatusCautelar = "aprovado" | "com_restricao" | "reprovado";
+export type { StatusCautelar };
 
 const EVT = "navesa-mesa:cautelar-updated";
 

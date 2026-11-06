@@ -1,21 +1,13 @@
 "use client";
 
-import type { StatusCautelar } from "@/lib/inventory/cautelar";
-import { chunk, getSupabase, selectAll } from "./supabase";
-
-type CautelarRow = {
-  chassi: string;
-  status: StatusCautelar;
-  observacao: string | null;
-  atualizado_em: string;
-};
+import type { StatusCautelar } from "@/lib/inventory/cautelar-tipos";
+import { chunk, getSupabase, selectAll } from "@/lib/data/supabase";
+import { montarCautelares, type CautelarRow } from "@/lib/data/mappers/cautelar";
 
 export async function listCautelares(): Promise<Record<string, StatusCautelar>> {
   const sb = getSupabase();
   const rows = await selectAll<CautelarRow>(sb, "cautelar", { orderBy: "chassi" });
-  const map: Record<string, StatusCautelar> = {};
-  for (const r of rows) map[r.chassi] = r.status;
-  return map;
+  return montarCautelares(rows);
 }
 
 export async function upsertCautelar(chassi: string, status: StatusCautelar): Promise<void> {

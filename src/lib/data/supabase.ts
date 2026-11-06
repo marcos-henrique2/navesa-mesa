@@ -45,9 +45,5 @@ export async function selectAll<T>(
   return all;
 }
 
-/** Converte ISO string (ou null) pra Date (ou null). Supabase devolve timestamptz como string. */
-export function parseDate(v: unknown): Date | null {
-  if (v == null || v === "") return null;
-  const d = new Date(v as string);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
+/** Re-export: implementação pura em `@/lib/data/mappers/datas` (reuso no cérebro). */
+export { parseDate } from "@/lib/data/mappers/datas";

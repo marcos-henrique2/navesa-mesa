@@ -2,103 +2,14 @@
 
 import type { VendaParsed } from "@/lib/parsers/nbs-vendas-xlsx";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getSupabase, chunk, selectAll, parseDate } from "./supabase";
+import { getSupabase, chunk, selectAll } from "@/lib/data/supabase";
+import { vendaToRow, vendaFromRow as fromRow, type VendaRow } from "@/lib/data/mappers/vendas";
 
-type VendaRow = Omit<VendaParsed, "data_venda" | "data_faturamento" | "data_entrada"> & {
-  data_venda: string | null;
-  data_faturamento: string | null;
-  data_entrada: string | null;
-  atualizado_em?: string;
-};
-
-/** Exportado pra reuso em `scripts/sync-nbs/gravar.ts` (client Node/service-role, sem sessão de browser). */
-export function toRow(v: VendaParsed): Record<string, unknown> {
-  return {
-    chassi: v.chassi,
-    placa: v.placa,
-    modelo: v.modelo,
-    marca: v.marca,
-    ano_fabricacao: v.ano_fabricacao,
-    ano_modelo: v.ano_modelo,
-    cor_externa: v.cor_externa,
-    renavam: v.renavam,
-    km: v.km,
-    cod_empresa: v.cod_empresa,
-    empresa_nome: v.empresa_nome,
-    patio: v.patio,
-    vendedor_codigo: v.vendedor_codigo,
-    vendedor_nome: v.vendedor_nome,
-    vendedor_cpf: v.vendedor_cpf,
-    vendedor_recebeu: v.vendedor_recebeu,
-    cliente_codigo: v.cliente_codigo,
-    cliente_nome: v.cliente_nome,
-    cliente_tipo: v.cliente_tipo,
-    cliente_cidade: v.cliente_cidade,
-    cliente_uf: v.cliente_uf,
-    data_venda: v.data_venda?.toISOString() ?? null,
-    data_faturamento: v.data_faturamento?.toISOString() ?? null,
-    data_entrada: v.data_entrada?.toISOString() ?? null,
-    valor_venda: v.valor_venda,
-    preco_venda_tabela: v.preco_venda_tabela,
-    total_nota_fabrica: v.total_nota_fabrica,
-    custo_floor_plan: v.custo_floor_plan,
-    custo_total_final: v.custo_total_final,
-    despesas_gerais: v.despesas_gerais,
-    margem_pct: v.margem_pct,
-    comissao_vendedor: v.comissao_vendedor,
-    dias_estoque: v.dias_estoque,
-    placa_troca: v.placa_troca,
-    financiado: v.financiado,
-    financeira: v.financeira,
-    valoriza: v.valoriza,
-    consignado: v.consignado,
-  };
-}
-
-function fromRow(r: VendaRow): VendaParsed {
-  return {
-    chassi: r.chassi,
-    placa: r.placa,
-    modelo: r.modelo,
-    marca: r.marca,
-    ano_fabricacao: r.ano_fabricacao,
-    ano_modelo: r.ano_modelo,
-    cor_externa: r.cor_externa,
-    renavam: r.renavam,
-    km: r.km,
-    cod_empresa: r.cod_empresa,
-    empresa_nome: r.empresa_nome,
-    patio: r.patio,
-    vendedor_codigo: r.vendedor_codigo,
-    vendedor_nome: r.vendedor_nome,
-    vendedor_cpf: r.vendedor_cpf,
-    vendedor_recebeu: r.vendedor_recebeu,
-    cliente_codigo: r.cliente_codigo,
-    cliente_nome: r.cliente_nome,
-    cliente_tipo: r.cliente_tipo,
-    cliente_cidade: r.cliente_cidade,
-    cliente_uf: r.cliente_uf,
-    data_venda: parseDate(r.data_venda),
-    data_faturamento: parseDate(r.data_faturamento),
-    data_entrada: parseDate(r.data_entrada),
-    valor_venda: r.valor_venda,
-    preco_venda_tabela: r.preco_venda_tabela,
-    total_nota_fabrica: r.total_nota_fabrica,
-    custo_floor_plan: r.custo_floor_plan,
-    custo_total_final: r.custo_total_final,
-    despesas_gerais: r.despesas_gerais,
-    margem_pct: r.margem_pct,
-    comissao_vendedor: r.comissao_vendedor,
-    dias_estoque: r.dias_estoque,
-    placa_troca: r.placa_troca,
-    financiado: r.financiado,
-    financeira: r.financeira,
-    valoriza: r.valoriza ?? 0,
-    // Coluna NOT NULL DEFAULT false (migration 042) — mas o fallback `?? false` protege
-    // contra snapshot de localStorage salvo antes da coluna existir (sem o campo no JSON).
-    consignado: r.consignado ?? false,
-  };
-}
+/**
+ * Mapper puro em `@/lib/data/mappers/vendas`. Re-exportado como `toRow` pra reuso em
+ * `scripts/sync-nbs/gravar.ts` (client Node/service-role, sem sessão de browser).
+ */
+export { vendaToRow as toRow };
 
 /** Lista TODAS as vendas (paginando). */
 export async function listVendas(): Promise<VendaParsed[]> {
@@ -191,7 +102,7 @@ export async function upsertVendasCom(
   const unicas = [...porChassi.values()];
   const duplicatasIgnoradas = vendas.length - unicas.length;
 
-  const { comTipo, semTipo } = separarLinhasPorTipoCliente(unicas.map(toRow));
+  const { comTipo, semTipo } = separarLinhasPorTipoCliente(unicas.map(vendaToRow));
   for (const grupo of [comTipo, semTipo]) {
     for (const lote of chunk(grupo, 500)) {
       const { error } = await sb.from("vendas").upsert(lote, { onConflict: "chassi" });

@@ -1,91 +1,21 @@
 "use client";
 
 import type { VeiculoParsed, SnapshotMeta } from "@/lib/parsers/nbs-xlsx";
-import { getSupabase, chunk, selectAll, parseDate } from "./supabase";
+import { getSupabase, chunk, selectAll, parseDate } from "@/lib/data/supabase";
+import {
+  veiculoToRow,
+  veiculoFromRow as fromRow,
+  snapshotMetaFromRow,
+  type VeiculoRow,
+  type EstoqueSnapshotRow,
+} from "@/lib/data/mappers/veiculos";
 import { normalizarIdentificador } from "@/lib/utils/placa";
 
-type VeiculoRow = Omit<VeiculoParsed, "data_entrada"> & {
-  snapshot_id: number;
-  data_entrada: string | null;
-};
-
-/** Exportado pra reuso em `scripts/sync-nbs/gravar.ts` (client Node/service-role, sem sessão de browser). */
-export function toRow(v: VeiculoParsed, snapshotId: number): Record<string, unknown> {
-  return {
-    snapshot_id: snapshotId,
-    cod_empresa: v.cod_empresa,
-    chassi: v.chassi,
-    placa: v.placa,
-    marca: v.marca,
-    modelo: v.modelo,
-    ano_fabricacao: v.ano_fabricacao,
-    ano_modelo: v.ano_modelo,
-    cor_externa: v.cor_externa,
-    combustivel: v.combustivel,
-    km: v.km,
-    patio: v.patio,
-    descricao_situacao: v.descricao_situacao,
-    preco_venda: v.preco_venda,
-    valor_aquisicao: v.valor_aquisicao,
-    custo_total: v.custo_total,
-    dias_patio: v.dias_patio,
-    data_entrada: v.data_entrada?.toISOString() ?? null,
-    vendedor_recebeu: v.vendedor_recebeu,
-    cod_proposta: v.cod_proposta,
-    valoriza: v.valoriza,
-    custo_impostos: v.custo_impostos,
-    custo_revisoes: v.custo_revisoes,
-    custo_holdback: v.custo_holdback,
-    custo_acessorios: v.custo_acessorios,
-    custo_forplan: v.custo_forplan,
-    custo_comissoes: v.custo_comissoes,
-    custo_despesas_gerais: v.custo_despesas_gerais,
-    // custo_adm NÃO entra aqui de propósito — sem CODIGO_CUSTO/TIPO mapeado
-    // (ver VeiculoParsed em nbs-xlsx.ts e migrations 040/048). Omitir a
-    // chave deixa o Postgres gravar NULL (coluna NULLABLE SEM DEFAULT) em
-    // vez de afirmar falsamente "custo zero conhecido".
-  };
-}
-
-function fromRow(r: VeiculoRow): VeiculoParsed {
-  return {
-    cod_empresa: r.cod_empresa,
-    chassi: r.chassi,
-    placa: r.placa,
-    marca: r.marca,
-    modelo: r.modelo,
-    ano_fabricacao: r.ano_fabricacao,
-    ano_modelo: r.ano_modelo,
-    cor_externa: r.cor_externa,
-    combustivel: r.combustivel,
-    km: r.km,
-    patio: r.patio,
-    descricao_situacao: r.descricao_situacao,
-    preco_venda: r.preco_venda,
-    valor_aquisicao: r.valor_aquisicao,
-    custo_total: r.custo_total,
-    dias_patio: r.dias_patio,
-    data_entrada: parseDate(r.data_entrada),
-    vendedor_recebeu: r.vendedor_recebeu,
-    cod_proposta: r.cod_proposta ?? null,
-    valoriza: r.valoriza ?? 0,
-    custo_impostos: r.custo_impostos ?? 0,
-    custo_revisoes: r.custo_revisoes ?? 0,
-    custo_holdback: r.custo_holdback ?? 0,
-    custo_acessorios: r.custo_acessorios ?? 0,
-    custo_forplan: r.custo_forplan ?? 0,
-    custo_comissoes: r.custo_comissoes ?? 0,
-    // custo_despesas_gerais: ATUALIZADO 07/10/2026 (migration 048) — agora
-    // tem fonte automática real (TIPO=9), mesmo contrato "ausência de
-    // lançamento = 0, fato conhecido, nunca null" das outras 5 colunas desta
-    // família. Registros antigos pré-sync ainda podem estar NULL no banco
-    // até o próximo ciclo de sync rodar — daí o fallback ?? 0 aqui.
-    custo_despesas_gerais: r.custo_despesas_gerais ?? 0,
-    // custo_adm: leitura direta, SEM fallback pra 0 — NULL aqui significa
-    // "não apurado" (ver nota em VeiculoParsed), nunca "zero conhecido".
-    custo_adm: r.custo_adm ?? null,
-  };
-}
+/**
+ * Mapper puro em `@/lib/data/mappers/veiculos`. Re-exportado como `toRow` pra reuso em
+ * `scripts/sync-nbs/gravar.ts` (client Node/service-role, sem sessão de browser).
+ */
+export { veiculoToRow as toRow };
 
 /** Lista veículos do snapshot mais recente (via view veiculos_atual). */
 export async function listVeiculosAtual(): Promise<VeiculoParsed[]> {
@@ -105,12 +35,7 @@ export async function getMetaAtual(): Promise<SnapshotMeta | null> {
     .maybeSingle();
   if (error) throw new Error(`getMetaAtual: ${error.message}`);
   if (!data) return null;
-  return {
-    arquivo_nome: data.arquivo_nome,
-    data_geracao: parseDate(data.data_geracao),
-    total_veiculos: data.total_veiculos ?? 0,
-    total_lojas: data.total_lojas ?? 0,
-  };
+  return snapshotMetaFromRow(data as EstoqueSnapshotRow);
 }
 
 /**
@@ -139,7 +64,7 @@ export async function inserirEstoqueSnapshot(
   const snapshotId = snap.id as number;
 
   // 2) Insere veículos em lote
-  for (const lote of chunk(veiculos.map((v) => toRow(v, snapshotId)), 500)) {
+  for (const lote of chunk(veiculos.map((v) => veiculoToRow(v, snapshotId)), 500)) {
     const { error } = await sb.from("veiculos").insert(lote);
     if (error) throw new Error(`inserir veículos (snapshot ${snapshotId}): ${error.message}`);
   }
