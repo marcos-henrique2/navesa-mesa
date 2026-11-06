@@ -14,6 +14,7 @@
 | P3 | O Claude **não** recebe Bash, Write, Edit nem shell. Só ferramentas de leitura de dados. |
 | P4 | Fatia 1 = reativar a aba Chat IA com acesso ao estoque completo e às vendas. WhatsApp (Evolution + n8n) e relatórios XLSX/PDF vêm depois. |
 | P5 | Ambiente 1: PC Windows do Marcos (Docker Desktop 28) + `npm run dev` local. Ambiente 2: VPS. A Vercel não roda o CLI. |
+| P6 | **Q3 decidida pelo Marcos (06/11/2026):** modelo padrão **Haiku 5.5** (`claude-haiku-5-5`, `modelo: "rapido"`); **Sonnet 5.5** (`claude-sonnet-5-5`, `modelo: "avancado"`) só sob demanda. Configurável por `CEREBRO_MODELO_RAPIDO` / `CEREBRO_MODELO_AVANCADO`. |
 
 ### O que o código atual mostra (base do desenho)
 
@@ -127,13 +128,13 @@ Se a Dara vetar D (por exemplo, por limitação do pooler para roles customizada
 | `disallowedTools` | `Bash, Write, Edit, MultiEdit, NotebookEdit, Read, Glob, Grep, WebFetch, WebSearch, Task, TodoWrite, KillShell, BashOutput` e qualquer built-in novo | Defesa em profundidade. Sem leitura de filesystem: nem os arquivos do próprio container |
 | conjunto de tools built-in (`tools` / preset, se a versão suportar) | vazio | Melhor que só negar: as built-ins nem são registradas |
 | `canUseTool` | callback **deny-by-default**: aprova só nomes com prefixo `mcp__navesa__` que estejam no perfil do token | Garante a regra mesmo se uma flag acima mudar de nome numa atualização |
-| `permissionMode` | `default` (com `canUseTool` decidindo). **Nunca** `bypassPermissions` nem `acceptEdits` | O core-os usa `acceptEdits`, e é justamente o que não queremos |
+| `permissionMode` | `dontAsk` (nega o que não estiver em `allowedTools`), mais hook `PreToolUse` programático que nega tudo fora de `mcp__navesa__*` / MCP não-`sdk`, e `canUseTool` exigindo `mcpServer.source === "sdk"` como última rede. **Nunca** `bypassPermissions` nem `acceptEdits` | O core-os usa `acceptEdits`, e é justamente o que não queremos. `canUseTool` sozinho só roda quando o CLI pediria permissão |
 | `settingSources` | `[]` | Não carrega `~/.claude/settings.json`, CLAUDE.md, hooks, plugins nem MCPs do usuário |
 | `mcpServers` | só `navesa` (in-process), com `strictMcpConfig` se existir | Nenhum MCP externo |
 | `systemPrompt` | string própria (persona "gerente sênior" migrada do `route.ts`), **não** o preset `claude_code` | Sem instruções de agente de código |
 | `cwd` | diretório vazio e read-only (`/srv/cerebro/empty`) | Mesmo sem tools de arquivo, nada útil por perto |
 | `maxTurns` | ~12 | Limita loops de tool |
-| `model` | `sonnet` por padrão (Q3) | Cota da assinatura |
+| `model` | Haiku 5.5 por padrão; Sonnet 5.5 sob demanda (P6/Q3) | Cota da assinatura |
 | `abortController` | ligado ao timeout e ao disconnect do cliente | Libera o slot quando o usuário fecha a aba |
 
 Env do container: `DISABLE_AUTOUPDATER=1`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, `DISABLE_TELEMETRY=1`, `DISABLE_ERROR_REPORTING=1`. A versão do CLI fica **pinada** na imagem: atualização é rebuild consciente, não autoupdate.
@@ -376,7 +377,7 @@ Fora da fatia 1 (de propósito): leads/CRM, repasses e interessados, fila de Wha
 |---|---|---|---|---|
 | R1 | **Termos de uso da assinatura.** A assinatura (Pro/Max) é de uso pessoal. Usar o login dela por trás de um produto acessado por outras pessoas (gerentes das lojas, e depois clientes no WhatsApp) pode violar os termos da Anthropic. As regras da Anthropic para o Agent SDK pedem API key para produtos de terceiros | Média | **Alto** (bloqueio da conta pessoal do Marcos) | Decisão do Marcos (Q1). Desenho pronto para trocar só a credencial: a opção do SDK aceita API key sem mudar nada do resto. Sugestão: assinatura apenas para uso do próprio Marcos/piloto; API key (ou plano Team/Enterprise) antes de abrir para a equipe ou o WhatsApp |
 | R2 | Login OAuth no container: refresh do token, compatibilidade com rootfs read-only, mudanças de versão do CLI | Média | Médio (chat cai para o fallback) | Volume gravável só em `~/.claude`, CLI pinado, `/v1/health` com `claudeLogado`, plano B `CLAUDE_CODE_OAUTH_TOKEN` |
-| R3 | **Cota da assinatura compartilhada** com o uso do Marcos no Claude Code (janela de 5h e limite semanal). Um dia de muitas perguntas trava o trabalho dele, ou o contrário | Alta | Médio | Modelo Sonnet por default, `maxTurns`, rate limit Upstash mantido, erro `limite_assinatura` → fallback automático (`auto`) |
+| R3 | **Cota da assinatura compartilhada** com o uso do Marcos no Claude Code (janela de 5h e limite semanal). Um dia de muitas perguntas trava o trabalho dele, ou o contrário | Alta | Médio | Modelo Haiku 5.5 por default (Sonnet 5.5 sob demanda), `maxTurns`, rate limit Upstash mantido, erro `limite_assinatura` → fallback automático (`auto`) |
 | R4 | Divergência de números entre chat e telas | Média | **Crítico** (regra centavo-perfect) | Refactor 1a (`preparar-datasets` + mappers compartilhados). Teste que compara `resumo_executivo` do cérebro com `montarBundle` do client sobre os mesmos fixtures |
 | R5 | Produção depende do PC do Marcos ligado (túnel) | Alta enquanto estiver no PC | Médio | `CHAT_BACKEND=auto` → fallback para providers. Migrar para VPS na fatia 2 |
 | R6 | Timeout na Vercel: o agente com várias tools pode passar de 90-120s | Média | Médio | Timeout de 110s no cérebro, `maxTurns`, tools agregadas (não forçar o modelo a paginar). Conferir o teto de `maxDuration` do plano Vercel |
@@ -391,7 +392,7 @@ Fora da fatia 1 (de propósito): leads/CRM, repasses e interessados, fila de Wha
 
 - **Q1 (bloqueante para abrir a outros usuários):** quem vai usar o chat na fatia 1? Só você (piloto pessoal) ou os gerentes também? Considerando R1, você aceita o plano "assinatura no piloto, API key ou plano empresarial antes de abrir para a equipe ou o WhatsApp"?
 - **Q2:** em produção (Vercel), na fase do PC, prefere **Cloudflare Tunnel** (recomendado: sem porta aberta, TLS automático, mesmo arranjo depois na VPS; exige um domínio na Cloudflare) ou **Tailscale Funnel**? Ou fica só no `npm run dev` local até existir a VPS?
-- **Q3:** modelo padrão: **Sonnet** (recomendado pela cota) com Opus só sob demanda ("análise completa"), ou Opus sempre?
+- ~~**Q3:** modelo padrão: **Sonnet** (recomendado pela cota) com Opus só sob demanda ("análise completa"), ou Opus sempre?~~ **Decidida (06/11/2026): Haiku 5.5 padrão, Sonnet 5.5 sob demanda** (ver P6 no §0).
 - **Q4:** aprova a role Postgres read-only `cerebro_leitor` (opção D, migration nova pela Dara) em vez do `service_role` no container?
 - **Q5:** o chat precisa ver **nome de cliente** nas vendas (útil para "clientes recorrentes") ou podemos esconder nome, CPF de vendedor e renavam?
 - **Q6:** "comparação FIPE" em **vendas já realizadas** é obrigatória na fatia 1, ou basta o estoque? (A cobertura de FIPE para vendidos pode ser baixa.)
