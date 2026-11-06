@@ -16,7 +16,9 @@
  *  3. Conferência final: `count(*)` do snapshot no banco tem que ser igual ao que foi lido.
  *  4. Qualquer falha (lote esgotou tentativas, erro não-retentável, contagem divergente) →
  *     DELETE do snapshot recém-criado (o `on delete cascade` de `veiculos.snapshot_id`
- *     leva junto o que entrou), e o snapshot anterior volta a ser o `max(id)`.
+ *     leva junto o que entrou), com o mesmo retry em timeout e confirmação via RETURNING;
+ *     o snapshot anterior volta a ser o `max(id)`.
+ *  5. Lista vazia é recusada antes de criar o snapshot (publicaria estoque vazio).
  *
  * Limite conhecido: entre o INSERT do snapshot e o último lote (segundos), `veiculos_atual`
  * já aponta pro snapshot novo, ainda parcial. Fechar essa janela exige mudar a view
@@ -51,21 +53,40 @@ export function ehErroDeTimeout(error: ErroPostgrest): boolean {
 
 const dormir = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-async function inserirLoteComRetry(
-  sb: SupabaseClient,
-  lote: Record<string, unknown>[],
-  maxTentativas: number,
-  backoffBaseMs: number,
-  esperar: (ms: number) => Promise<void>,
-): Promise<void> {
+type ConfigRetry = { maxTentativas: number; backoffBaseMs: number; esperar: (ms: number) => Promise<void> };
+
+/**
+ * Repete `executar` enquanto o erro for timeout (57014), com backoff exponencial.
+ * Retorna `null` no sucesso ou a mensagem do último erro (com a tentativa).
+ */
+async function comRetryEmTimeout(
+  executar: () => PromiseLike<{ error: ErroPostgrest | null }>,
+  { maxTentativas, backoffBaseMs, esperar }: ConfigRetry,
+): Promise<string | null> {
   for (let tentativa = 1; ; tentativa++) {
-    const { error } = await sb.from("veiculos").insert(lote);
-    if (!error) return;
+    const { error } = await executar();
+    if (!error) return null;
     if (!ehErroDeTimeout(error) || tentativa >= maxTentativas) {
-      throw new Error(`${error.message} (tentativa ${tentativa}/${maxTentativas})`);
+      return `${error.message} (tentativa ${tentativa}/${maxTentativas})`;
     }
     await esperar(backoffBaseMs * 2 ** (tentativa - 1));
   }
+}
+
+/**
+ * Rollback: apaga o snapshot (cascade leva os veículos). Mesmo retry em timeout dos
+ * inserts — o DELETE roda sob a mesma carga que derrubou o insert. `.select("id")`
+ * confirma que a linha saiu de fato. Retorna `null` se removeu, ou o motivo da falha.
+ */
+async function removerSnapshot(sb: SupabaseClient, snapshotId: number, retry: ConfigRetry): Promise<string | null> {
+  let removidas = 0;
+  const falha = await comRetryEmTimeout(async () => {
+    const { data, error } = await sb.from("estoque_snapshots").delete().eq("id", snapshotId).select("id");
+    removidas = data?.length ?? 0;
+    return { error };
+  }, retry);
+  if (falha) return falha;
+  return removidas > 0 ? null : "DELETE não removeu nenhuma linha";
 }
 
 async function contarVeiculosDoSnapshot(sb: SupabaseClient, snapshotId: number): Promise<number> {
@@ -89,10 +110,15 @@ export async function gravarSnapshotEstoque(
   prefixoErro: string,
   opcoes: OpcoesGravacaoSnapshot = {},
 ): Promise<{ snapshotId: number; inseridos: number }> {
+  if (veiculos.length === 0) {
+    throw new Error(`${prefixoErro}: lista de veículos vazia — snapshot não criado (publicaria estoque vazio).`);
+  }
   const tamanhoLote = opcoes.tamanhoLote ?? TAMANHO_LOTE_VEICULOS;
-  const maxTentativas = opcoes.maxTentativas ?? MAX_TENTATIVAS_LOTE;
-  const backoffBaseMs = opcoes.backoffBaseMs ?? BACKOFF_BASE_MS;
-  const esperar = opcoes.esperar ?? dormir;
+  const retry: ConfigRetry = {
+    maxTentativas: opcoes.maxTentativas ?? MAX_TENTATIVAS_LOTE,
+    backoffBaseMs: opcoes.backoffBaseMs ?? BACKOFF_BASE_MS,
+    esperar: opcoes.esperar ?? dormir,
+  };
 
   const { data: snap, error: snapErr } = await sb
     .from("estoque_snapshots")
@@ -114,12 +140,8 @@ export async function gravarSnapshotEstoque(
       tamanhoLote,
     );
     for (const [i, lote] of lotes.entries()) {
-      try {
-        await inserirLoteComRetry(sb, lote, maxTentativas, backoffBaseMs, esperar);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        throw new Error(`lote ${i + 1}/${lotes.length}: ${msg}`);
-      }
+      const falha = await comRetryEmTimeout(() => sb.from("veiculos").insert(lote), retry);
+      if (falha) throw new Error(`lote ${i + 1}/${lotes.length}: ${falha}`);
     }
 
     const gravados = await contarVeiculosDoSnapshot(sb, snapshotId);
@@ -128,10 +150,10 @@ export async function gravarSnapshotEstoque(
     }
   } catch (err) {
     const motivo = err instanceof Error ? err.message : String(err);
-    const { error: delErr } = await sb.from("estoque_snapshots").delete().eq("id", snapshotId);
-    if (delErr) {
+    const falhaRollback = await removerSnapshot(sb, snapshotId, retry);
+    if (falhaRollback) {
       throw new Error(
-        `${prefixoErro} (snapshot ${snapshotId}): ${motivo} — CRÍTICO: rollback falhou (${delErr.message}); ` +
+        `${prefixoErro} (snapshot ${snapshotId}): ${motivo} — CRÍTICO: rollback falhou (${falhaRollback}); ` +
           `snapshot incompleto continua publicado em veiculos_atual, apagar manualmente.`,
       );
     }

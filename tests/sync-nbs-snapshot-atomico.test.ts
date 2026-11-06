@@ -18,12 +18,17 @@ type Linha = Record<string, unknown>;
 function bancoFalso(opts: {
   falharInsertVeiculos?: (chamada: number) => Erro | null;
   contagemForcada?: number;
-  falharDeleteSnapshot?: Erro;
+  /** Erro da n-ésima chamada de DELETE em `estoque_snapshots` (1-based). */
+  falharDeleteSnapshot?: (chamada: number) => Erro | null;
+  /** DELETE "passa" sem erro mas não remove nada (RETURNING vazio). */
+  deleteNaoRemove?: boolean;
 } = {}) {
   const snapshots: Linha[] = [];
   let veiculos: Linha[] = [];
   let proximoId = 394;
   let chamadasInsertVeiculos = 0;
+  let chamadasDeleteSnapshot = 0;
+  let chamadasInsertSnapshot = 0;
   const lotes: number[] = [];
   let falharInsert = opts.falharInsertVeiculos;
 
@@ -32,19 +37,28 @@ function bancoFalso(opts: {
       if (tabela === "estoque_snapshots") {
         return {
           insert(row: Linha) {
+            chamadasInsertSnapshot++;
             const id = proximoId++;
             snapshots.push({ ...row, id });
             return { select: () => ({ single: async () => ({ data: { id }, error: null }) }) };
           },
           delete() {
             return {
-              async eq(col: string, val: unknown) {
+              eq(col: string, val: unknown) {
                 assert.equal(col, "id");
-                if (opts.falharDeleteSnapshot) return { error: opts.falharDeleteSnapshot };
-                const i = snapshots.findIndex((s) => s.id === val);
-                if (i >= 0) snapshots.splice(i, 1);
-                veiculos = veiculos.filter((v) => v.snapshot_id !== val); // cascade
-                return { error: null };
+                return {
+                  async select(retorno: string) {
+                    assert.equal(retorno, "id");
+                    chamadasDeleteSnapshot++;
+                    const erro = opts.falharDeleteSnapshot?.(chamadasDeleteSnapshot) ?? null;
+                    if (erro) return { data: null, error: erro };
+                    if (opts.deleteNaoRemove) return { data: [], error: null };
+                    const i = snapshots.findIndex((s) => s.id === val);
+                    const removidas = i >= 0 ? snapshots.splice(i, 1) : [];
+                    veiculos = veiculos.filter((v) => v.snapshot_id !== val); // cascade
+                    return { data: removidas.map((r) => ({ id: r.id })), error: null };
+                  },
+                };
               },
             };
           },
@@ -87,6 +101,8 @@ function bancoFalso(opts: {
     veiculosAtual,
     lotes,
     chamadas: () => chamadasInsertVeiculos,
+    chamadasDelete: () => chamadasDeleteSnapshot,
+    chamadasInsertSnapshot: () => chamadasInsertSnapshot,
     setFalharInsert: (f: (chamada: number) => Erro | null) => {
       falharInsert = f;
     },
@@ -171,12 +187,53 @@ describe("gravarVeiculosNode — snapshot atômico (incidente 06/11/2026)", () =
     assert.equal(db.snapshots.length, 0);
   });
 
-  it("rollback que falha vira erro CRÍTICO explícito (pra sync_log)", async () => {
-    const db = bancoFalso({ falharInsertVeiculos: () => TIMEOUT, falharDeleteSnapshot: { message: "rede caiu" } });
+  it("rollback que falha (erro não-timeout) vira erro CRÍTICO explícito (pra sync_log)", async () => {
+    const db = bancoFalso({ falharInsertVeiculos: () => TIMEOUT, falharDeleteSnapshot: () => ({ message: "rede caiu" }) });
     await assert.rejects(
       gravarVeiculosNode(db.sb, estoque(5), meta(5), semEspera),
-      /CRÍTICO: rollback falhou \(rede caiu\)/,
+      /CRÍTICO: rollback falhou \(rede caiu \(tentativa 1\/3\)\)/,
     );
+    assert.equal(db.chamadasDelete(), 1);
+  });
+
+  it("DELETE de rollback com timeout 1x é repetido com backoff e remove o snapshot", async () => {
+    const esperas: number[] = [];
+    const db = bancoFalso({
+      falharInsertVeiculos: (n) => (n >= 2 ? { code: "23505", message: "duplicate key value" } : null),
+      falharDeleteSnapshot: (n) => (n === 1 ? TIMEOUT : null),
+    });
+    await assert.rejects(
+      gravarVeiculosNode(db.sb, estoque(600), meta(600), { esperar: async (ms) => void esperas.push(ms) }),
+      /snapshot removido \(rollback\)/,
+    );
+    assert.equal(db.chamadasDelete(), 2);
+    assert.deepEqual(esperas, [1000]);
+    assert.equal(db.snapshots.length, 0);
+    assert.equal(db.veiculosAtual().length, 0);
+  });
+
+  it("DELETE de rollback com timeout persistente esgota tentativas e vira CRÍTICO", async () => {
+    const db = bancoFalso({ falharInsertVeiculos: () => TIMEOUT, falharDeleteSnapshot: () => TIMEOUT });
+    await assert.rejects(
+      gravarVeiculosNode(db.sb, estoque(5), meta(5), semEspera),
+      /CRÍTICO: rollback falhou \(canceling statement due to statement timeout \(tentativa 3\/3\)\)/,
+    );
+    assert.equal(db.chamadasDelete(), 3);
+  });
+
+  it("DELETE sem erro mas sem linha removida (RETURNING vazio) é rollback falho → CRÍTICO", async () => {
+    const db = bancoFalso({ falharInsertVeiculos: () => TIMEOUT, deleteNaoRemove: true });
+    await assert.rejects(
+      gravarVeiculosNode(db.sb, estoque(5), meta(5), semEspera),
+      /CRÍTICO: rollback falhou \(DELETE não removeu nenhuma linha\)/,
+    );
+  });
+
+  it("lista vazia é recusada antes de criar o snapshot", async () => {
+    const db = bancoFalso();
+    await assert.rejects(gravarVeiculosNode(db.sb, [], meta(0), semEspera), /lista de veículos vazia — snapshot não criado/);
+    assert.equal(db.chamadasInsertSnapshot(), 0);
+    assert.equal(db.snapshots.length, 0);
   });
 });
 

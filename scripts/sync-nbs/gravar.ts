@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { VendaParsed } from "../../src/lib/parsers/nbs-vendas-xlsx";
 import type { VeiculoParsed, SnapshotMeta } from "../../src/lib/parsers/nbs-xlsx";
 import { toRow as vendaToRow } from "../../src/lib/data/vendas";
-import { gravarSnapshotEstoque, type OpcoesGravacaoSnapshot } from "../../src/lib/data/snapshot-estoque";
+import { gravarSnapshotEstoque, type OpcoesGravacaoSnapshot } from "@/lib/data/snapshot-estoque";
 import { chunk } from "../../src/lib/data/supabase";
 
 /**
