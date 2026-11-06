@@ -425,8 +425,12 @@ end $$;
 --     'custos_estoque_detalhado','fipe_batch','lojas','cautelar','veiculos_flags','sync_log'] loop
 --     execute format('drop policy if exists "cerebro_leitor_select" on public.%I', t);
 --   end loop; end $$;
+-- grant cerebro_leitor to postgres;  -- necessário: o postgres do Supabase não é superuser e,
+--                                    -- sem ser membro da role, o drop owned falha com
+--                                    -- "permission denied to drop objects".
 -- drop owned by cerebro_leitor;   -- remove todos os grants (tabela e coluna) da role
 -- drop role cerebro_leitor;
+-- Parada de emergência sem desfazer nada: alter role cerebro_leitor nologin;
 -- -- Os REVOKE de PUBLIC da seção 2b NÃO precisam ser desfeitos: anon/authenticated/
 -- -- service_role receberam GRANT explícito equivalente. Se quiser o estado exato
 -- -- anterior: grant execute on function <f> to public; para as funções listadas
