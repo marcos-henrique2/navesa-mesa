@@ -22,7 +22,7 @@
  */
 
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
-import type { StatusCautelar } from "@/lib/inventory/cautelar";
+import type { StatusCautelar } from "@/lib/inventory/cautelar-tipos";
 
 export type Classe = "A" | "B" | "C" | "D" | "E";
 export type Canal = "showroom" | "repasse";

@@ -12,11 +12,11 @@
 import type { VendaParsed } from "@/lib/parsers/nbs-vendas-xlsx";
 import type { CustoDetalhado } from "@/lib/parsers/nbs-custos-xls";
 import type { VeiculoParsed } from "@/lib/parsers/nbs-xlsx";
-import type { BatchResult } from "@/lib/fipe/batch";
-import { calcularDesvioFipe, precoFipeConfiavel } from "@/lib/fipe/batch";
+import type { BatchResult } from "@/lib/fipe/batch-tipos";
+import { calcularDesvioFipe, precoFipeConfiavel } from "@/lib/fipe/confianca";
 import { calcMargemVenda } from "./margem";
 import { classificarVeiculo } from "@/lib/pricing/classificacao";
-import type { StatusCautelar } from "@/lib/inventory/cautelar";
+import type { StatusCautelar } from "@/lib/inventory/cautelar-tipos";
 import { indexarClientes, chaveCliente, detectarLojista } from "./clientes";
 
 // ─────────────────────────────────────────────────────────────────────────────

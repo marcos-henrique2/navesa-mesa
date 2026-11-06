@@ -1,0 +1,32 @@
+# Cérebro Navesa — PC do Marcos (Docker Desktop). Ver cerebro/README.md.
+#   docker compose -f cerebro/docker-compose.yml up -d --build
+name: navesa-cerebro
+
+services:
+  cerebro:
+    build:
+      context: ..
+      dockerfile: cerebro/Dockerfile
+    image: navesa-cerebro:local
+    env_file: ./.env
+    # Só no loopback do PC: nada na LAN. Na VPS: sem porta publicada (rede interna + túnel).
+    ports:
+      - "127.0.0.1:8787:8787"
+    volumes:
+      # Login da ASSINATURA do Claude (credencial). Backup deste volume = backup de segredo.
+      - cerebro-claude-home:/home/cerebro
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 2g
+    cpus: 2
+    init: true
+    stop_grace_period: 15s
+    restart: unless-stopped
+
+volumes:
+  cerebro-claude-home:

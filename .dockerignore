@@ -1,0 +1,12 @@
+# Contexto de build do cérebro (cerebro/Dockerfile) é a raiz do repo.
+# Allowlist: só entra o que a imagem usa. Nada de .env*, node_modules, .next, samples.
+*
+!src/lib/**
+!cerebro/package.json
+!cerebro/package-lock.json
+!cerebro/tsconfig.json
+!cerebro/build.mjs
+!cerebro/src/**
+**/.env*
+**/node_modules
+**/*.test.ts

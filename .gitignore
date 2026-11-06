@@ -33,6 +33,7 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 !.env.local.example
+!cerebro/.env.example
 
 # scripts locais (contêm queries/credenciais lidas do .env.local; não publicar)
 scripts/**/*.local.*
@@ -44,3 +45,7 @@ scripts/**/*.local.*
 *.tsbuildinfo
 next-env.d.ts
 samples/
+
+# cérebro (pacote Node em cerebro/)
+/cerebro/node_modules
+/cerebro/dist
