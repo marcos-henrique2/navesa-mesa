@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Cérebro: pacote Node próprio (cerebro/package.json). O código-fonte é
+    // linted por aqui; build e deps ficam de fora.
+    "cerebro/dist/**",
+    "cerebro/node_modules/**",
   ]),
 ]);
 

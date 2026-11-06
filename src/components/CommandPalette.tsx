@@ -19,13 +19,18 @@ const ATALHOS: ResultItem[] = [
   { tipo: "atalho", rota: "/chat", label: "Chat IA", icone: <MessageSquare className="h-4 w-4" /> },
 ];
 
-export function CommandPalette() {
+export function CommandPalette({ chatHabilitado }: { chatHabilitado: boolean }) {
   const router = useRouter();
   const { veiculos, vendas } = useInventory();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [activeIdx, setActiveIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  // "Chat IA" só com o cérebro ligado (mesma regra do menu lateral).
+  const atalhos = useMemo(
+    () => (chatHabilitado ? ATALHOS : ATALHOS.filter((a) => a.tipo !== "atalho" || a.rota !== "/chat")),
+    [chatHabilitado],
+  );
 
   // Abre com Ctrl+K / Cmd+K + escuta CustomEvent disparado pelo botão do header
   useEffect(() => {
@@ -66,7 +71,7 @@ export function CommandPalette() {
   }, [open]);
 
   const resultados = useMemo<ResultItem[]>(() => {
-    if (!q.trim()) return ATALHOS;
+    if (!q.trim()) return atalhos;
     const query = q.toLowerCase();
     const items: ResultItem[] = [];
 
@@ -108,14 +113,14 @@ export function CommandPalette() {
     }
 
     // Atalhos que casam
-    for (const a of ATALHOS) {
+    for (const a of atalhos) {
       if (a.tipo === "atalho" && a.label.toLowerCase().includes(query)) {
         items.push(a);
       }
     }
 
     return items.slice(0, 25);
-  }, [q, veiculos, vendas]);
+  }, [q, veiculos, vendas, atalhos]);
 
   function selecionar(idx: number) {
     const r = resultados[idx];

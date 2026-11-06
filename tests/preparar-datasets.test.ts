@@ -833,6 +833,13 @@ test("módulos puros: sem 'use client', React, zustand, browser ou Supabase — 
     "lib/data/mappers/veiculos-flags.ts",
     "lib/fipe/batch-tipos.ts",
     "lib/inventory/cautelar-tipos.ts",
+    // Usados pelo cérebro (cerebro/src/tools): margem canônica, insights e helpers.
+    "lib/analytics/insights.ts",
+    "lib/analytics/margem.ts",
+    "lib/fipe/confianca.ts",
+    "lib/inventory/status.ts",
+    "lib/inventory/reservado.ts",
+    "lib/pricing/classificacao.ts",
   ].map((f) => join(RAIZ_SRC, f));
   const proibidos = [
     /^\s*["']use client["']/m,

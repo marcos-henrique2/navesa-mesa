@@ -14,6 +14,9 @@ import {
 } from "@/lib/data/chat";
 import { cn } from "@/lib/utils";
 
+/** Backend do /api/chat (GET /api/chat). */
+type ChatBackend = "providers" | "cerebro" | "auto";
+
 type ChatMessage = {
   id?: number;
   role: "user" | "assistant";
@@ -54,6 +57,19 @@ export function Chat() {
   const [bloqueioSeg, setBloqueioSeg] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [backend, setBackend] = useState<ChatBackend | null>(null);
+
+  // Qual backend o servidor usa. No modo "cerebro" o cérebro lê os dados direto do
+  // banco: o browser não precisa ter o bundle nem enviá-lo. Falha → assume providers.
+  useEffect(() => {
+    let cancelado = false;
+    fetch("/api/chat")
+      .then((r) => (r.ok ? (r.json() as Promise<{ backend?: ChatBackend }>) : null))
+      .then((j) => { if (!cancelado) setBackend(j?.backend ?? "providers"); })
+      .catch(() => { if (!cancelado) setBackend("providers"); });
+    return () => { cancelado = true; };
+  }, []);
+  const usaCerebro = backend === "cerebro" || backend === "auto";
 
   // Countdown do rate limit — interval único pro lifetime do componente.
   // Decrementa via callback (sem dep em bloqueioSeg) — evita recriar setInterval
@@ -90,6 +106,8 @@ export function Chat() {
   // providers free (Groq 6k tok/min, Gemini 250k tok/min mas esgota rápido,
   // DeepSeek 64k context). A compacta fica ~8k tokens.
   const bundleCompacto = useMemo(() => (bundle ? compactarBundle(bundle) : null), [bundle]);
+  // Com o cérebro dá pra perguntar mesmo sem o bundle carregado no browser.
+  const podeEnviar = !!bundle || usaCerebro;
 
   const periodo = useMemo(
     () => ({
@@ -141,13 +159,18 @@ export function Chat() {
         method: "POST",
         headers: { "content-type": "application/json" },
         signal: ac.signal,
-        body: JSON.stringify({ messages: payloadMessages, bundle: bundleCompacto, periodo }),
+        // "cerebro": sem bundle (o cérebro lê do banco). "auto": manda o bundle para o fallback.
+        body: JSON.stringify(
+          backend === "cerebro"
+            ? { messages: payloadMessages, periodo }
+            : { messages: payloadMessages, bundle: bundleCompacto, periodo },
+        ),
       });
 
       if (!resp.ok) {
         let errMsg = `HTTP ${resp.status}`;
         try {
-          const j = (await resp.json()) as { error?: string; retryAfter?: number | null; providers_tentados?: string[] };
+          const j = (await resp.json()) as { error?: string; codigo?: string; retryAfter?: number | null; providers_tentados?: string[] };
           if (j.error) errMsg = j.error;
           if (resp.status === 429) {
             // Rate limit do nosso /api/chat (Upstash). Header `retry-after` é fonte oficial,
@@ -158,6 +181,9 @@ export function Chat() {
               : (j.retryAfter ?? 60);
             setBloqueioSeg(seg);
             errMsg = j.error ?? `Você atingiu o limite de mensagens por minuto. Aguarde ${seg}s.`;
+          } else if (j.codigo) {
+            // Erro do cérebro: a mensagem do servidor já é específica (sem login, cota, ocupado…).
+            errMsg = j.error ?? errMsg;
           } else if (resp.status === 503 && j.retryAfter) {
             errMsg = `Todos os modelos de IA atingiram limite temporário. Tente de novo em ~${j.retryAfter} segundos. (${j.providers_tentados?.join(" → ") ?? ""})`;
           } else if (resp.status === 503) {
@@ -263,6 +289,8 @@ export function Chat() {
               <strong className="text-[var(--text-strong)]">{periodo.inicio}</strong> →{" "}
               <strong className="text-[var(--text-strong)]">{periodo.fim}</strong>
             </span>
+          ) : usaCerebro ? (
+            <span>Consultando os dados direto no banco da Navesa</span>
           ) : (
             <span className="text-amber-700">
               Sem dados — suba os relatórios em{" "}
@@ -285,7 +313,7 @@ export function Chat() {
       {/* Mensagens */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto bg-[var(--bg-app)] px-4 py-6">
         {messages.length === 0 ? (
-          <EmptyState onPick={(q) => send(q)} disabled={!bundle} />
+          <EmptyState onPick={(q) => send(q)} disabled={!podeEnviar} usaCerebro={usaCerebro} />
         ) : (
           <div className="mx-auto max-w-3xl space-y-4">
             {messages.map((m, i) => (
@@ -327,11 +355,11 @@ export function Chat() {
                 send(input);
               }
             }}
-            disabled={!bundle || streaming || bloqueioSeg > 0}
+            disabled={!podeEnviar || streaming || bloqueioSeg > 0}
             placeholder={
               bloqueioSeg > 0
                 ? `Aguarde ${bloqueioSeg}s — limite de mensagens por minuto atingido`
-                : bundle
+                : podeEnviar
                 ? "Pergunte sobre vendas, estoque, lojas, modelos…"
                 : "Suba os relatórios primeiro"
             }
@@ -340,7 +368,7 @@ export function Chat() {
           />
           <button
             type="submit"
-            disabled={!bundle || streaming || !input.trim() || bloqueioSeg > 0}
+            disabled={!podeEnviar || streaming || !input.trim() || bloqueioSeg > 0}
             className="inline-flex h-9 items-center gap-1 rounded-lg bg-[var(--brand-700)] px-3 text-sm font-medium text-white shadow-sm transition hover:bg-[var(--brand-800)] disabled:bg-[var(--bg-muted)] disabled:text-[var(--text-subtle)]"
           >
             <Send className="h-4 w-4" />
@@ -504,7 +532,7 @@ function MdTable({ rows }: { rows: string[][] }) {
   );
 }
 
-function EmptyState({ onPick, disabled }: { onPick: (q: string) => void; disabled: boolean }) {
+function EmptyState({ onPick, disabled, usaCerebro }: { onPick: (q: string) => void; disabled: boolean; usaCerebro: boolean }) {
   return (
     <div className="mx-auto max-w-2xl text-center">
       <div className="mx-auto mb-3 inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[var(--brand-100)] to-[var(--brand-50)] text-[var(--brand-700)] dark:from-[var(--brand-800)]/60 dark:to-[var(--brand-900)]/40 dark:text-[var(--brand-300)]">
@@ -512,7 +540,9 @@ function EmptyState({ onPick, disabled }: { onPick: (q: string) => void; disable
       </div>
       <h2 className="text-xl font-bold text-[var(--text-strong)]">Pergunte sobre seus dados</h2>
       <p className="mt-2 text-sm text-[var(--text-muted)]">
-        Eu uso os 3 relatórios que você já subiu (estoque, vendas, custos) pra responder em linguagem natural.
+        {usaCerebro
+          ? "Eu consulto o estoque completo, as vendas e os custos direto no banco da Navesa pra responder em linguagem natural."
+          : "Eu uso os 3 relatórios que você já subiu (estoque, vendas, custos) pra responder em linguagem natural."}
       </p>
       {!disabled && (
         <div className="mt-6 grid gap-2 text-left sm:grid-cols-2">
