@@ -673,6 +673,82 @@ test("vendas sem colunas restritas (role cerebro_leitor): mapper não quebra e m
   assert.equal(comNull.cliente_nome, "CLIENTE TESTE");
 });
 
+/** Cópia literal de `clientesRecorrentes` antes do marcador `cliente_pii_ausente` (575b3c0). */
+function legadoClientesRecorrentes(vendas: VendaParsed[], custosPorPlaca: DatasetsPreparados["custosPorPlaca"], min: number) {
+  const map = new Map<
+    string,
+    { nome: string; codigo: string | null; tipo: "PF" | "PJ" | "?"; qt: number; valor: number; margem: number }
+  >();
+  for (const v of vendas) {
+    const k = v.cliente_codigo?.trim() || `__sem_doc__${v.cliente_nome ?? ""}`;
+    if (!map.has(k)) {
+      map.set(k, { nome: v.cliente_nome ?? "?", codigo: v.cliente_codigo, tipo: v.cliente_tipo ?? "?", qt: 0, valor: 0, margem: 0 });
+    }
+    const r = map.get(k)!;
+    const m = calcMargemVenda(v, custosPorPlaca);
+    r.qt++;
+    r.valor += m.valor;
+    r.margem += m.margem;
+  }
+  return [...map.values()]
+    .filter((c) => c.qt >= min)
+    .map((c) => ({ nome: c.nome, codigo: c.codigo, tipo: c.tipo, qt: c.qt, faturamento: c.valor, margem: c.margem }))
+    .sort((a, b) => b.qt - a.qt);
+}
+
+/** Vendas de clientes distintos + 2 vendas reais "(sem nome)"/sem código (acontece no parser NBS). */
+function linhasClientes(): LinhasBrutas {
+  const vazio = linhasFixture();
+  return {
+    ...vazio,
+    vendas: [
+      vendaRow({ chassi: "K1", placa: "KKK1K11", cliente_nome: "ANA", cliente_codigo: null }),
+      vendaRow({ chassi: "K2", placa: "KKK2K22", cliente_nome: "BRUNO", cliente_codigo: null }),
+      vendaRow({ chassi: "K3", placa: "KKK3K33", cliente_nome: "CARLA", cliente_codigo: "111" }),
+      vendaRow({ chassi: "K4", placa: "KKK4K44", cliente_nome: "CARLA", cliente_codigo: "111" }),
+      vendaRow({ chassi: "K5", placa: "KKK5K55", cliente_nome: CLIENTE_SEM_NOME, cliente_codigo: null }),
+      vendaRow({ chassi: "K6", placa: "KKK6K66", cliente_nome: CLIENTE_SEM_NOME, cliente_codigo: null }),
+    ],
+  };
+}
+
+test("clientesRecorrentes sem PII (cérebro): nenhum cliente recorrente falso no bundle", () => {
+  const ds = prepararDatasetsDeLinhas(semPii(linhasClientes()), LOJAS_ATUAIS);
+  assert.equal(ds.vendas.length, 6);
+  assert.ok(ds.vendas.every((v) => v.cliente_pii_ausente === true && v.cliente_nome === CLIENTE_SEM_NOME));
+  const b = montarBundle(ds.vendas, ds.custosPorPlaca, ds.veiculos, ds.fipe, ds.cautelares);
+  assert.deepEqual(b.clientesRecorrentes, []);
+  // O legado agruparia as 6 vendas num único "(sem nome)" — o bug do QA.
+  assert.deepEqual(
+    legadoClientesRecorrentes(ds.vendas, ds.custosPorPlaca, 2).map((c) => [c.nome, c.codigo, c.qt]),
+    [[CLIENTE_SEM_NOME, null, 6]],
+  );
+  // Fixture geral sem PII também não produz recorrente
+  const geral = prepararDatasetsDeLinhas(semPii(linhasFixture()), LOJAS_ATUAIS);
+  assert.deepEqual(montarBundle(geral.vendas, geral.custosPorPlaca, geral.veiculos, geral.fipe, geral.cautelares).clientesRecorrentes, []);
+});
+
+test("clientesRecorrentes com PII (app web): idêntico ao legado, inclusive vendas reais \"(sem nome)\"", () => {
+  for (const l of [linhasClientes(), linhasFixture()]) {
+    const ds = prepararDatasetsDeLinhas(l, LOJAS_ATUAIS);
+    assert.ok(ds.vendas.every((v) => !("cliente_pii_ausente" in v)));
+    const b = montarBundle(ds.vendas, ds.custosPorPlaca, ds.veiculos, ds.fipe, ds.cautelares);
+    assert.deepEqual(b.clientesRecorrentes, legadoClientesRecorrentes(ds.vendas, ds.custosPorPlaca, 2).slice(0, 20));
+  }
+  const ds = prepararDatasetsDeLinhas(linhasClientes(), LOJAS_ATUAIS);
+  const b = montarBundle(ds.vendas, ds.custosPorPlaca, ds.veiculos, ds.fipe, ds.cautelares);
+  assert.deepEqual(
+    b.clientesRecorrentes?.map((c) => [c.nome, c.codigo, c.qt]),
+    [["CARLA", "111", 2], [CLIENTE_SEM_NOME, null, 2]],
+  );
+  // Só o código ausente (nome presente) não marca; só o nome ausente com código também não.
+  const r = linhasClientes().vendas[2];
+  assert.equal("cliente_pii_ausente" in vendaFromRow({ ...r, cliente_codigo: null }), false);
+  const { cliente_nome: _n, ...semNome } = r;
+  void _n;
+  assert.equal("cliente_pii_ausente" in vendaFromRow(semNome), false);
+});
+
 test("entradas vazias: datasets vazios, metas nulas, sem FIPE", () => {
   const ds = prepararDatasetsDeLinhas({ vendas: [], veiculos: [], custos: [], custosEstoque: [], meta: null });
   assert.deepEqual(ds.vendas, []);

@@ -141,5 +141,8 @@ export function vendaFromRow(r: VendaRow): VendaParsed {
     // Coluna NOT NULL DEFAULT false (migration 042) — mas o fallback `?? false` protege
     // contra snapshot de localStorage salvo antes da coluna existir (sem o campo no JSON).
     consignado: r.consignado ?? false,
+    // Sem PII de cliente (cérebro): marca a venda como não identificável. Só entra a chave
+    // nesse caso, pra linha com PII sair idêntica ao legado.
+    ...(r.cliente_nome === undefined && !r.cliente_codigo?.trim() ? { cliente_pii_ausente: true as const } : {}),
   };
 }
